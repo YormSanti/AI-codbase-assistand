@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
@@ -17,6 +18,20 @@ from app.config import settings
 
 class Base(DeclarativeBase):
     pass
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:  # noqa: ANN001
+    """SQLite ignores FK constraints (and ON DELETE CASCADE) unless told
+    otherwise, per-connection. Without this, deleting a repository/file
+    would leave orphaned file/symbol rows behind.
+
+    Registered on the generic `Engine` class rather than a specific engine
+    so it also covers the separate engines tests create.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 engine = create_engine(

@@ -4,24 +4,28 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  --color-bg: #ffffff;
+  --color-text: #1a1a1a;
+  --color-text-muted: #666666;
+  --color-border: #cccccc;
+  --color-surface-hover: #f3f4f6;
+  --color-count: #999999;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #16171d;
+    --color-text: #e5e7eb;
+    --color-text-muted: #9ca3af;
+    --color-border: #2e303a;
+    --color-surface-hover: #1f2028;
+    --color-count: #808291;
+  }
 }
 
 body {
   margin: 0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .app {
-    color: #e5e7eb;
-  }
-
-  .repository-picker input {
-    background: #1f2028;
-    border-color: #2e303a;
-    color: #e5e7eb;
-  }
-
-  .tree-row--dir:hover {
-    background: #1f2028;
-  }
+  background: var(--color-bg);
+  color: var(--color-text);
 }

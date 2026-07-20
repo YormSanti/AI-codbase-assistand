@@ -3,7 +3,7 @@
   margin: 0 auto;
   padding: 2rem 1.5rem 4rem;
   font-family: system-ui, sans-serif;
-  color: #1a1a1a;
+  color: var(--color-text);
 }
 
 .app-header h1 {
@@ -13,7 +13,7 @@
 
 .subtitle {
   margin: 0.25rem 0 1.5rem;
-  color: #666;
+  color: var(--color-text-muted);
 }
 
 .repository-picker {
@@ -25,9 +25,11 @@
 .repository-picker input {
   flex: 1;
   padding: 0.5rem 0.75rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 0.95rem;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 .repository-picker button {
@@ -66,12 +68,13 @@
 
 .repository-summary dt {
   font-weight: 600;
-  color: #555;
+  color: var(--color-text-muted);
 }
 
 .repository-summary dd {
   margin: 0;
   font-family: ui-monospace, monospace;
+  color: var(--color-text);
 }
 
 .tree-list {
@@ -92,6 +95,7 @@
   font-size: 0.9rem;
   cursor: default;
   border-radius: 4px;
+  color: var(--color-text);
 }
 
 .tree-row--dir {
@@ -99,17 +103,23 @@
 }
 
 .tree-row--dir:hover {
-  background: #f3f4f6;
+  background: var(--color-surface-hover);
+}
+
+.tree-row--dir:focus-visible,
+.repository-picker button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
 }
 
 .tree-count {
-  color: #999;
+  color: var(--color-count);
   font-size: 0.8rem;
 }
 
 .tree-language {
   margin-left: auto;
-  color: #999;
+  color: var(--color-count);
   font-size: 0.75rem;
   text-transform: uppercase;
 }

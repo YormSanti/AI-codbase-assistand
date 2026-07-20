@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.domain.models import Language, RepositoryInfo, TreeNode
+from app.domain.models import CodeSymbol, Language, RepositoryInfo, SymbolKind, TreeNode
 
 
 class OpenRepositoryRequest(BaseModel):
@@ -46,6 +46,7 @@ class TreeNodeResponse(BaseModel):
     is_directory: bool
     language: Language | None = None
     size_bytes: int | None = None
+    file_id: int | None = None
     children: list["TreeNodeResponse"] = Field(default_factory=list)
 
     @classmethod
@@ -56,7 +57,29 @@ class TreeNodeResponse(BaseModel):
             is_directory=node.is_directory,
             language=node.language,
             size_bytes=node.size_bytes,
+            file_id=node.file_id,
             children=[cls.from_domain(child) for child in node.children],
+        )
+
+
+class CodeSymbolResponse(BaseModel):
+    id: int
+    name: str
+    kind: SymbolKind
+    parent_name: str | None
+    start_line: int
+    end_line: int
+
+    @classmethod
+    def from_domain(cls, symbol: CodeSymbol) -> "CodeSymbolResponse":
+        assert symbol.id is not None
+        return cls(
+            id=symbol.id,
+            name=symbol.name,
+            kind=symbol.kind,
+            parent_name=symbol.parent_name,
+            start_line=symbol.start_line,
+            end_line=symbol.end_line,
         )
 
 

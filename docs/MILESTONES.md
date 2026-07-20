@@ -13,11 +13,23 @@ be independently functional and tested before the next one starts.
     `GET /api/repositories/{id}`, `GET /api/repositories/{id}/tree`
   - Frontend: Vite + React + TS app that opens a repo and renders the tree
   - 22 backend tests (pytest), 8 frontend tests (vitest) — all passing
-- [ ] **Milestone 1.2 — Tree-sitter parsing**
-  - Parse indexed source files with Tree-sitter (Python, TS/JS to start)
-  - Extract classes, functions, imports; store with FK to `files.id`
-  - New tables: `classes`, `functions`, `imports`
-  - API: expose per-file symbol lists
+- [x] **Milestone 1.2 — Tree-sitter parsing** (done)
+  - `TreeSitterCodeParser` extracts classes, functions/methods, and import
+    statements for Python, JavaScript, JSX, TypeScript, and TSX
+  - Methods vs. top-level functions are distinguished by ancestry; a
+    function nested inside a method is correctly treated as a local
+    function, not a second method
+  - Single `symbols` table (kind: class/function/method/import), FK to
+    `files.id` with `ON DELETE CASCADE` (SQLite `PRAGMA foreign_keys=ON`
+    enabled explicitly — verified re-indexing doesn't orphan old symbol rows)
+  - Parsing runs automatically as part of `open_repository`, per indexed
+    non-binary file whose language has a grammar
+  - API: `GET /api/files/{file_id}/symbols`; `TreeNode`/tree API now expose
+    `file_id` on leaf nodes so the frontend can address a specific file
+  - Known limitation: only named declarations are captured — arrow
+    functions and `const foo = () => {}` are not extracted yet
+  - 14 new backend tests (parser, extraction service, indexing integration,
+    API) — 36 backend tests total, all passing
 - [ ] **Milestone 1.3 — Tree UI polish**
   - Show per-file symbol counts / icons in the tree
   - Loading and empty states, basic file preview pane

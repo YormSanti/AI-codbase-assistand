@@ -12,10 +12,17 @@ from sqlalchemy.pool import StaticPool
 
 from app.infrastructure.db.database import Base, get_session
 from app.infrastructure.db.sqlite_repository import SqlAlchemyFileMetadataRepository
+from app.infrastructure.db.sqlite_symbol_repository import SqlAlchemySymbolRepository
 from app.infrastructure.git.git_client import GitPythonClient
 from app.infrastructure.parsing.file_scanner import scan_files
+from app.infrastructure.parsing.treesitter_parser import TreeSitterCodeParser
 from app.main import app
 from app.services.indexing_service import IndexingService
+from app.services.parsing_service import SymbolExtractionService
+
+# Loading Tree-sitter grammars has fixed setup cost; shared once across the
+# whole test session since the parser itself is stateless.
+_code_parser = TreeSitterCodeParser()
 
 
 @pytest.fixture
@@ -63,10 +70,15 @@ def db_session(db_engine) -> Iterator[Session]:
 
 @pytest.fixture
 def indexing_service(db_session: Session) -> IndexingService:
+    symbol_extraction_service = SymbolExtractionService(
+        parser=_code_parser,
+        symbol_repository=SqlAlchemySymbolRepository(db_session),
+    )
     return IndexingService(
         git_client=GitPythonClient(),
         file_repository=SqlAlchemyFileMetadataRepository(db_session),
         scan_files=scan_files,
+        symbol_extraction_service=symbol_extraction_service,
     )
 
 

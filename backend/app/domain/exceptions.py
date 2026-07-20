@@ -15,3 +15,7 @@ class NotAGitRepositoryError(DevPilotError):
 
 class RepositoryNotFoundError(DevPilotError):
     """Raised when a repository id does not exist in storage."""
+
+
+class IndexedFileNotFoundError(DevPilotError):
+    """Raised when a file id does not exist in storage."""

@@ -59,6 +59,26 @@ class FileMetadata:
         return self.relative_path.rsplit("/", 1)[0]
 
 
+class SymbolKind(str, Enum):
+    CLASS = "class"
+    FUNCTION = "function"
+    METHOD = "method"
+    IMPORT = "import"
+
+
+@dataclass(frozen=True, slots=True)
+class CodeSymbol:
+    """A class, function/method, or import statement extracted from a file."""
+
+    name: str
+    kind: SymbolKind
+    start_line: int
+    end_line: int
+    parent_name: str | None = None
+    id: int | None = None
+    file_id: int | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class RepositoryInfo:
     """Metadata about an opened Git repository."""
@@ -81,4 +101,5 @@ class TreeNode:
     is_directory: bool
     language: Language | None = None
     size_bytes: int | None = None
+    file_id: int | None = None
     children: list["TreeNode"] = field(default_factory=list)

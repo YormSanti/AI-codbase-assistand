@@ -32,6 +32,7 @@ def build_tree(root_name: str, files: list[FileMetadata]) -> TreeNode:
                         is_directory=False,
                         language=child_value.language,
                         size_bytes=child_value.size_bytes,
+                        file_id=child_value.id,
                     )
                 )
             else:

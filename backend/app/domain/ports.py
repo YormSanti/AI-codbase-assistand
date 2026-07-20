@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.domain.models import FileMetadata, RepositoryInfo
+from app.domain.models import CodeSymbol, FileMetadata, Language, RepositoryInfo
 
 
 class GitClientPort(ABC):
@@ -46,3 +46,29 @@ class FileMetadataRepositoryPort(ABC):
 
     @abstractmethod
     def list_files(self, repository_id: int) -> list[FileMetadata]: ...
+
+    @abstractmethod
+    def get_file(self, file_id: int) -> FileMetadata | None: ...
+
+
+class CodeParserPort(ABC):
+    """Extracts classes/functions/methods/imports from source code."""
+
+    @abstractmethod
+    def supports(self, language: Language) -> bool:
+        """Whether this parser has a grammar for `language`."""
+
+    @abstractmethod
+    def parse(self, source: bytes, language: Language) -> list[CodeSymbol]:
+        """Extract symbols from `source`. Caller guarantees `supports(language)`."""
+
+
+class SymbolRepositoryPort(ABC):
+    """Persists the symbols extracted from a single file."""
+
+    @abstractmethod
+    def replace_symbols(self, file_id: int, symbols: list[CodeSymbol]) -> list[CodeSymbol]:
+        """Atomically replace all symbols for a file (re-parse)."""
+
+    @abstractmethod
+    def list_symbols_for_file(self, file_id: int) -> list[CodeSymbol]: ...

@@ -33,7 +33,9 @@ class FileRecord(Base):
     __table_args__ = (UniqueConstraint("repository_id", "relative_path", name="uq_file_per_repo"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    repository_id: Mapped[int] = mapped_column(ForeignKey("repositories.id"), nullable=False)
+    repository_id: Mapped[int] = mapped_column(
+        ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False
+    )
     relative_path: Mapped[str] = mapped_column(String, nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     language: Mapped[str] = mapped_column(String, nullable=False)
@@ -41,3 +43,20 @@ class FileRecord(Base):
     is_binary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     repository: Mapped["RepositoryRecord"] = relationship(back_populates="files")
+    symbols: Mapped[list["SymbolRecord"]] = relationship(
+        back_populates="file", cascade="all, delete-orphan"
+    )
+
+
+class SymbolRecord(Base):
+    __tablename__ = "symbols"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    parent_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    start_line: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_line: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    file: Mapped["FileRecord"] = relationship(back_populates="symbols")

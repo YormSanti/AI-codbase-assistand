@@ -99,6 +99,10 @@ class SqlAlchemyFileMetadataRepository(FileMetadataRepositoryPort):
         ).all()
         return [_to_file_metadata(r) for r in records]
 
+    def get_file(self, file_id: int) -> FileMetadata | None:
+        record = self._session.get(FileRecord, file_id)
+        return _to_file_metadata(record) if record is not None else None
+
     def _count_files(self, repository_id: int) -> int:
         return self._session.scalar(
             select(func.count()).select_from(FileRecord).where(FileRecord.repository_id == repository_id)

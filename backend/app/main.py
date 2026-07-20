@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.files import router as files_router
 from app.api.routes.repository import router as repository_router
 from app.config import settings
 from app.infrastructure.db.database import init_db
@@ -26,6 +27,7 @@ app.add_middleware(
 )
 
 app.include_router(repository_router)
+app.include_router(files_router)
 
 
 @app.get("/health")

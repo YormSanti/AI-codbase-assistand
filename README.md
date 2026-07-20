@@ -10,9 +10,10 @@ for the clean-architecture layout.
 
 ## Status
 
-Phase 1, Milestone 1.1 complete: open a Git repository, index its files
-(path/size/language/hash respecting `.gitignore`), and browse the tree from
-a web UI.
+Phase 1, Milestones 1.1 and 1.2 complete: open a Git repository, index its
+files (path/size/language/hash respecting `.gitignore`), parse Python/JS/TS
+source with Tree-sitter to extract classes/functions/methods/imports, and
+browse the tree from a web UI.
 
 ## Prerequisites
 
@@ -57,6 +58,9 @@ To point the frontend at a backend running on a different port, set
 2. Start the frontend (`npm run dev`) and open http://localhost:5173.
 3. Enter an absolute path to a local Git repository and click
    "Open repository". The file tree appears once indexing completes.
+4. Symbols (classes/functions/methods/imports) extracted per file aren't in
+   the UI yet — fetch them directly: `GET /api/files/{file_id}/symbols`
+   (the file's `file_id` is in the tree response).
 
 ## Project layout
 
