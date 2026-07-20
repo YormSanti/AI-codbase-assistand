@@ -1,0 +1,27 @@
+:root {
+  color-scheme: light dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .app {
+    color: #e5e7eb;
+  }
+
+  .repository-picker input {
+    background: #1f2028;
+    border-color: #2e303a;
+    color: #e5e7eb;
+  }
+
+  .tree-row--dir:hover {
+    background: #1f2028;
+  }
+}
