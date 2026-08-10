@@ -54,56 +54,38 @@ export function TerminalPage() {
     const handleResize = () => fitAddon.fit();
     window.addEventListener("resize", handleResize);
 
-    // Initial greeting
-    term.writeln("\x1b[1;35mDevPilot AI Terminal emulator initialized.\x1b[0m");
-    term.writeln("\x1b[38;5;244mThis is a client-side shell. Real PTY execution requires the backend WebSocket module.\x1b[0m");
-    term.writeln("");
-    
-    let currentLine = "";
-    const prompt = () => {
-      term.write("\x1b[1;32mdevpilot\x1b[0m@\x1b[1;34mworkspace\x1b[0m:~$ ");
+    // Connect to real system backend PTY via WebSocket
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.hostname;
+    // Assuming backend runs on port 8000
+    const wsUrl = `${protocol}//${host}:8000/ws/terminal`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      term.writeln("\x1b[1;32mConnected to system terminal.\x1b[0m\r\n");
     };
 
-    prompt();
+    ws.onmessage = (event) => {
+      term.write(event.data);
+    };
 
-    term.onKey(({ key, domEvent }) => {
-      const printable = !domEvent.altKey && !domEvent.ctrlKey && !domEvent.metaKey;
+    ws.onerror = () => {
+      term.writeln("\r\n\x1b[1;31mConnection error. Backend WebSocket is unreachable.\x1b[0m");
+    };
 
-      if (domEvent.keyCode === 13) {
-        // Enter
-        term.write("\r\n");
-        const command = currentLine.trim();
-        if (command) {
-          if (command === "clear") {
-            term.clear();
-          } else if (command === "whoami") {
-            term.writeln("devpilot-user");
-          } else if (command === "pwd") {
-            term.writeln("/home/workspace");
-          } else if (command === "ls") {
-            term.writeln("\x1b[1;34msrc\x1b[0m  \x1b[1;34mpublic\x1b[0m  package.json  vite.config.ts  README.md");
-          } else if (command.startsWith("echo ")) {
-            term.writeln(command.substring(5));
-          } else {
-            term.writeln(`bash: ${command}: command not found`);
-          }
-        }
-        currentLine = "";
-        prompt();
-      } else if (domEvent.keyCode === 8) {
-        // Backspace
-        if (currentLine.length > 0) {
-          currentLine = currentLine.slice(0, -1);
-          term.write("\b \b");
-        }
-      } else if (printable) {
-        currentLine += key;
-        term.write(key);
+    ws.onclose = () => {
+      term.writeln("\r\n\x1b[1;33mTerminal session disconnected.\x1b[0m");
+    };
+
+    term.onData(data => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
       }
     });
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      ws.close();
       term.dispose();
     };
   }, []);
@@ -121,13 +103,8 @@ export function TerminalPage() {
   };
 
   const restartTerminal = () => {
-    const term = xtermRef.current;
-    if (term) {
-      term.clear();
-      term.writeln("\x1b[1;35mTerminal session restarted.\x1b[0m");
-      term.writeln("");
-      term.write("\x1b[1;32mdevpilot\x1b[0m@\x1b[1;34mworkspace\x1b[0m:~$ ");
-    }
+    // A simple page reload will re-initialize the websocket
+    window.location.reload();
   };
 
   return (
@@ -159,14 +136,14 @@ export function TerminalPage() {
           </div>
           <div>
             <h2 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "var(--foreground)" }}>Integrated Terminal</h2>
-            <p style={{ margin: 0, fontSize: "12px", color: "var(--muted-foreground)" }}>Client-side shell emulation</p>
+            <p style={{ margin: 0, fontSize: "12px", color: "var(--muted-foreground)" }}>System shell via WebSocket PTY</p>
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "99px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
             <Shield style={{ width: "12px", height: "12px", color: "#34d399" }} />
-            <span style={{ fontSize: "11px", fontWeight: "700", color: "#34d399" }}>Local Session</span>
+            <span style={{ fontSize: "11px", fontWeight: "700", color: "#34d399" }}>Live PTY</span>
           </div>
 
           <button
