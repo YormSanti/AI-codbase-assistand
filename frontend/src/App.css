@@ -1,23 +1,22 @@
 /* DevPilot AI Premium Design System */
 
-/* Global Reset & Theme Utilities */
 :root {
-  --color-border-subtle: rgba(255, 255, 255, 0.08);
-  --color-bg-card-hover: rgba(255, 255, 255, 0.03);
+  --color-border-subtle: rgba(255, 255, 255, 0.12);
+  --color-bg-card-hover: rgba(255, 255, 255, 0.05);
 }
 
 /* Repository Picker Component */
 .picker-container {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
   width: 100%;
 }
 
 .repository-picker {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
   width: 100%;
 }
 
@@ -37,40 +36,41 @@
 }
 
 .input-wrapper input {
-  padding-left: 2.25rem;
-  padding-right: 2.25rem;
-  height: 2.5rem;
+  padding-left: 2.75rem;
+  padding-right: 2.75rem;
+  height: 3rem;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   background-color: var(--secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  line-height: 1.6;
 }
 
 .input-wrapper input:focus {
   border-color: var(--ring);
   outline: none;
-  box-shadow: 0 0 0 1px var(--ring);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
 .folder-icon {
   position: absolute;
-  left: 0.75rem;
-  width: 1rem;
-  height: 1rem;
+  left: 1rem;
+  width: 1.1rem;
+  height: 1.1rem;
   color: var(--muted-foreground);
   pointer-events: none;
 }
 
 .clear-btn {
   position: absolute;
-  right: 0.75rem;
+  right: 1rem;
   background: transparent;
   border: none;
   color: var(--muted-foreground);
   cursor: pointer;
-  padding: 0.2rem;
+  padding: 0.3rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -83,20 +83,21 @@
 }
 
 .submit-btn {
-  height: 2.5rem;
-  padding: 0 1.25rem;
-  font-weight: 500;
-  font-size: 0.85rem;
-  gap: 0.5rem;
+  height: 3rem;
+  padding: 0 1.75rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  gap: 0.6rem;
   white-space: nowrap;
 }
 
 .picker-presets {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.78rem;
+  gap: 0.75rem;
+  font-size: 0.8rem;
   color: var(--muted-foreground);
+  padding-top: 0.35rem;
 }
 
 .preset-label {
@@ -107,16 +108,16 @@
 .preset-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.6rem;
 }
 
 .preset-chip {
-  padding: 0.2rem 0.6rem;
+  padding: 0.35rem 0.85rem;
   background-color: var(--secondary);
   border: 1px solid var(--border);
   border-radius: 9999px;
   color: var(--foreground);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-family: var(--font-mono);
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease;
@@ -129,51 +130,56 @@
 
 /* Repository Summary Component */
 .repository-summary {
-  padding: 1.25rem;
+  padding: 1.75rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.35rem;
   background-color: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 .summary-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .repo-title-wrapper {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .repo-icon {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.65rem;
+  height: 1.65rem;
 }
 
 .repo-name {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin: 0;
-  line-height: 1.2;
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem 0;
+  line-height: 1.3;
 }
 
 .repo-path {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
   display: block;
+  line-height: 1.5;
 }
 
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 1rem;
+  margin-top: 0.25rem;
 }
 
 @media (min-width: 640px) {
@@ -183,43 +189,45 @@
 }
 
 .summary-card {
-  padding: 0.85rem 1rem;
+  padding: 1.15rem 1.35rem;
   background-color: var(--secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.6rem;
 }
 
 .card-label {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
+  gap: 0.55rem;
+  font-size: 0.78rem;
   color: var(--muted-foreground);
   font-weight: 500;
 }
 
 .card-icon {
-  width: 0.85rem;
-  height: 0.85rem;
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .card-value {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
+  padding-top: 0.15rem;
 }
 
 .card-value--commit code {
   font-family: var(--font-mono);
-  font-size: 0.82rem;
-  padding: 0.15rem 0.4rem;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.65rem;
   background-color: var(--muted);
-  border-radius: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
 }
 
 .mini-copy-btn {
@@ -227,22 +235,24 @@
   border: none;
   color: var(--muted-foreground);
   cursor: pointer;
-  padding: 0.15rem;
+  padding: 0.3rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .mini-copy-btn:hover {
   color: var(--foreground);
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 /* File Tree Explorer Component */
 .tree-container {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
   height: 100%;
 }
 
@@ -259,24 +269,25 @@
 }
 
 .tree-search-input {
-  padding-left: 2rem;
-  padding-right: 2rem;
-  height: 2.1rem;
-  font-size: 0.8rem;
+  padding-left: 2.5rem;
+  padding-right: 2.5rem;
+  height: 2.5rem;
+  font-size: 0.85rem;
   background-color: var(--secondary);
   border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .search-icon {
   position: absolute;
-  left: 0.6rem;
+  left: 0.85rem;
   color: var(--muted-foreground);
   pointer-events: none;
 }
 
 .search-clear-btn {
   position: absolute;
-  right: 0.6rem;
+  right: 0.85rem;
   background: transparent;
   border: none;
   color: var(--muted-foreground);
@@ -284,6 +295,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0.25rem;
 }
 
 .tree-list {
@@ -292,29 +304,32 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 3px;
 }
 
 .tree-root {
   overflow-y: auto;
-  max-height: 480px;
-  padding-right: 0.25rem;
+  max-height: 520px;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.6rem;
   width: 100%;
-  padding: 0.35rem 0.6rem;
+  padding: 0.55rem 0.85rem;
   border: 1px solid transparent;
   background: transparent;
   text-align: left;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   cursor: pointer;
   border-radius: var(--radius);
   color: var(--foreground);
   transition: background-color 0.12s ease, border-color 0.12s ease;
+  margin-bottom: 2px;
 }
 
 .tree-row:hover {
@@ -333,24 +348,25 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-mono);
+  padding-left: 0.15rem;
 }
 
 .tree-size {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
 }
 
 .tree-count {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
 }
 
 .tree-language {
-  margin-left: 0.25rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
-  font-size: 0.62rem;
+  margin-left: 0.4rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 5px;
+  font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
   background-color: var(--secondary);
@@ -362,7 +378,7 @@
 .inspector-card {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
   height: 100%;
 }
 
@@ -370,30 +386,30 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-b: 1px solid var(--border);
-  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1rem;
 }
 
 .inspector-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
 .inspector-details {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  font-size: 0.82rem;
+  gap: 0.75rem;
+  font-size: 0.85rem;
 }
 
 .inspector-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.4rem 0.6rem;
+  padding: 0.65rem 1rem;
   background-color: var(--secondary);
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -413,17 +429,17 @@
 .error-banner {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.75rem 1rem;
+  gap: 0.85rem;
+  padding: 1rem 1.35rem;
   background-color: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.35);
   border-radius: var(--radius);
   color: var(--foreground);
-  font-size: 0.85rem;
+  font-size: 0.88rem;
 }
 
 .error-icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   color: #ef4444;
 }
