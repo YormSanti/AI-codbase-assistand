@@ -7,6 +7,7 @@ import {
   IconInnerShadowTop,
   IconRobot,
   IconSettings,
+  IconTerminal2,
 } from "@tabler/icons-react"
 
 import {
@@ -33,6 +34,7 @@ export function AppSidebar({
   const navItems = [
     { title: "Dashboard", id: "dashboard", icon: IconDashboard },
     { title: "File Explorer", id: "explorer", icon: IconFolder },
+    { title: "Terminal", id: "terminal", icon: IconTerminal2 },
     { title: "Git Repository", id: "git", icon: IconGitBranch },
     { title: "AI Assistant", id: "ai", icon: IconRobot },
     { title: "Analytics", id: "analytics", icon: IconChartBar },

@@ -9,6 +9,7 @@ import { AIAgentPage } from "@/components/AIAgentPage";
 import { DashboardPage } from "@/components/DashboardPage";
 import { ExplorerPage } from "@/components/ExplorerPage";
 import { GitPage } from "@/components/GitPage";
+import { TerminalPage } from "@/components/TerminalPage";
 import { AnalyticsPage } from "@/components/AnalyticsPage";
 import { SettingsPage } from "@/components/SettingsPage";
 
@@ -89,6 +90,11 @@ export default function App() {
               onSelectFile={handleSelectFile}
               onCloseFile={() => setSelectedFile(null)}
             />
+          )}
+
+          {/* Terminal */}
+          {activeTab === "terminal" && (
+            <TerminalPage />
           )}
 
           {/* Git Repository */}
