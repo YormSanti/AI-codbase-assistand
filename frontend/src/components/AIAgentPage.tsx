@@ -55,6 +55,7 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("gemini-pro");
   const [isRunning, setIsRunning] = useState(false);
+  const [antigravityStatus, setAntigravityStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
   const [tokenUsage, setTokenUsage] = useState(38420);
   const [logs, setLogs] = useState<AgentLog[]>([
     {
@@ -149,7 +150,7 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
               <h2 style={{ fontSize: "22px", fontWeight: "800", color: "var(--foreground)", letterSpacing: "-0.5px", margin: 0 }}>
-                Autonomous AI Agent Studio
+                Antigravity AI Agent
               </h2>
               <span style={{
                 fontSize: "10px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase",
@@ -159,27 +160,46 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
               }}>v2.5 Engine</span>
             </div>
             <p style={{ fontSize: "13px", color: "var(--muted-foreground)", margin: 0, lineHeight: "1.5" }}>
-              Multi-agent orchestrator · Tree-sitter AST · Tool execution · Codebase context
+              Google DeepMind Architecture · Multi-agent orchestration · Tool execution
             </p>
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: "10px",
-            padding: "10px 18px", borderRadius: "12px",
-            background: isRunning ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)",
-            border: `1.5px solid ${isRunning ? "rgba(245,158,11,0.4)" : "rgba(16,185,129,0.4)"}`,
-          }}>
-            <span style={{
-              width: "9px", height: "9px", borderRadius: "50%",
-              background: isRunning ? "#f59e0b" : "#10b981",
-              boxShadow: isRunning ? "0 0 8px #f59e0b" : "0 0 8px #10b981",
-            }} />
-            <span style={{ fontSize: "12px", fontWeight: "700", color: isRunning ? "#fbbf24" : "#34d399" }}>
-              {isRunning ? "Executing…" : "Active & Ready"}
-            </span>
-          </div>
+          {antigravityStatus === "disconnected" ? (
+            <button
+              onClick={() => {
+                setAntigravityStatus("connecting");
+                setTimeout(() => setAntigravityStatus("connected"), 1500);
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "10px 18px", borderRadius: "12px",
+                background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.4)",
+                color: "#c4b5fd", fontSize: "12px", fontWeight: "700", cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+            >
+              <Zap style={{ width: "14px", height: "14px" }} /> Connect to Antigravity
+            </button>
+          ) : (
+            <div style={{
+              display: "flex", alignItems: "center", gap: "10px",
+              padding: "10px 18px", borderRadius: "12px",
+              background: antigravityStatus === "connecting" ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)",
+              border: `1.5px solid ${antigravityStatus === "connecting" ? "rgba(245,158,11,0.4)" : "rgba(16,185,129,0.4)"}`,
+            }}>
+              <span style={{
+                width: "9px", height: "9px", borderRadius: "50%",
+                background: antigravityStatus === "connecting" ? "#f59e0b" : "#10b981",
+                boxShadow: antigravityStatus === "connecting" ? "0 0 8px #f59e0b" : "0 0 8px #10b981",
+                animation: antigravityStatus === "connecting" ? "pulse 1.5s infinite" : "none",
+              }} />
+              <span style={{ fontSize: "12px", fontWeight: "700", color: antigravityStatus === "connecting" ? "#fbbf24" : "#34d399" }}>
+                {antigravityStatus === "connecting" ? "Connecting Engine…" : "Antigravity Active"}
+              </span>
+            </div>
+          )}
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
