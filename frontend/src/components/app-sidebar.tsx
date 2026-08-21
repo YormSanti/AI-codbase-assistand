@@ -7,6 +7,7 @@ import {
   IconInnerShadowTop,
   IconRobot,
   IconSettings,
+  IconTerminal2,
 } from "@tabler/icons-react"
 
 import {
@@ -33,10 +34,10 @@ export function AppSidebar({
   const navItems = [
     { title: "Dashboard", id: "dashboard", icon: IconDashboard },
     { title: "File Explorer", id: "explorer", icon: IconFolder },
+    { title: "Terminal", id: "terminal", icon: IconTerminal2 },
     { title: "Git Repository", id: "git", icon: IconGitBranch },
     { title: "AI Assistant", id: "ai", icon: IconRobot },
     { title: "Analytics", id: "analytics", icon: IconChartBar },
-    { title: "Settings", id: "settings", icon: IconSettings },
   ];
 
   return (
@@ -83,7 +84,19 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarContent>
 
-      <SidebarFooter className="p-2 border-t border-sidebar-border text-xs text-muted-foreground">
+      <SidebarFooter className="p-2 border-t border-sidebar-border text-xs text-muted-foreground flex flex-col gap-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={activeTab === "settings"}
+              onClick={() => onSelectTab?.("settings")}
+              tooltip="Settings"
+            >
+              <IconSettings className="size-4" />
+              <span>Settings</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <div className="px-2 py-1 truncate font-mono">
           {repository ? `Branch: ${repository.current_branch || "main"}` : "No repo connected"}
         </div>

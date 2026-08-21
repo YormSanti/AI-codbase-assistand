@@ -97,10 +97,17 @@ frontend/src/
   App.tsx                  Wires state + components together
 ```
 
-It currently runs as a plain web app (`npm run dev`) rather than inside
-Tauri, because this environment has no Rust toolchain. The React code does
-not need to change to run inside Tauri later — only a thin `src-tauri/`
-wrapper needs to be added around it (see docs/MILESTONES.md).
+The same React frontend runs either as a web app (`npm run dev`) or in a Tauri
+2 desktop shell (`npm run desktop:dev`). In desktop mode, Rust selects an
+available loopback port, starts a PyInstaller-packaged FastAPI sidecar, exposes
+the backend URL through a Tauri command, and terminates the sidecar with the
+window. The database path is supplied through `DEVPILOT_DATABASE_PATH` so
+desktop data lives in the operating system's application-data directory.
+
+The repository picker uses Tauri's native folder dialog when running on the
+desktop. Browser mode keeps the absolute-path input and its regular port-8000
+API default. The integrated terminal receives the selected repository as its
+working directory instead of relying on a developer-machine path.
 
 Theming uses CSS custom properties (`--color-*`) defined once in
 `index.css` with a `prefers-color-scheme: dark` override, consumed by

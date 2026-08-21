@@ -1,13 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Folder, X, ArrowRight, Loader2, Sparkles } from "lucide-react";
+import { Folder, X, ArrowRight, Loader2 } from "lucide-react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-
-const SUGGESTED_PATHS = [
-  { name: "frontend", path: "/home/ksk/AI-Git-assistand/frontend" },
-  { name: "AI-Git-assistand", path: "/home/ksk/AI-Git-assistand" },
-];
 
 export function RepositoryPicker({
   onOpen,
@@ -26,9 +21,14 @@ export function RepositoryPicker({
     }
   }
 
-  function handleSelectSuggested(suggestedPath: string) {
-    setPath(suggestedPath);
-    onOpen(suggestedPath);
+  async function handleBrowse() {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({ directory: true, multiple: false });
+    if (selected) {
+      setPath(selected);
+      onOpen(selected);
+    }
   }
 
   return (
@@ -75,26 +75,17 @@ export function RepositoryPicker({
         </Button>
       </form>
 
-      <div className="picker-presets pt-1">
-        <span className="preset-label flex items-center gap-1">
-          <Sparkles className="h-3 w-3 text-amber-400" />
-          <span>Quick Suggestions:</span>
-        </span>
-        <div className="preset-chips">
-          {SUGGESTED_PATHS.map((item) => (
-            <button
-              key={item.path}
-              type="button"
-              className="preset-chip flex items-center gap-1.5 hover:border-primary/50 hover:bg-primary/10 transition-all"
-              onClick={() => handleSelectSuggested(item.path)}
-              disabled={isLoading}
-            >
-              <Folder className="h-3 w-3 text-blue-400" />
-              <span>{item.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      {"__TAURI_INTERNALS__" in window && (
+        <button
+          type="button"
+          className="preset-chip flex items-center gap-1.5 hover:border-primary/50 hover:bg-primary/10 transition-all"
+          onClick={handleBrowse}
+          disabled={isLoading}
+        >
+          <Folder className="h-3.5 w-3.5 text-blue-400" />
+          <span>Browse folders</span>
+        </button>
+      )}
     </div>
   );
 }
