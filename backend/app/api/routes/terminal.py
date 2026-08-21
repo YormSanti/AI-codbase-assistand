@@ -1,12 +1,24 @@
 import os
 import pty
 import asyncio
+import fcntl
 import signal
+import struct
+import termios
 from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter(prefix="/ws", tags=["terminal"])
+
+RESIZE_PREFIX = "\0DEVPILOT_RESIZE:"
+
+
+def resize_pty(fd: int, cols: int, rows: int) -> None:
+    if cols < 1 or rows < 1:
+        return
+    window_size = struct.pack("HHHH", rows, cols, 0, 0)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, window_size)
 
 async def read_from_pty(fd, websocket: WebSocket):
     loop = asyncio.get_running_loop()
@@ -44,6 +56,14 @@ async def terminal_websocket(websocket: WebSocket):
         try:
             while True:
                 data = await websocket.receive_text()
+                if data.startswith(RESIZE_PREFIX):
+                    try:
+                        cols, rows = map(int, data[len(RESIZE_PREFIX):].split(":", 1))
+                        resize_pty(fd, cols, rows)
+                        os.kill(pid, signal.SIGWINCH)
+                    except (ValueError, ProcessLookupError):
+                        pass
+                    continue
                 os.write(fd, data.encode("utf-8"))
         except WebSocketDisconnect:
             pass
