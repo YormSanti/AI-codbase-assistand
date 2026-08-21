@@ -74,7 +74,6 @@ export default function App() {
               repository={repository}
               tree={tree}
               isLoading={isLoading}
-              onOpen={handleOpen}
               onNavigate={(tab) => setActiveTab(tab)}
             />
           )}
@@ -94,15 +93,14 @@ export default function App() {
 
           {/* Terminal */}
           {activeTab === "terminal" && (
-            <TerminalPage />
+            <TerminalPage repository={repository} />
           )}
 
           {/* Git Repository */}
           {activeTab === "git" && (
             <GitPage
               repository={repository}
-              isLoading={isLoading}
-              onOpen={handleOpen}
+              onNavigate={(tab) => setActiveTab(tab)}
             />
           )}
 

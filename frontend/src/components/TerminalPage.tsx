@@ -1,19 +1,47 @@
 import { useEffect, useRef, useState } from "react";
-import { Terminal as XTerm } from "xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { Plus, X } from "lucide-react";
+import { Terminal as XTerm } from "xterm";
 import "xterm/css/xterm.css";
-import { Terminal, Maximize2, RotateCcw, Shield } from "lucide-react";
+import { getBackendUrl } from "@/api/client";
+import type { RepositoryInfo } from "@/types/domain";
 
-export function TerminalPage() {
+interface TerminalTab {
+  id: number;
+  title: string;
+}
+
+async function readClipboardText(): Promise<string> {
+  if ("__TAURI_INTERNALS__" in window) {
+    const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+    return readText();
+  }
+  return navigator.clipboard.readText();
+}
+
+async function writeClipboardText(text: string): Promise<void> {
+  if ("__TAURI_INTERNALS__" in window) {
+    const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+    await writeText(text);
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+}
+
+function TerminalSession({
+  repository,
+  isActive,
+}: {
+  repository: RepositoryInfo | null;
+  isActive: boolean;
+}) {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!terminalRef.current) return;
+    const terminalElement = terminalRef.current;
 
-    // Initialize xterm.js
     const term = new XTerm({
       cursorBlink: true,
       fontFamily: "var(--font-code)",
@@ -45,147 +73,212 @@ export function TerminalPage() {
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(terminalRef.current);
-    fitAddon.fit();
-
-    xtermRef.current = term;
+    term.open(terminalElement);
     fitAddonRef.current = fitAddon;
 
-    const handleResize = () => fitAddon.fit();
+    let disposed = false;
+    let ws: WebSocket | undefined;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const handleResize = () => {
+      if (!disposed && terminalElement.offsetParent) fitAddon.fit();
+    };
     window.addEventListener("resize", handleResize);
 
-    // Connect to real system backend PTY via WebSocket
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.hostname;
-    // Assuming backend runs on port 8000
-    const wsUrl = `${protocol}//${host}:8000/ws/terminal`;
-    const ws = new WebSocket(wsUrl);
+    const connect = async () => {
+      try {
+        const backendUrl = await getBackendUrl();
+        if (disposed) return;
+        const wsUrl = new URL("/ws/terminal", backendUrl);
+        wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+        if (repository?.root_path) wsUrl.searchParams.set("cwd", repository.root_path);
 
-    ws.onopen = () => {
-      term.writeln("\x1b[1;32mConnected to system terminal.\x1b[0m\r\n");
-    };
-
-    ws.onmessage = (event) => {
-      term.write(event.data);
-    };
-
-    ws.onerror = () => {
-      term.writeln("\r\n\x1b[1;31mConnection error. Backend WebSocket is unreachable.\x1b[0m");
-    };
-
-    ws.onclose = () => {
-      term.writeln("\r\n\x1b[1;33mTerminal session disconnected.\x1b[0m");
-    };
-
-    term.onData(data => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
+        ws = new WebSocket(wsUrl);
+        ws.onmessage = (event) => term.write(event.data);
+        ws.onerror = () => {
+          term.writeln("\r\n\x1b[1;31mTerminal backend is not ready.\x1b[0m");
+        };
+        ws.onclose = () => {
+          if (!disposed) {
+            term.writeln("\r\n\x1b[1;33mReconnecting terminal...\x1b[0m");
+            reconnectTimer = setTimeout(connect, 1000);
+          }
+        };
+      } catch (error) {
+        term.writeln(`\r\n\x1b[1;31mCould not start terminal: ${String(error)}\x1b[0m`);
       }
+    };
+
+    void connect();
+    const dataDisposable = term.onData(data => {
+      if (ws?.readyState === WebSocket.OPEN) ws.send(data);
     });
 
+    const isMac = navigator.userAgent.includes("Mac");
+    term.attachCustomKeyEventHandler(event => {
+      if (event.type !== "keydown") return true;
+
+      const key = event.key.toLowerCase();
+      const copyShortcut =
+        (key === "c" && (isMac ? event.metaKey : event.ctrlKey && event.shiftKey)) ||
+        (key === "insert" && event.ctrlKey && !event.shiftKey);
+      const pasteShortcut =
+        (key === "v" && (isMac ? event.metaKey : event.ctrlKey && event.shiftKey)) ||
+        (key === "insert" && event.shiftKey && !event.ctrlKey);
+
+      if (copyShortcut) {
+        const selection = term.getSelection();
+        if (selection) void writeClipboardText(selection);
+        return false;
+      }
+      if (pasteShortcut) {
+        void readClipboardText().then(text => term.paste(text));
+        return false;
+      }
+      return true;
+    });
+
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      void readClipboardText().then(text => term.paste(text));
+    };
+    terminalElement.addEventListener("contextmenu", handleContextMenu);
+
     return () => {
+      disposed = true;
       window.removeEventListener("resize", handleResize);
-      ws.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      terminalElement.removeEventListener("contextmenu", handleContextMenu);
+      dataDisposable.dispose();
+      ws?.close();
+      fitAddonRef.current = null;
+      fitAddon.dispose();
       term.dispose();
     };
-  }, []);
+  }, [repository?.root_path]);
 
-  // Ensure terminal resizes correctly when container size changes
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fitAddonRef.current?.fit();
-    }, 100);
+    if (!isActive) return;
+    const timer = setTimeout(() => fitAddonRef.current?.fit(), 50);
     return () => clearTimeout(timer);
-  }, [isFullscreen]);
+  }, [isActive]);
 
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
+  return <div ref={terminalRef} style={{ width: "100%", height: "100%" }} />;
+}
+
+export function TerminalPage({ repository }: { repository: RepositoryInfo | null }) {
+  const nextId = useRef(2);
+  const [tabs, setTabs] = useState<TerminalTab[]>([{ id: 1, title: "Terminal 1" }]);
+  const [activeId, setActiveId] = useState(1);
+
+  const addTerminal = () => {
+    const id = nextId.current++;
+    setTabs(current => [...current, { id, title: `Terminal ${id}` }]);
+    setActiveId(id);
   };
 
-  const restartTerminal = () => {
-    // A simple page reload will re-initialize the websocket
-    window.location.reload();
+  const closeTerminal = (id: number) => {
+    if (tabs.length === 1) return;
+    const index = tabs.findIndex(tab => tab.id === id);
+    const remaining = tabs.filter(tab => tab.id !== id);
+    setTabs(remaining);
+    if (id === activeId) setActiveId(remaining[Math.max(0, index - 1)].id);
   };
 
   return (
     <div style={{
-      display: "flex", flexDirection: "column", gap: "20px",
-      width: "100%", height: isFullscreen ? "100vh" : "100%",
-      position: isFullscreen ? "fixed" : "relative",
-      top: isFullscreen ? 0 : "auto", left: isFullscreen ? 0 : "auto",
-      zIndex: isFullscreen ? 1000 : 1,
-      padding: isFullscreen ? "20px" : "20px",
+      display: "flex",
+      flexDirection: "column",
+      width: "100%",
+      height: "100%",
+      padding: "20px",
       background: "var(--background)",
       boxSizing: "border-box",
     }}>
-      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "16px 24px", borderRadius: "20px",
-        background: "rgba(18,18,24,0.9)",
-        border: "1.5px solid rgba(255,255,255,0.08)",
-        boxShadow: "0 8px 32px -8px rgba(0,0,0,0.4)",
+        display: "flex",
+        alignItems: "end",
+        gap: "4px",
+        minHeight: "36px",
+        overflowX: "auto",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{
-            padding: "10px", borderRadius: "12px",
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.08)"
-          }}>
-            <Terminal style={{ width: "20px", height: "20px", color: "#a78bfa" }} />
-          </div>
-          <div>
-            <h2 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "var(--foreground)" }}>Integrated Terminal</h2>
-            <p style={{ margin: 0, fontSize: "12px", color: "var(--muted-foreground)" }}>System shell via WebSocket PTY</p>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "99px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
-            <Shield style={{ width: "12px", height: "12px", color: "#34d399" }} />
-            <span style={{ fontSize: "11px", fontWeight: "700", color: "#34d399" }}>Live PTY</span>
-          </div>
-
+        {tabs.map(tab => (
           <button
-            onClick={restartTerminal}
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveId(tab.id)}
             style={{
-              padding: "8px", borderRadius: "10px", background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.08)", color: "var(--muted-foreground)",
-              cursor: "pointer", transition: "all 0.2s"
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              height: "34px",
+              padding: "0 10px 0 14px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderBottom: activeId === tab.id ? "2px solid #8b5cf6" : "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "9px 9px 0 0",
+              background: activeId === tab.id ? "#0a0a0e" : "rgba(255,255,255,0.04)",
+              color: activeId === tab.id ? "var(--foreground)" : "var(--muted-foreground)",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              fontSize: "12px",
             }}
-            title="Restart Terminal"
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--foreground)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.1)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--muted-foreground)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; }}
           >
-            <RotateCcw style={{ width: "16px", height: "16px" }} />
+            <span>{tab.title}</span>
+            {tabs.length > 1 && (
+              <span
+                role="button"
+                aria-label={`Close ${tab.title}`}
+                onClick={event => {
+                  event.stopPropagation();
+                  closeTerminal(tab.id);
+                }}
+                style={{ display: "flex", padding: "2px", borderRadius: "4px" }}
+              >
+                <X size={13} />
+              </span>
+            )}
           </button>
-          
-          <button
-            onClick={toggleFullscreen}
-            style={{
-              padding: "8px", borderRadius: "10px", background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.08)", color: "var(--muted-foreground)",
-              cursor: "pointer", transition: "all 0.2s"
-            }}
-            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--foreground)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.1)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--muted-foreground)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; }}
-          >
-            <Maximize2 style={{ width: "16px", height: "16px" }} />
-          </button>
-        </div>
+        ))}
+        <button
+          type="button"
+          onClick={addTerminal}
+          aria-label="New terminal"
+          title="New terminal"
+          style={{
+            display: "grid",
+            placeItems: "center",
+            width: "32px",
+            height: "32px",
+            marginBottom: "2px",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "8px",
+            background: "rgba(255,255,255,0.04)",
+            color: "var(--muted-foreground)",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <Plus size={16} />
+        </button>
       </div>
 
-      {/* ── Terminal Window ─────────────────────────────────────────────── */}
       <div style={{
-        flex: 1, borderRadius: "20px", overflow: "hidden",
+        flex: 1,
+        minHeight: 0,
+        borderRadius: "0 16px 16px 16px",
+        overflow: "hidden",
         background: "#0a0a0e",
-        border: "1.5px solid rgba(255,255,255,0.08)",
-        boxShadow: "0 8px 32px -8px rgba(0,0,0,0.6)",
+        border: "1px solid rgba(255,255,255,0.08)",
         padding: "16px",
-        display: "flex", flexDirection: "column",
       }}>
-        <div ref={terminalRef} style={{ flex: 1, width: "100%", height: "100%" }} />
+        {tabs.map(tab => (
+          <div
+            key={tab.id}
+            style={{ display: activeId === tab.id ? "block" : "none", width: "100%", height: "100%" }}
+          >
+            <TerminalSession repository={repository} isActive={activeId === tab.id} />
+          </div>
+        ))}
       </div>
     </div>
   );
