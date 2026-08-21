@@ -54,7 +54,7 @@ export const ExplorerPage: React.FC<Props> = ({
           </div>
         </div>
         <div style={{ minWidth: '300px' }}>
-          <RepositoryPicker repository={repository} isLoading={isLoading} onOpen={onOpen} />
+          <RepositoryPicker isLoading={isLoading} onOpen={onOpen} />
         </div>
       </div>
 
@@ -81,22 +81,7 @@ export const ExplorerPage: React.FC<Props> = ({
             <h2 style={{ margin: '0 0 12px 0', color: 'white', fontSize: '24px' }}>No Workspace Open</h2>
             <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', maxWidth: '400px' }}>Select a repository above or open your default workspace to start exploring files.</p>
           </div>
-          <button 
-            className="hover:bg-blue-500 transition-colors cursor-pointer"
-            style={{
-              padding: '12px 24px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              fontWeight: 600,
-              fontSize: '15px',
-              marginTop: '16px'
-            }}
-            onClick={() => onOpen("/home/ksk/AI-Git-assistand/frontend")}
-          >
-            Open Workspace
-          </button>
+          <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)' }}>Choose a folder with the repository picker above.</p>
         </div>
       ) : (
         <div style={{ display: 'flex', gap: '32px', minHeight: '600px' }}>
@@ -107,7 +92,7 @@ export const ExplorerPage: React.FC<Props> = ({
               Project Files
             </h3>
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <RepositoryTree tree={tree} onSelectFile={onSelectFile} selectedFile={selectedFile} />
+              <RepositoryTree root={tree} onSelectFile={onSelectFile} selectedFilePath={selectedFile?.path} />
             </div>
           </div>
 

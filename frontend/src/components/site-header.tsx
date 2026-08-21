@@ -1,7 +1,5 @@
-import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ThemeToggle } from "@/components/ThemeToggle"
-import { CheckCircle2, Circle } from "lucide-react"
 
 const VIEW_LABELS: Record<string, string> = {
   dashboard: "Dashboard",

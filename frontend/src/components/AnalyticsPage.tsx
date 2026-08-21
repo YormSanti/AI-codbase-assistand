@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { BarChart3, Database, FileText, Folder, HardDrive, Code2, CheckCircle, AlertTriangle, ShieldCheck, XCircle } from 'lucide-react';
+import { BarChart3, Database, FileText, Folder, HardDrive, Code2 } from 'lucide-react';
 import type { RepositoryInfo, TreeNode } from '../types/domain';
 
 interface Props {
@@ -56,7 +56,7 @@ export function AnalyticsPage({ repository, tree }: Props) {
     const allFiles: { name: string; size: number; lang: string }[] = [];
 
     const walk = (node: TreeNode) => {
-      if (node.type === 'directory') {
+      if (node.is_directory) {
         dirs++;
         node.children?.forEach(walk);
       } else {

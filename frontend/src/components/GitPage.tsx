@@ -4,14 +4,12 @@ import type { RepositoryInfo } from '../types/domain';
 
 interface Props {
   repository: RepositoryInfo | null;
-  isLoading: boolean;
-  onOpen: (path: string) => void;
+  onNavigate: (tab: string) => void;
 }
 
 export const GitPage: React.FC<Props> = ({
   repository,
-  isLoading,
-  onOpen,
+  onNavigate,
 }) => {
   const cardStyle = {
     borderRadius: '20px',
@@ -89,7 +87,7 @@ export const GitPage: React.FC<Props> = ({
               fontSize: '15px',
               marginTop: '16px'
             }}
-            onClick={() => onOpen("/home/ksk/AI-Git-assistand/frontend")}
+            onClick={() => onNavigate("explorer")}
           >
             Connect Repository
           </button>
@@ -206,7 +204,7 @@ export const GitPage: React.FC<Props> = ({
           <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column' }}>
             <h3 style={{ margin: '0 0 24px 0', color: 'white', fontSize: '18px', fontWeight: 600 }}>Git Activity</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {simulatedActivities.map((activity, index) => {
+              {simulatedActivities.map((activity) => {
                 const Icon = activity.icon;
                 return (
                   <div key={activity.id} style={{ 

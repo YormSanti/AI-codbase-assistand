@@ -59,8 +59,10 @@ setup when this phase starts.*
 
 ## Environment notes
 
-- Tauri requires a Rust toolchain, not present in this environment. The
-  frontend runs as a plain web app for now; wrapping it in Tauri later is a
-  small, additive change (see docs/ARCHITECTURE.md).
+- [x] A Tauri 2 desktop shell now bundles the React UI and FastAPI backend
+  sidecar, uses a native repository folder picker, and stores its database in
+  the OS application-data directory.
+- Building Tauri on Linux requires the WebKitGTK 4.1 development packages.
+  They must be installed by an administrator before producing an installer.
 - Python 3.14 is in use; all Phase 1 dependencies (FastAPI, SQLAlchemy,
   GitPython, Pydantic v2) installed and tested cleanly against it.

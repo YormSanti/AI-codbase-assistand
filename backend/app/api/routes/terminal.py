@@ -2,6 +2,8 @@ import os
 import pty
 import asyncio
 import signal
+from pathlib import Path
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter(prefix="/ws", tags=["terminal"])
@@ -21,14 +23,20 @@ async def read_from_pty(fd, websocket: WebSocket):
 @router.websocket("/terminal")
 async def terminal_websocket(websocket: WebSocket):
     await websocket.accept()
-    
+
+    requested_cwd = websocket.query_params.get("cwd")
+    cwd = Path(requested_cwd).expanduser().resolve() if requested_cwd else Path.home()
+    if not cwd.is_dir():
+        await websocket.send_text(f"\r\nTerminal directory does not exist: {cwd}\r\n")
+        await websocket.close(code=1008)
+        return
+
     # Fork a new pty for bash
     pid, fd = pty.fork()
     if pid == 0:
         # Child process
         os.environ["TERM"] = "xterm-256color"
-        os.environ["HOME"] = os.path.expanduser("~")
-        os.chdir("/home/ksk/AI-Git-assistand")
+        os.chdir(cwd)
         os.execv("/bin/bash", ["bash", "-i"])
     else:
         # Parent process

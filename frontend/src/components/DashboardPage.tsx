@@ -1,18 +1,17 @@
 import { useState, useEffect } from "react";
 import type { RepositoryInfo, TreeNode } from "../types/domain";
 import {
-  FolderGit2, GitBranch, FileCode2, Zap, Bot, Terminal,
-  Play, ChevronRight, BarChart3, Clock, TrendingUp,
-  Star, GitCommit, Layers, Shield, Search, ArrowRight,
-  Activity, Code2, Sparkles, Database, GitMerge,
-  AlertCircle, CheckCircle2, Circle,
+  GitBranch, FileCode2, Zap, Bot, Terminal,
+  Play, ChevronRight, BarChart3, Clock,
+  GitCommit, Shield, ArrowRight,
+  Activity, Code2, Sparkles, Database,
+  CheckCircle2,
 } from "lucide-react";
 
 interface Props {
   repository: RepositoryInfo | null;
   tree: TreeNode | null;
   isLoading: boolean;
-  onOpen: (path: string) => void;
   onNavigate: (tab: string) => void;
 }
 
@@ -62,7 +61,7 @@ const RECENT_ACTIVITY = [
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export function DashboardPage({ repository, tree, isLoading, onOpen, onNavigate }: Props) {
+export function DashboardPage({ repository, tree, isLoading, onNavigate }: Props) {
   const { total, byLang } = countFiles(tree);
   const topLangs = Object.entries(byLang).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const [now, setNow] = useState(new Date());
@@ -113,7 +112,7 @@ export function DashboardPage({ repository, tree, isLoading, onOpen, onNavigate 
             </div>
             {!repository && (
               <button
-                onClick={() => onOpen("/home/ksk/AI-Git-assistand/frontend")}
+                onClick={() => onNavigate("explorer")}
                 disabled={isLoading}
                 style={{
                   display: "flex", alignItems: "center", gap: "8px",

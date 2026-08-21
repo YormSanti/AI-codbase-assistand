@@ -14,7 +14,12 @@ class Settings(BaseSettings):
 
     app_name: str = "DevPilot AI"
     database_path: Path = Path(__file__).resolve().parent.parent / "data" / "devpilot.db"
-    cors_origins: list[str] = ["http://localhost:1420", "http://localhost:5173"]
+    cors_origins: list[str] = [
+        "http://localhost:1420",
+        "http://localhost:5173",
+        "tauri://localhost",
+        "http://tauri.localhost",
+    ]
 
     @property
     def database_url(self) -> str:

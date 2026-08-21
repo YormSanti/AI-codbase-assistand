@@ -126,6 +126,25 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.02em;
 }
 
+.ai-agent-body {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
+}
+
+@media (max-width: 1150px) {
+  .ai-agent-page {
+    overflow-y: auto !important;
+  }
+
+  .ai-agent-body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible !important;
+  }
+
+  .ai-agent-sidebar {
+    overflow: visible !important;
+  }
+}
+
 /* Glassmorphism Card Utilities */
 .glass-card {
   background: rgba(18, 18, 21, 0.85);
