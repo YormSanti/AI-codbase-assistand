@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
-import { Plus, X } from "lucide-react";
+import { Plus, SquareTerminal, X } from "lucide-react";
 import { Terminal as XTerm } from "xterm";
 import "xterm/css/xterm.css";
 import { getBackendUrl } from "@/api/client";
 import type { RepositoryInfo } from "@/types/domain";
 
-interface TerminalTab {
+interface TerminalPane {
   id: number;
-  title: string;
 }
 
 async function readClipboardText(): Promise<string> {
@@ -80,10 +79,21 @@ function TerminalSession({
     let ws: WebSocket | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
+    const sendSize = () => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(`\0DEVPILOT_RESIZE:${term.cols}:${term.rows}`);
+      }
+    };
+
     const handleResize = () => {
-      if (!disposed && terminalElement.offsetParent) fitAddon.fit();
+      if (!disposed && terminalElement.offsetParent) {
+        fitAddon.fit();
+        sendSize();
+      }
     };
     window.addEventListener("resize", handleResize);
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(terminalElement);
 
     const connect = async () => {
       try {
@@ -94,6 +104,7 @@ function TerminalSession({
         if (repository?.root_path) wsUrl.searchParams.set("cwd", repository.root_path);
 
         ws = new WebSocket(wsUrl);
+        ws.onopen = () => handleResize();
         ws.onmessage = (event) => term.write(event.data);
         ws.onerror = () => {
           term.writeln("\r\n\x1b[1;31mTerminal backend is not ready.\x1b[0m");
@@ -147,6 +158,7 @@ function TerminalSession({
     return () => {
       disposed = true;
       window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       terminalElement.removeEventListener("contextmenu", handleContextMenu);
       dataDisposable.dispose();
@@ -168,21 +180,38 @@ function TerminalSession({
 
 export function TerminalPage({ repository }: { repository: RepositoryInfo | null }) {
   const nextId = useRef(2);
-  const [tabs, setTabs] = useState<TerminalTab[]>([{ id: 1, title: "Terminal 1" }]);
+  const [panes, setPanes] = useState<TerminalPane[]>([{ id: 1 }]);
   const [activeId, setActiveId] = useState(1);
 
   const addTerminal = () => {
     const id = nextId.current++;
-    setTabs(current => [...current, { id, title: `Terminal ${id}` }]);
+    setPanes(current => [...current, { id }]);
     setActiveId(id);
   };
 
   const closeTerminal = (id: number) => {
-    if (tabs.length === 1) return;
-    const index = tabs.findIndex(tab => tab.id === id);
-    const remaining = tabs.filter(tab => tab.id !== id);
-    setTabs(remaining);
+    if (panes.length === 1) return;
+    const index = panes.findIndex(pane => pane.id === id);
+    const remaining = panes.filter(pane => pane.id !== id);
+    setPanes(remaining);
     if (id === activeId) setActiveId(remaining[Math.max(0, index - 1)].id);
+  };
+
+  const gridStyle = (): React.CSSProperties => {
+    if (panes.length === 1) return { gridTemplateColumns: "minmax(0, 1fr)" };
+    if (panes.length === 2) return { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" };
+    if (panes.length <= 4) {
+      return {
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        gridTemplateRows: "repeat(2, minmax(0, 1fr))",
+      };
+    }
+
+    const columns = Math.ceil(Math.sqrt(panes.length));
+    return {
+      gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+      gridAutoRows: "minmax(0, 1fr)",
+    };
   };
 
   return (
@@ -197,86 +226,112 @@ export function TerminalPage({ repository }: { repository: RepositoryInfo | null
     }}>
       <div style={{
         display: "flex",
-        alignItems: "end",
-        gap: "4px",
-        minHeight: "36px",
-        overflowX: "auto",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+        minHeight: "42px",
+        marginBottom: "8px",
       }}>
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveId(tab.id)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              height: "34px",
-              padding: "0 10px 0 14px",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderBottom: activeId === tab.id ? "2px solid #8b5cf6" : "1px solid rgba(255,255,255,0.1)",
-              borderRadius: "9px 9px 0 0",
-              background: activeId === tab.id ? "#0a0a0e" : "rgba(255,255,255,0.04)",
-              color: activeId === tab.id ? "var(--foreground)" : "var(--muted-foreground)",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              fontSize: "12px",
-            }}
-          >
-            <span>{tab.title}</span>
-            {tabs.length > 1 && (
-              <span
-                role="button"
-                aria-label={`Close ${tab.title}`}
-                onClick={event => {
-                  event.stopPropagation();
-                  closeTerminal(tab.id);
-                }}
-                style={{ display: "flex", padding: "2px", borderRadius: "4px" }}
-              >
-                <X size={13} />
-              </span>
-            )}
-          </button>
-        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: "9px", color: "var(--muted-foreground)" }}>
+          <SquareTerminal size={17} color="#a78bfa" />
+          <span style={{ fontSize: "12px", fontWeight: 700 }}>Terminal workspace</span>
+          <span style={{ fontSize: "11px", opacity: 0.65 }}>{panes.length} {panes.length === 1 ? "pane" : "panes"}</span>
+        </div>
         <button
           type="button"
           onClick={addTerminal}
           aria-label="New terminal"
-          title="New terminal"
+          title="Add another terminal pane"
           style={{
-            display: "grid",
-            placeItems: "center",
-            width: "32px",
-            height: "32px",
-            marginBottom: "2px",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "8px",
-            background: "rgba(255,255,255,0.04)",
-            color: "var(--muted-foreground)",
+            display: "flex",
+            alignItems: "center",
+            gap: "7px",
+            height: "34px",
+            padding: "0 12px",
+            border: "1px solid rgba(139,92,246,0.4)",
+            borderRadius: "9px",
+            background: "rgba(139,92,246,0.12)",
+            color: "#c4b5fd",
             cursor: "pointer",
             flexShrink: 0,
+            fontSize: "12px",
+            fontWeight: 700,
           }}
         >
           <Plus size={16} />
+          Add terminal
         </button>
       </div>
 
       <div style={{
         flex: 1,
         minHeight: 0,
-        borderRadius: "0 16px 16px 16px",
-        overflow: "hidden",
-        background: "#0a0a0e",
-        border: "1px solid rgba(255,255,255,0.08)",
-        padding: "16px",
+        display: "grid",
+        gap: "7px",
+        ...gridStyle(),
       }}>
-        {tabs.map(tab => (
+        {panes.map((pane, index) => (
           <div
-            key={tab.id}
-            style={{ display: activeId === tab.id ? "block" : "none", width: "100%", height: "100%" }}
+            key={pane.id}
+            onMouseDown={() => setActiveId(pane.id)}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 0,
+              minHeight: 0,
+              overflow: "hidden",
+              borderRadius: "12px",
+              background: "#0a0a0e",
+              border: activeId === pane.id ? "1px solid rgba(139,92,246,0.7)" : "1px solid rgba(255,255,255,0.1)",
+              boxShadow: activeId === pane.id ? "0 0 0 1px rgba(139,92,246,0.15)" : "none",
+              ...(panes.length === 3 && index === 0 ? { gridRow: "1 / span 2" } : {}),
+            }}
           >
-            <TerminalSession repository={repository} isActive={activeId === tab.id} />
+            <div style={{
+              height: "32px",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0 8px 0 11px",
+              background: activeId === pane.id ? "rgba(139,92,246,0.1)" : "rgba(255,255,255,0.035)",
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+                <SquareTerminal size={13} color={activeId === pane.id ? "#a78bfa" : "#71717a"} />
+                <span style={{ fontSize: "11px", fontWeight: 700, color: activeId === pane.id ? "#ddd6fe" : "#a1a1aa" }}>
+                  Terminal {index + 1}
+                </span>
+              </div>
+              {panes.length > 1 && (
+                <button
+                  type="button"
+                  aria-label={`Close Terminal ${index + 1}`}
+                  title={`Close Terminal ${index + 1}`}
+                  onClick={event => {
+                    event.stopPropagation();
+                    closeTerminal(pane.id);
+                  }}
+                  style={{
+                    display: "grid",
+                    placeItems: "center",
+                    width: "22px",
+                    height: "22px",
+                    padding: 0,
+                    border: "none",
+                    borderRadius: "5px",
+                    background: "transparent",
+                    color: "#71717a",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            <div style={{ flex: 1, minHeight: 0, padding: "9px 10px" }}>
+              <TerminalSession repository={repository} isActive={activeId === pane.id} />
+            </div>
           </div>
         ))}
       </div>
