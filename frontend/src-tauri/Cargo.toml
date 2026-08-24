@@ -1,12 +1,12 @@
 [package]
-name = "devpilot"
+name = "ifrog"
 version = "0.1.0"
 description = "AI-powered developer intelligence desktop app"
 authors = ["DevPilot contributors"]
 edition = "2021"
 
 [lib]
-name = "devpilot_lib"
+name = "ifrog_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
