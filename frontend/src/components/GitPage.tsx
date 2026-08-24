@@ -1,5 +1,6 @@
+import { IconBrandGithub } from '@tabler/icons-react';
 import React from 'react';
-import { GitBranch, FolderGit2, Calendar, FileBox, CheckCircle2, GitCommit, GitPullRequest, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
+import { GitBranch, FolderGit2, Calendar, FileBox, CheckCircle2, GitCommit, GitPullRequest, ArrowUpCircle, ArrowDownCircle, ExternalLink } from 'lucide-react';
 import type { RepositoryInfo } from '../types/domain';
 
 interface Props {
@@ -53,10 +54,44 @@ export const GitPage: React.FC<Props> = ({
         }}>
           <GitBranch size={32} color="#34d399" style={{ filter: 'drop-shadow(0 0 12px rgba(52, 211, 153, 0.5))' }} />
         </div>
-        <div>
+        <div style={{ flex: 1 }}>
           <h1 style={{ margin: '0 0 6px 0', fontSize: '28px', fontWeight: 700, color: 'white', letterSpacing: '-0.5px' }}>Git Repository</h1>
           <p style={{ margin: 0, fontSize: '15px', color: 'rgba(255, 255, 255, 0.6)' }}>Manage branches, commits, and repository history</p>
         </div>
+        
+        {repository && (
+          <button 
+            className="hover:bg-white/10 transition-colors cursor-pointer"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 20px',
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              color: 'white',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '12px',
+              fontWeight: 600,
+              fontSize: '14px',
+            }}
+            onClick={async () => {
+              try {
+                if ("__TAURI_INTERNALS__" in window) {
+                  const { openUrl } = await import("@tauri-apps/plugin-opener");
+                  await openUrl('https://github.com/YormSanti/AI-codbase-assistand');
+                } else {
+                  window.open('https://github.com/YormSanti/AI-codbase-assistand', '_blank');
+                }
+              } catch (e) {
+                console.error(e);
+              }
+            }}
+          >
+            <IconBrandGithub size={18} />
+            Open on GitHub
+            <ExternalLink size={14} style={{ opacity: 0.5, marginLeft: '4px' }} />
+          </button>
+        )}
       </div>
 
       {!repository ? (

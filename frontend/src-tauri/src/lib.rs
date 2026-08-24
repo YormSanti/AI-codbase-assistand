@@ -121,7 +121,7 @@ async fn gemini_login_status() -> ProviderStatus {
 async fn connect_codex() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
         let binary = find_codex_binary().ok_or_else(|| {
-            "Codex CLI was not found. Install Codex, then restart DevPilot.".to_string()
+            "Codex CLI was not found. Install Codex, then restart IFROG.".to_string()
         })?;
 
         let status = Command::new(binary)
@@ -146,7 +146,7 @@ async fn connect_codex() -> Result<(), String> {
 async fn connect_gemini() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
         let binary = find_gemini_binary().ok_or_else(|| {
-            "Gemini CLI was not found. Install Gemini CLI, then restart DevPilot.".to_string()
+            "Gemini CLI was not found. Install Gemini CLI, then restart IFROG.".to_string()
         })?;
 
         #[cfg(target_os = "linux")]
@@ -306,6 +306,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let port = available_port()?;
             let data_dir = app.path().app_data_dir()?;
@@ -361,5 +362,5 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running DevPilot");
+        .expect("error while running IFROG");
 }

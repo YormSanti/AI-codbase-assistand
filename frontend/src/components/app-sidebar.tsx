@@ -4,7 +4,6 @@ import {
   IconDashboard,
   IconFolder,
   IconGitBranch,
-  IconInnerShadowTop,
   IconRobot,
   IconSettings,
   IconTerminal2,
@@ -49,11 +48,11 @@ export function AppSidebar({
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <IconInnerShadowTop className="size-4" />
+              <div className="flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden">
+                <img src="/logo.png" alt="IFROG Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">DevPilot AI</span>
+                <span className="truncate font-semibold">IFROG</span>
                 <span className="truncate text-xs text-muted-foreground">
                   {repository ? repository.name : "Intelligence Platform"}
                 </span>
