@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
-import { Plus, SquareTerminal, X } from "lucide-react";
+import { Plus, SquareTerminal, X, Maximize, Minimize } from "lucide-react";
 import { Terminal as XTerm } from "xterm";
 import "xterm/css/xterm.css";
 import { getBackendUrl } from "@/api/client";
@@ -179,35 +179,94 @@ function TerminalSession({
 }
 
 export function TerminalPage({ repository }: { repository: RepositoryInfo | null }) {
-  const nextId = useRef(2);
-  const [panes, setPanes] = useState<TerminalPane[]>([{ id: 1 }]);
-  const [activeId, setActiveId] = useState(1);
+  const nextPaneId = useRef(2);
+  const nextTabId = useRef(2);
+  
+  interface TabData {
+    id: number;
+    panes: TerminalPane[];
+    activePaneId: number;
+  }
+  
+  const [tabs, setTabs] = useState<TabData[]>([{ id: 1, panes: [{ id: 1 }], activePaneId: 1 }]);
+  const [activeTabId, setActiveTabId] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const addTerminal = () => {
-    const id = nextId.current++;
-    setPanes(current => [...current, { id }]);
-    setActiveId(id);
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
   };
 
-  const closeTerminal = (id: number) => {
-    if (panes.length === 1) return;
-    const index = panes.findIndex(pane => pane.id === id);
-    const remaining = panes.filter(pane => pane.id !== id);
-    setPanes(remaining);
-    if (id === activeId) setActiveId(remaining[Math.max(0, index - 1)].id);
+
+  const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
+
+  const addTab = () => {
+    const tId = nextTabId.current++;
+    const pId = nextPaneId.current++;
+    setTabs(current => [...current, { id: tId, panes: [{ id: pId }], activePaneId: pId }]);
+    setActiveTabId(tId);
+  };
+  
+  const closeTab = (id: number) => {
+    if (tabs.length === 1) return;
+    const index = tabs.findIndex(t => t.id === id);
+    const remaining = tabs.filter(t => t.id !== id);
+    setTabs(remaining);
+    if (id === activeTabId) setActiveTabId(remaining[Math.max(0, index - 1)].id);
   };
 
-  const gridStyle = (): React.CSSProperties => {
-    if (panes.length === 1) return { gridTemplateColumns: "minmax(0, 1fr)" };
-    if (panes.length === 2) return { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" };
-    if (panes.length <= 4) {
+  const addSplit = (tabId: number) => {
+    const pId = nextPaneId.current++;
+    setTabs(current => current.map(t => {
+      if (t.id === tabId) {
+        return { ...t, panes: [...t.panes, { id: pId }], activePaneId: pId };
+      }
+      return t;
+    }));
+  };
+
+  const closeSplit = (tabId: number, paneId: number) => {
+    setTabs(current => current.map(t => {
+      if (t.id === tabId) {
+        if (t.panes.length === 1) return t;
+        const index = t.panes.findIndex(p => p.id === paneId);
+        const remaining = t.panes.filter(p => p.id !== paneId);
+        return {
+          ...t,
+          panes: remaining,
+          activePaneId: t.activePaneId === paneId ? remaining[Math.max(0, index - 1)].id : t.activePaneId
+        };
+      }
+      return t;
+    }));
+  };
+
+  const setActivePane = (tabId: number, paneId: number) => {
+    setTabs(current => current.map(t => t.id === tabId ? { ...t, activePaneId: paneId } : t));
+  };
+
+  const gridStyle = (panesCount: number): React.CSSProperties => {
+    if (panesCount === 1) return { gridTemplateColumns: "minmax(0, 1fr)" };
+    if (panesCount === 2) return { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" };
+    if (panesCount <= 4) {
       return {
         gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
         gridTemplateRows: "repeat(2, minmax(0, 1fr))",
       };
     }
-
-    const columns = Math.ceil(Math.sqrt(panes.length));
+    const columns = Math.ceil(Math.sqrt(panesCount));
     return {
       gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
       gridAutoRows: "minmax(0, 1fr)",
@@ -215,7 +274,7 @@ export function TerminalPage({ repository }: { repository: RepositoryInfo | null
   };
 
   return (
-    <div style={{
+    <div ref={containerRef} style={{
       display: "flex",
       flexDirection: "column",
       width: "100%",
@@ -232,35 +291,77 @@ export function TerminalPage({ repository }: { repository: RepositoryInfo | null
         minHeight: "42px",
         marginBottom: "8px",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "9px", color: "var(--muted-foreground)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "9px", overflowX: "auto" }}>
           <SquareTerminal size={17} color="#a78bfa" />
-          <span style={{ fontSize: "12px", fontWeight: 700 }}>Terminal workspace</span>
-          <span style={{ fontSize: "11px", opacity: 0.65 }}>{panes.length} {panes.length === 1 ? "pane" : "panes"}</span>
+          {tabs.map((tab, idx) => (
+             <div 
+               key={tab.id}
+               onClick={() => setActiveTabId(tab.id)}
+               style={{
+                 display: "flex", alignItems: "center", gap: "6px",
+                 padding: "6px 12px",
+                 background: activeTabId === tab.id ? "rgba(139,92,246,0.15)" : "transparent",
+                 border: activeTabId === tab.id ? "1px solid rgba(139,92,246,0.4)" : "1px solid transparent",
+                 borderRadius: "6px",
+                 cursor: "pointer",
+                 color: activeTabId === tab.id ? "#c4b5fd" : "var(--muted-foreground)",
+                 fontSize: "12px", fontWeight: 600
+               }}
+             >
+               Tab {idx + 1}
+               {tabs.length > 1 && (
+                 <X 
+                   size={12} 
+                   onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }} 
+                   style={{ opacity: 0.7, cursor: "pointer" }}
+                 />
+               )}
+             </div>
+          ))}
         </div>
-        <button
-          type="button"
-          onClick={addTerminal}
-          aria-label="New terminal"
-          title="Add another terminal pane"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "7px",
-            height: "34px",
-            padding: "0 12px",
-            border: "1px solid rgba(139,92,246,0.4)",
-            borderRadius: "9px",
-            background: "rgba(139,92,246,0.12)",
-            color: "#c4b5fd",
-            cursor: "pointer",
-            flexShrink: 0,
-            fontSize: "12px",
-            fontWeight: 700,
-          }}
-        >
-          <Plus size={16} />
-          Add terminal
-        </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title="Toggle full screen"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "34px",
+              height: "34px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "9px",
+              background: "rgba(255,255,255,0.05)",
+              color: "var(--muted-foreground)",
+              cursor: "pointer",
+            }}
+          >
+            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          </button>
+          <button
+            type="button"
+            onClick={addTab}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "7px",
+              height: "34px",
+              padding: "0 12px",
+              border: "1px solid rgba(139,92,246,0.4)",
+              borderRadius: "9px",
+              background: "rgba(139,92,246,0.12)",
+              color: "#c4b5fd",
+              cursor: "pointer",
+              flexShrink: 0,
+              fontSize: "12px",
+              fontWeight: 700,
+            }}
+          >
+            <Plus size={16} />
+            New terminal
+          </button>
+        </div>
       </div>
 
       <div style={{
@@ -268,12 +369,12 @@ export function TerminalPage({ repository }: { repository: RepositoryInfo | null
         minHeight: 0,
         display: "grid",
         gap: "7px",
-        ...gridStyle(),
+        ...gridStyle(activeTab.panes.length),
       }}>
-        {panes.map((pane, index) => (
+        {activeTab.panes.map((pane, index) => (
           <div
             key={pane.id}
-            onMouseDown={() => setActiveId(pane.id)}
+            onMouseDown={() => setActivePane(activeTab.id, pane.id)}
             style={{
               display: "flex",
               flexDirection: "column",
@@ -282,9 +383,9 @@ export function TerminalPage({ repository }: { repository: RepositoryInfo | null
               overflow: "hidden",
               borderRadius: "12px",
               background: "#0a0a0e",
-              border: activeId === pane.id ? "1px solid rgba(139,92,246,0.7)" : "1px solid rgba(255,255,255,0.1)",
-              boxShadow: activeId === pane.id ? "0 0 0 1px rgba(139,92,246,0.15)" : "none",
-              ...(panes.length === 3 && index === 0 ? { gridRow: "1 / span 2" } : {}),
+              border: activeTab.activePaneId === pane.id ? "1px solid rgba(139,92,246,0.7)" : "1px solid rgba(255,255,255,0.1)",
+              boxShadow: activeTab.activePaneId === pane.id ? "0 0 0 1px rgba(139,92,246,0.15)" : "none",
+              ...(activeTab.panes.length === 3 && index === 0 ? { gridRow: "1 / span 2" } : {}),
             }}
           >
             <div style={{
@@ -294,43 +395,46 @@ export function TerminalPage({ repository }: { repository: RepositoryInfo | null
               alignItems: "center",
               justifyContent: "space-between",
               padding: "0 8px 0 11px",
-              background: activeId === pane.id ? "rgba(139,92,246,0.1)" : "rgba(255,255,255,0.035)",
+              background: activeTab.activePaneId === pane.id ? "rgba(139,92,246,0.1)" : "rgba(255,255,255,0.035)",
               borderBottom: "1px solid rgba(255,255,255,0.08)",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-                <SquareTerminal size={13} color={activeId === pane.id ? "#a78bfa" : "#71717a"} />
-                <span style={{ fontSize: "11px", fontWeight: 700, color: activeId === pane.id ? "#ddd6fe" : "#a1a1aa" }}>
+                <SquareTerminal size={13} color={activeTab.activePaneId === pane.id ? "#a78bfa" : "#71717a"} />
+                <span style={{ fontSize: "11px", fontWeight: 700, color: activeTab.activePaneId === pane.id ? "#ddd6fe" : "#a1a1aa" }}>
                   Terminal {index + 1}
                 </span>
               </div>
-              {panes.length > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                 <button
                   type="button"
-                  aria-label={`Close Terminal ${index + 1}`}
-                  title={`Close Terminal ${index + 1}`}
-                  onClick={event => {
-                    event.stopPropagation();
-                    closeTerminal(pane.id);
-                  }}
+                  onClick={e => { e.stopPropagation(); addSplit(activeTab.id); }}
                   style={{
-                    display: "grid",
-                    placeItems: "center",
-                    width: "22px",
-                    height: "22px",
-                    padding: 0,
-                    border: "none",
-                    borderRadius: "5px",
-                    background: "transparent",
-                    color: "#71717a",
-                    cursor: "pointer",
+                    display: "grid", placeItems: "center", width: "22px", height: "22px",
+                    padding: 0, border: "none", borderRadius: "5px", background: "transparent",
+                    color: "#71717a", cursor: "pointer",
                   }}
                 >
-                  <X size={13} />
+                  <Plus size={13} />
                 </button>
-              )}
+                {activeTab.panes.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); closeSplit(activeTab.id, pane.id); }}
+                    style={{
+                      display: "grid", placeItems: "center", width: "22px", height: "22px",
+                      padding: 0, border: "none", borderRadius: "5px", background: "transparent",
+                      color: "#71717a", cursor: "pointer",
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1, minHeight: 0, padding: "9px 10px" }}>
-              <TerminalSession repository={repository} isActive={activeId === pane.id} />
+            <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+              <div style={{ position: "absolute", inset: "9px 10px" }}>
+                <TerminalSession repository={repository} isActive={activeTab.activePaneId === pane.id && activeTabId === activeTab.id} />
+              </div>
             </div>
           </div>
         ))}

@@ -29,6 +29,7 @@ class _GrammarConfig:
     function_types: frozenset[str]
     function_name_types: frozenset[str]
     import_types: frozenset[str]
+    variable_function_types: frozenset[str] = frozenset()
 
 
 def _python_config() -> _GrammarConfig:
@@ -50,6 +51,7 @@ def _javascript_config() -> _GrammarConfig:
         function_types=frozenset({"function_declaration", "method_definition"}),
         function_name_types=frozenset({"identifier", "property_identifier"}),
         import_types=frozenset({"import_statement"}),
+        variable_function_types=frozenset({"variable_declarator", "field_definition", "pair"}),
     )
 
 
@@ -61,6 +63,7 @@ def _typescript_config() -> _GrammarConfig:
         function_types=frozenset({"function_declaration", "method_definition"}),
         function_name_types=frozenset({"identifier", "property_identifier"}),
         import_types=frozenset({"import_statement"}),
+        variable_function_types=frozenset({"variable_declarator", "public_field_definition", "pair"}),
     )
 
 
@@ -72,6 +75,7 @@ def _tsx_config() -> _GrammarConfig:
         function_types=frozenset({"function_declaration", "method_definition"}),
         function_name_types=frozenset({"identifier", "property_identifier"}),
         import_types=frozenset({"import_statement"}),
+        variable_function_types=frozenset({"variable_declarator", "public_field_definition", "pair"}),
     )
 
 
@@ -133,6 +137,25 @@ def _walk(
             )
         )
         return
+
+    if node.type in config.variable_function_types:
+        if any(child.type in ("arrow_function", "function", "function_expression") for child in node.children):
+            name = _find_name(node, config.function_name_types, source)
+            # It's a method if it's a field in a class, or a pair in a class-like object, and we have a current_class.
+            is_method = bool(current_class) and node.type in ("field_definition", "public_field_definition", "pair")
+            kind = SymbolKind.METHOD if is_method else SymbolKind.FUNCTION
+            symbols.append(
+                CodeSymbol(
+                    name=name,
+                    kind=kind,
+                    start_line=node.start_point[0] + 1,
+                    end_line=node.end_point[0] + 1,
+                    parent_name=current_class if is_method else None,
+                )
+            )
+            for child in node.children:
+                _walk(child, source, config, None, symbols)
+            return
 
     for child in node.children:
         _walk(child, source, config, current_class, symbols)
