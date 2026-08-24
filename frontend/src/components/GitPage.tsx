@@ -77,8 +77,8 @@ export const GitPage: React.FC<Props> = ({
             onClick={async () => {
               try {
                 if ("__TAURI_INTERNALS__" in window) {
-                  const { open } = await import("@tauri-apps/plugin-shell");
-                  await open('https://github.com/YormSanti/AI-codbase-assistand');
+                  const { openUrl } = await import("@tauri-apps/plugin-opener");
+                  await openUrl('https://github.com/YormSanti/AI-codbase-assistand');
                 } else {
                   window.open('https://github.com/YormSanti/AI-codbase-assistand', '_blank');
                 }
