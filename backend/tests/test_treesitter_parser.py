@@ -90,3 +90,28 @@ def test_parse_reports_1_indexed_line_numbers() -> None:
 
     assert symbol.start_line == 1
     assert symbol.end_line == 2
+
+def test_parse_javascript_arrow_functions() -> None:
+    parser = TreeSitterCodeParser()
+    source = b"""
+const topLevelArrow = () => {};
+class ArrowClass {
+  methodArrow = () => {};
+}
+const obj = {
+  nestedObjArrow: () => {}
+};
+"""
+    symbols = parser.parse(source, Language.JAVASCRIPT)
+    names_and_kinds = {(s.name, s.kind) for s in symbols}
+
+    assert ("topLevelArrow", SymbolKind.FUNCTION) in names_and_kinds
+    assert ("ArrowClass", SymbolKind.CLASS) in names_and_kinds
+    
+    method_arrow = next(s for s in symbols if s.name == "methodArrow")
+    assert method_arrow.kind == SymbolKind.METHOD
+    assert method_arrow.parent_name == "ArrowClass"
+
+    nested_arrow = next(s for s in symbols if s.name == "nestedObjArrow")
+    assert nested_arrow.kind == SymbolKind.FUNCTION
+    assert nested_arrow.parent_name is None
