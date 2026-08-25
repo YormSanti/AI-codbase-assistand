@@ -194,7 +194,7 @@ function TerminalSession({
   return <div ref={terminalRef} style={{ width: "100%", height: "100%" }} />;
 }
 
-export function TerminalPage({ repository }: { repository: RepositoryInfo | null }) {
+export function TerminalPage({ repository, isActive = true }: { repository: RepositoryInfo | null, isActive?: boolean }) {
   const nextPaneId = useRef(2);
   const nextTabId = useRef(2);
   
@@ -457,7 +457,7 @@ export function TerminalPage({ repository }: { repository: RepositoryInfo | null
             </div>
             <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
               <div style={{ position: "absolute", inset: "9px 10px" }}>
-                <TerminalSession repository={repository} isActive={tab.activePaneId === pane.id && activeTabId === tab.id} />
+                <TerminalSession repository={repository} isActive={isActive && tab.activePaneId === pane.id && activeTabId === tab.id} />
               </div>
             </div>
           </div>
