@@ -65,9 +65,9 @@ export default function App() {
             const info = await repositoryApi.open(savedRepo);
             const treeData = await repositoryApi.getTree(info.id);
             const savedFilePath = localStorage.getItem("ifrog_selected_file");
-            let foundNode = null;
+            let foundNode: TreeNode | null = null;
             if (savedFilePath && treeData) {
-              const findNode = (node) => {
+              const findNode = (node: TreeNode): TreeNode | null => {
                 if (node.path === savedFilePath) return node;
                 if (node.children) {
                   for (const child of node.children) {
