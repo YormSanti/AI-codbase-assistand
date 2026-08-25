@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./App.css";
 import { repositoryApi } from "./api/repositoryApi";
 import { ApiError } from "./api/client";
@@ -15,15 +15,27 @@ import { SettingsPage } from "@/components/SettingsPage";
 
 import type { RepositoryInfo, TreeNode } from "./types/domain";
 import { AlertCircle } from "lucide-react";
-
+import { useAutoUpdater } from "./hooks/useAutoUpdater";
 
 export default function App() {
+  useAutoUpdater();
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<TreeNode | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [hasVisitedTerminal, setHasVisitedTerminal] = useState(false);
+  const [hasVisitedAi, setHasVisitedAi] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === "terminal" && !hasVisitedTerminal) {
+      setHasVisitedTerminal(true);
+    }
+    if ((activeTab === "ai" || activeTab === "ai-agent") && !hasVisitedAi) {
+      setHasVisitedAi(true);
+    }
+  }, [activeTab, hasVisitedTerminal, hasVisitedAi]);
 
   async function handleOpen(path: string) {
     setIsLoading(true);
@@ -92,8 +104,10 @@ export default function App() {
           )}
 
           {/* Terminal */}
-          {activeTab === "terminal" && (
-            <TerminalPage repository={repository} />
+          {hasVisitedTerminal && (
+            <div style={{ display: activeTab === "terminal" ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
+              <TerminalPage repository={repository} isActive={activeTab === "terminal"} />
+            </div>
           )}
 
           {/* Git Repository */}
@@ -105,8 +119,10 @@ export default function App() {
           )}
 
           {/* AI Agent */}
-          {(activeTab === "ai" || activeTab === "ai-agent") && (
-            <AIAgentPage repository={repository} />
+          {hasVisitedAi && (
+            <div style={{ display: (activeTab === "ai" || activeTab === "ai-agent") ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
+              <AIAgentPage repository={repository} />
+            </div>
           )}
 
           {/* Analytics */}
