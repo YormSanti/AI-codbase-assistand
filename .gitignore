@@ -29,3 +29,5 @@ src-tauri/target/
 # Env
 .env
 .env.local
+.vercel
+.env*
