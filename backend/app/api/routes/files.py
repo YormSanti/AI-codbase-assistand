@@ -4,10 +4,19 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from app.api.deps import IndexingServiceDep
-from app.api.schemas import CodeSymbolResponse
+from app.api.schemas import CodeSymbolResponse, FilePreviewResponse
 from app.domain.exceptions import IndexedFileNotFoundError
 
 router = APIRouter(prefix="/api/files", tags=["files"])
+
+
+@router.get("/{file_id}/content", response_model=FilePreviewResponse)
+def get_file_content(file_id: int, service: IndexingServiceDep) -> FilePreviewResponse:
+    try:
+        preview = service.get_file_preview(file_id)
+    except IndexedFileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FilePreviewResponse.from_domain(preview)
 
 
 @router.get("/{file_id}/symbols", response_model=list[CodeSymbolResponse])

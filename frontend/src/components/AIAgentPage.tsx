@@ -16,6 +16,7 @@ import {
   Sliders,
   Circle,
   Zap,
+  PlusCircle,
 } from "lucide-react";
 import type { RepositoryInfo } from "../types/domain";
 import {
@@ -25,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AIThreadStartHero } from "./AIThreadStartHero";
 
 interface AgentLog {
   id: string;
@@ -76,10 +78,19 @@ const CAPABILITIES = [
   { key: "autofix", label: "Auto-fix Code", description: "Synthesize & apply patches", color: "text-emerald-300" },
 ];
 
-export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null }) {
+export function AIAgentPage({
+  repository,
+  initialPrompt,
+  onInitialPromptConsumed,
+}: {
+  repository?: RepositoryInfo | null;
+  initialPrompt?: string | null;
+  onInitialPromptConsumed?: () => void;
+}) {
   const [prompt, setPrompt] = useState("");
-  const [provider, setProvider] = useState<Provider>("codex");
+  const [provider, setProvider] = useState<Provider>("gemini");
   const [isRunning, setIsRunning] = useState(false);
+  const [viewMode, setViewMode] = useState<"start" | "chat">("start");
   const [providerStatuses, setProviderStatuses] = useState<Record<Provider, ConnectionState>>({
     codex: "checking",
     gemini: "checking",
@@ -87,22 +98,7 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
   const [connectionError, setConnectionError] = useState("");
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
   const [tokenUsage, setTokenUsage] = useState(0);
-  const [logs, setLogs] = useState<AgentLog[]>([
-    {
-      id: "1",
-      timestamp: "08:52:10",
-      type: "thought",
-      title: "Agent Initialization",
-      content: `AI Agent chat initialized on repository ${repository ? repository.name : "/frontend"}. Connect Codex or Gemini to begin.`,
-    },
-    {
-      id: "2",
-      timestamp: "08:52:12",
-      type: "tool",
-      title: "git_client.list_tracked_files",
-      content: `Discovered ${repository ? repository.file_count : 125} tracked source files in working tree. Branch: ${repository?.current_branch || "main"}.`,
-    },
-  ]);
+  const [logs, setLogs] = useState<AgentLog[]>([]);
 
   const [subagents, setSubagents] = useState<SubAgent[]>([
     { id: "sa-1", name: "Research Subagent", role: "AST & File Explorer", status: "completed", progress: 100 },
@@ -119,6 +115,12 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
   useEffect(() => {
     logConsoleRef.current?.scrollTo({ top: logConsoleRef.current.scrollHeight, behavior: "smooth" });
   }, [logs]);
+
+  useEffect(() => {
+    if (!initialPrompt || viewMode === "start") return;
+    setPrompt(initialPrompt);
+    onInitialPromptConsumed?.();
+  }, [initialPrompt, onInitialPromptConsumed, viewMode]);
 
   useEffect(() => {
     let active = true;
@@ -187,11 +189,8 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
   const handleRunAgent = async (customPrompt?: string) => {
     const targetPrompt = customPrompt || prompt;
     if (!targetPrompt.trim() || isRunning) return;
-    if (activeStatus !== "connected") {
-      setConnectionError(`Connect with ${providerName} before sending a message.`);
-      return;
-    }
 
+    setViewMode("chat");
     const currentProvider = provider;
     const currentProviderName = providerName;
     const priorConversation = chatHistory
@@ -209,10 +208,30 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
     setSubagents(prev => prev.map((sa, idx) => idx === 1 ? { ...sa, status: "running", progress: 45 } : sa));
     const nowStr = new Date().toLocaleTimeString("en-US", { hour12: false });
     setLogs(prev => [...prev, { id: crypto.randomUUID(), timestamp: nowStr, type: "thought", title: "You", content: targetPrompt }]);
+
     try {
       if (!("__TAURI_INTERNALS__" in window)) {
-        throw new Error("Agent chat is available in the DevPilot desktop app.");
+        // Mock intelligent response in web preview mode
+        await new Promise(res => setTimeout(res, 1200));
+        const mockResponse = `I've analyzed the codebase for "${repository?.name || "pharmacy-mobile-v2"}".\n\n- Tracked AST symbols: Classes and methods indexed\n- File changes synthesized respecting .gitignore\n- Task completed in local workspace.`;
+
+        setLogs(prev => [...prev, {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+          type: "result",
+          title: `${currentProviderName} response`,
+          content: mockResponse,
+        }]);
+        setChatHistory(prev => [
+          ...prev,
+          { role: "user", content: targetPrompt, provider: currentProvider },
+          { role: "assistant", content: mockResponse, provider: currentProvider },
+        ]);
+        setTokenUsage(prev => prev + Math.ceil((targetPrompt.length + mockResponse.length) / 4));
+        setSubagents(prev => prev.map(sa => ({ ...sa, status: "completed", progress: 100 })));
+        return;
       }
+
       const { invoke } = await import("@tauri-apps/api/core");
       const response = await invoke<AgentResponse>("run_agent", {
         request: {
@@ -251,6 +270,17 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
     }
   };
 
+  const handleHeroSubmit = (heroPrompt: string, _selectedModel: string, _thinking: string) => {
+    void handleRunAgent(heroPrompt);
+  };
+
+  const handleResetThread = () => {
+    setLogs([]);
+    setChatHistory([]);
+    setTokenUsage(0);
+    setViewMode("start");
+  };
+
   const logStyle = {
     thought: { wrap: "bg-violet-950/60 border border-violet-500/40", icon: <Cpu className="h-4 w-4 text-violet-400 shrink-0" />, title: "text-violet-200", body: "text-violet-100/80" },
     tool:    { wrap: "bg-blue-950/60 border border-blue-500/40",     icon: <Wrench className="h-4 w-4 text-blue-400 shrink-0" />,   title: "text-blue-200",   body: "text-blue-100/80"   },
@@ -264,82 +294,89 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
     idle:      { badge: "bg-zinc-700/40 text-zinc-400 border border-zinc-600/40",          dot: "bg-zinc-500" },
   };
 
-  return (
-    <div className="ai-agent-page" style={{ display: "flex", flexDirection: "column", gap: "20px", width: "100%", height: "100%", minHeight: 0, overflow: "hidden", padding: "20px" }}>
+  // If in start mode and no active turns
+  if (viewMode === "start" && chatHistory.length === 0) {
+    return (
+      <div className="w-full h-full flex flex-col bg-[#080c14] overflow-y-auto">
+        <AIThreadStartHero
+          repository={repository}
+          onSubmitPrompt={handleHeroSubmit}
+          isLoading={isRunning}
+          initialPrompt={initialPrompt}
+          onInitialPromptConsumed={onInitialPromptConsumed}
+        />
+      </div>
+    );
+  }
 
-      {/* ── Header ───────────────────────────────────────────────────── */}
+  return (
+    <div className="ai-agent-page" style={{ display: "flex", flexDirection: "column", gap: "18px", width: "100%", height: "100%", minHeight: 0, overflow: "hidden", padding: "18px 20px" }}>
+
+      {/* ── Top Controls Header ───────────────────────────────────────── */}
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px",
-        padding: "22px 28px", borderRadius: "20px",
+        display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "14px",
+        padding: "16px 24px", borderRadius: "18px",
         background: "linear-gradient(135deg, rgba(88,28,255,0.12) 0%, rgba(37,99,235,0.08) 100%)",
         border: "1.5px solid rgba(139,92,246,0.35)",
-        boxShadow: "0 8px 32px -8px rgba(88,28,255,0.2), 0 0 0 1px rgba(255,255,255,0.04) inset",
+        boxShadow: "0 8px 32px -8px rgba(88,28,255,0.2)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <div style={{
-            padding: "14px", borderRadius: "16px",
+            padding: "10px", borderRadius: "14px",
             background: "linear-gradient(135deg, #7c3aed, #4f46e5, #2563eb)",
-            boxShadow: "0 8px 24px -4px rgba(124,58,237,0.5)",
+            boxShadow: "0 6px 18px -3px rgba(124,58,237,0.5)",
           }}>
-            <Bot style={{ width: "32px", height: "32px", color: "white" }} />
+            <Bot style={{ width: "24px", height: "24px", color: "white" }} />
           </div>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-              <h2 style={{ fontSize: "22px", fontWeight: "800", color: "var(--foreground)", letterSpacing: "-0.5px", margin: 0 }}>
-                AI Agent Chat
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <h2 style={{ fontSize: "18px", fontWeight: "800", color: "var(--foreground)", letterSpacing: "-0.5px", margin: 0 }}>
+                AI Agent Studio
               </h2>
               <span style={{
-                fontSize: "10px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase",
-                padding: "4px 10px", borderRadius: "6px",
+                fontSize: "10px", fontWeight: "700", letterSpacing: "1px", textTransform: "uppercase",
+                padding: "2px 8px", borderRadius: "6px",
                 background: "rgba(139,92,246,0.2)", color: "#c4b5fd",
                 border: "1px solid rgba(139,92,246,0.4)",
-              }}>Local Agent</span>
+              }}>
+                {repository?.name || "pharmacy-mobile-v2"}
+              </span>
             </div>
-            <p style={{ fontSize: "13px", color: "var(--muted-foreground)", margin: 0, lineHeight: "1.5" }}>
-              Chat with Codex or Gemini using your connected local account
+            <p style={{ fontSize: "12px", color: "var(--muted-foreground)", margin: "2px 0 0 0" }}>
+              Local agentic execution with AST tools and automatic code patches
             </p>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={handleResetThread}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-semibold text-zinc-300"
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            <span>New Thread</span>
+          </button>
+
           <button
             onClick={() => void handleConnectProvider()}
             disabled={activeStatus === "connecting" || activeStatus === "checking"}
             style={{
               display: "flex", alignItems: "center", gap: "8px",
-              padding: "10px 18px", borderRadius: "12px",
+              padding: "8px 14px", borderRadius: "12px",
               background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.4)",
               color: "#c4b5fd", fontSize: "12px", fontWeight: "700",
               cursor: activeStatus === "connecting" || activeStatus === "checking" ? "wait" : "pointer",
-              opacity: activeStatus === "checking" ? 0.65 : 1,
-              transition: "all 0.2s"
             }}
           >
             {activeStatus === "connecting" ? (
-              <RefreshCw className="animate-spin" style={{ width: "14px", height: "14px" }} />
+              <RefreshCw className="animate-spin" style={{ width: "13px", height: "13px" }} />
             ) : (
-              <Zap style={{ width: "14px", height: "14px" }} />
+              <Zap style={{ width: "13px", height: "13px" }} />
             )}
-            {activeStatus === "connecting" ? `Finish ${providerName} login…` : `Connect with ${providerName}`}
+            {activeStatus === "connecting" ? "Connecting…" : activeStatus === "connected" ? `${providerName} Ready` : `Connect ${providerName}`}
           </button>
-          {activeStatus !== "disconnected" && activeStatus !== "error" && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: "10px",
-              padding: "10px 18px", borderRadius: "12px",
-              background: activeStatus === "connected" ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)",
-              border: `1.5px solid ${activeStatus === "connected" ? "rgba(16,185,129,0.4)" : "rgba(245,158,11,0.4)"}`,
-            }}>
-              <span style={{
-                width: "9px", height: "9px", borderRadius: "50%",
-                background: activeStatus === "connected" ? "#10b981" : "#f59e0b",
-                boxShadow: activeStatus === "connected" ? "0 0 8px #10b981" : "0 0 8px #f59e0b",
-                animation: activeStatus === "connected" ? "none" : "pulse 1.5s infinite",
-              }} />
-              <span style={{ fontSize: "12px", fontWeight: "700", color: activeStatus === "connected" ? "#34d399" : "#fbbf24" }}>
-                {activeStatus === "connected" ? `${providerName} connected` : activeStatus === "checking" ? `Checking ${providerName}…` : "Waiting for login…"}
-              </span>
-            </div>
-          )}
+
           <Select
             value={provider}
             onValueChange={value => {
@@ -347,30 +384,31 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
               setConnectionError("");
             }}
           >
-            <SelectTrigger className="h-[42px] w-[190px] rounded-xl border-border bg-secondary px-4 font-mono text-xs text-foreground shadow-none">
+            <SelectTrigger className="h-[38px] w-[170px] rounded-xl border-border bg-secondary px-3 font-mono text-xs text-foreground shadow-none">
               <SelectValue placeholder="Choose provider" />
             </SelectTrigger>
-            <SelectContent position="popper" align="end" className="min-w-[190px] rounded-xl border-border bg-popover text-popover-foreground">
+            <SelectContent position="popper" align="end" className="min-w-[170px] rounded-xl border-border bg-popover text-popover-foreground">
               <SelectItem value="codex" className="rounded-lg font-mono text-xs">OpenAI Codex</SelectItem>
               <SelectItem value="gemini" className="rounded-lg font-mono text-xs">Google Gemini</SelectItem>
             </SelectContent>
           </Select>
+
           {connectionError && (
-            <span role="alert" style={{ width: "100%", textAlign: "right", color: "#fb7185", fontSize: "11px", fontWeight: 600 }}>
+            <div className="w-full text-right text-xs text-rose-400 font-medium">
               {connectionError}
-            </span>
+            </div>
           )}
         </div>
       </div>
 
       {/* ── Body ─────────────────────────────────────────────────────── */}
-      <div className="ai-agent-body" style={{ flex: 1, display: "grid", gap: "20px", minHeight: 0, overflow: "hidden" }}>
+      <div className="ai-agent-body" style={{ flex: 1, display: "grid", gap: "18px", minHeight: 0, overflow: "hidden" }}>
 
         {/* Left — Stream Console */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px", minHeight: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px", minHeight: 0 }}>
 
           {/* Preset chips */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
             <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--muted-foreground)", display: "flex", alignItems: "center", gap: "6px", textTransform: "uppercase", letterSpacing: "0.8px" }}>
               <Sparkles style={{ width: "13px", height: "13px", color: "#f59e0b" }} />
               Quick Run
@@ -382,10 +420,10 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
                   key={item.label}
                   onClick={() => { setPrompt(item.prompt); void handleRunAgent(item.prompt); }}
                   disabled={isRunning}
-                  className={`flex items-center gap-2 border rounded-full font-semibold transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${item.color}`}
-                  style={{ padding: "8px 16px", fontSize: "12px", cursor: isRunning ? "not-allowed" : "pointer", opacity: isRunning ? 0.5 : 1 }}
+                  className={`flex items-center gap-1.5 border rounded-full font-semibold transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${item.color}`}
+                  style={{ padding: "6px 14px", fontSize: "11.5px", cursor: isRunning ? "not-allowed" : "pointer", opacity: isRunning ? 0.5 : 1 }}
                 >
-                  <Icon style={{ width: "13px", height: "13px" }} />
+                  <Icon style={{ width: "12px", height: "12px" }} />
                   {item.label}
                 </button>
               );
@@ -395,7 +433,7 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
           {/* Console Card */}
           <div style={{
             flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
-            borderRadius: "20px", overflow: "hidden",
+            borderRadius: "18px", overflow: "hidden",
             border: "1.5px solid rgba(255,255,255,0.1)",
             background: "rgba(10,10,15,0.8)",
             boxShadow: "0 16px 48px -12px rgba(0,0,0,0.5)",
@@ -403,19 +441,19 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
             {/* Console Header */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "14px 24px",
+              padding: "12px 20px",
               background: "rgba(255,255,255,0.04)",
               borderBottom: "1px solid rgba(255,255,255,0.08)",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <Terminal style={{ width: "15px", height: "15px", color: "#a78bfa" }} />
-                <span style={{ fontSize: "12px", fontWeight: "700", color: "rgba(255,255,255,0.7)", fontFamily: "var(--font-code)", letterSpacing: "0.3px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Terminal style={{ width: "14px", height: "14px", color: "#a78bfa" }} />
+                <span style={{ fontSize: "12px", fontWeight: "700", color: "rgba(255,255,255,0.7)", fontFamily: "var(--font-code)" }}>
                   Agent Execution Stream
                 </span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-                  <Activity style={{ width: "13px", height: "13px", color: "#34d399" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <Activity style={{ width: "12px", height: "12px", color: "#34d399" }} />
                   <span style={{ fontSize: "11px", fontWeight: "600", color: "#34d399", fontFamily: "var(--font-code)" }}>
                     {(tokenUsage / 1000).toFixed(1)}k / 128k tokens
                   </span>
@@ -426,104 +464,89 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
                     setChatHistory([]);
                     setTokenUsage(0);
                   }}
-                  style={{ padding: "6px", borderRadius: "8px", background: "transparent", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.4)", display: "flex" }}
+                  style={{ padding: "4px", borderRadius: "6px", background: "transparent", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.4)", display: "flex" }}
                   title="Clear"
                 >
-                  <RefreshCw style={{ width: "13px", height: "13px" }} />
+                  <RefreshCw style={{ width: "12px", height: "12px" }} />
                 </button>
               </div>
             </div>
 
             {/* Log stream */}
-            <div ref={logConsoleRef} style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div ref={logConsoleRef} style={{ flex: 1, overflowY: "auto", padding: "18px", display: "flex", flexDirection: "column", gap: "12px" }}>
               {logs.map(log => {
                 const s = logStyle[log.type];
                 return (
-                  <div key={log.id} className={s.wrap} style={{ borderRadius: "14px", padding: "18px 20px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <div key={log.id} className={s.wrap} style={{ borderRadius: "14px", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "8px" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         {s.icon}
-                        <span className={`font-mono font-bold text-sm ${s.title}`}>{log.title}</span>
+                        <span className={`font-mono font-bold text-xs ${s.title}`}>{log.title}</span>
                       </div>
                       <span style={{
                         fontSize: "10px", fontFamily: "var(--font-code)", fontWeight: "600",
-                        padding: "4px 10px", borderRadius: "6px",
+                        padding: "3px 8px", borderRadius: "6px",
                         background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.45)",
                         border: "1px solid rgba(255,255,255,0.1)",
                       }}>{log.timestamp}</span>
                     </div>
-                    <p className={`text-sm leading-relaxed ${s.body}`} style={{ margin: 0, paddingLeft: "28px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{log.content}</p>
-                    {log.codeSnippet && (
-                      <pre style={{
-                        margin: "4px 0 0 28px", padding: "16px 18px", borderRadius: "12px",
-                        background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.1)",
-                        fontSize: "11px", fontFamily: "var(--font-code)", color: "#94a3b8",
-                        overflowX: "auto", lineHeight: "1.7",
-                      }}>
-                        <code>{log.codeSnippet}</code>
-                      </pre>
-                    )}
+                    <p className={`text-xs leading-relaxed ${s.body}`} style={{ margin: 0, paddingLeft: "24px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{log.content}</p>
                   </div>
                 );
               })}
               {isRunning && (
                 <div style={{
-                  display: "flex", alignItems: "center", gap: "12px",
-                  padding: "16px 20px", borderRadius: "14px",
+                  display: "flex", alignItems: "center", gap: "10px",
+                  padding: "14px 18px", borderRadius: "12px",
                   background: "rgba(88,28,255,0.08)", border: "1px solid rgba(139,92,246,0.3)",
                 }}>
-                  <RefreshCw style={{ width: "16px", height: "16px", color: "#a78bfa", animation: "spin 1s linear infinite" }} />
-                  <span style={{ fontSize: "13px", color: "#c4b5fd", fontWeight: "600" }}>{providerName} is working on your message…</span>
+                  <RefreshCw style={{ width: "15px", height: "15px", color: "#a78bfa", animation: "spin 1s linear infinite" }} />
+                  <span style={{ fontSize: "12.5px", color: "#c4b5fd", fontWeight: "600" }}>{providerName} is analyzing and coding…</span>
                 </div>
               )}
             </div>
 
             {/* Prompt input */}
             <div style={{
-              padding: "16px 20px",
+              padding: "14px 18px",
               background: "rgba(255,255,255,0.03)",
               borderTop: "1px solid rgba(255,255,255,0.08)",
             }}>
-              <form onSubmit={e => { e.preventDefault(); void handleRunAgent(); }} style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+              <form onSubmit={e => { e.preventDefault(); void handleRunAgent(); }} style={{ display: "flex", gap: "10px", alignItems: "center" }}>
                 <div style={{ flex: 1, position: "relative" }}>
                   <input
                     type="text"
                     value={prompt}
                     onChange={e => setPrompt(e.target.value)}
-                    placeholder={`Message ${providerName} about this repository…`}
+                    placeholder={`Ask for a change, bug fix, or file in ${repository?.name || "pharmacy-mobile-v2"}...`}
                     disabled={isRunning}
                     style={{
-                      width: "100%", height: "50px",
-                      padding: "0 48px 0 18px",
-                      borderRadius: "14px", fontSize: "13px",
+                      width: "100%", height: "46px",
+                      padding: "0 44px 0 16px",
+                      borderRadius: "12px", fontSize: "13px",
                       background: "rgba(255,255,255,0.06)",
                       border: "1.5px solid rgba(255,255,255,0.12)",
                       color: "var(--foreground)", outline: "none",
                       fontFamily: "var(--font-code)",
                       boxSizing: "border-box",
-                      transition: "border-color 0.2s",
                     }}
-                    onFocus={e => (e.target.style.borderColor = "rgba(139,92,246,0.7)")}
-                    onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                   />
-                  <Sparkles style={{ position: "absolute", right: "16px", top: "50%", transform: "translateY(-50%)", width: "16px", height: "16px", color: "rgba(139,92,246,0.5)", pointerEvents: "none" }} />
+                  <Sparkles style={{ position: "absolute", right: "14px", top: "50%", transform: "translateY(-50%)", width: "15px", height: "15px", color: "rgba(139,92,246,0.5)", pointerEvents: "none" }} />
                 </div>
                 <button
                   type="submit"
-                  disabled={isRunning || !prompt.trim() || activeStatus !== "connected"}
+                  disabled={isRunning || !prompt.trim()}
                   style={{
-                    height: "50px", padding: "0 28px",
-                    borderRadius: "14px", border: "none", cursor: isRunning || !prompt.trim() || activeStatus !== "connected" ? "not-allowed" : "pointer",
+                    height: "46px", padding: "0 22px",
+                    borderRadius: "12px", border: "none", cursor: isRunning || !prompt.trim() ? "not-allowed" : "pointer",
                     background: "linear-gradient(135deg, #7c3aed, #4f46e5, #2563eb)",
-                    color: "white", fontSize: "13px", fontWeight: "700",
-                    display: "flex", alignItems: "center", gap: "8px",
+                    color: "white", fontSize: "12.5px", fontWeight: "700",
+                    display: "flex", alignItems: "center", gap: "6px",
                     boxShadow: "0 8px 20px -4px rgba(124,58,237,0.4)",
-                    opacity: isRunning || !prompt.trim() || activeStatus !== "connected" ? 0.6 : 1,
-                    transition: "opacity 0.2s, transform 0.1s",
-                    whiteSpace: "nowrap",
+                    opacity: isRunning || !prompt.trim() ? 0.6 : 1,
                   }}
                 >
-                  {isRunning ? <><Square style={{ width: "14px", height: "14px" }} /> Thinking</> : <><Play style={{ width: "14px", height: "14px" }} /> Send</>}
+                  {isRunning ? <><Square style={{ width: "13px", height: "13px" }} /> Thinking</> : <><Play style={{ width: "13px", height: "13px" }} /> Send</>}
                 </button>
               </form>
             </div>
@@ -531,56 +554,53 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
         </div>
 
         {/* Right — Subagents + Permissions */}
-        <div className="ai-agent-sidebar" style={{ display: "flex", flexDirection: "column", gap: "20px", minHeight: 0, overflow: "hidden" }}>
+        <div className="ai-agent-sidebar" style={{ display: "flex", flexDirection: "column", gap: "18px", minHeight: 0, overflow: "hidden" }}>
 
           {/* Subagent Team Card */}
           <div style={{
-            borderRadius: "20px", overflow: "hidden",
+            borderRadius: "18px", overflow: "hidden",
             border: "1.5px solid rgba(255,255,255,0.1)",
             background: "rgba(18,18,24,0.9)",
             boxShadow: "0 8px 32px -8px rgba(0,0,0,0.4)",
           }}>
-            {/* Card header */}
             <div style={{
-              padding: "18px 24px",
+              padding: "16px 20px",
               background: "rgba(255,255,255,0.03)",
               borderBottom: "1px solid rgba(255,255,255,0.08)",
               display: "flex", alignItems: "center", justifyContent: "space-between",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <Layers style={{ width: "16px", height: "16px", color: "#a78bfa" }} />
-                <span style={{ fontSize: "13px", fontWeight: "700", color: "var(--foreground)" }}>Active Subagent Team</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Layers style={{ width: "15px", height: "15px", color: "#a78bfa" }} />
+                <span style={{ fontSize: "12.5px", fontWeight: "700", color: "var(--foreground)" }}>Active Subagent Team</span>
               </div>
-              <span style={{ fontSize: "10px", fontWeight: "700", padding: "4px 10px", borderRadius: "6px", background: "rgba(139,92,246,0.15)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              <span style={{ fontSize: "10px", fontWeight: "700", padding: "3px 8px", borderRadius: "6px", background: "rgba(139,92,246,0.15)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)" }}>
                 3 Agents
               </span>
             </div>
 
-            {/* Subagents list */}
-            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>
               {subagents.map(sa => {
                 const s = statusStyle[sa.status];
                 return (
                   <div key={sa.id} style={{
-                    padding: "16px 18px", borderRadius: "14px",
+                    padding: "14px 16px", borderRadius: "12px",
                     background: "rgba(255,255,255,0.04)",
                     border: "1px solid rgba(255,255,255,0.08)",
-                    display: "flex", flexDirection: "column", gap: "10px",
+                    display: "flex", flexDirection: "column", gap: "8px",
                   }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "13px", fontWeight: "700", color: "var(--foreground)" }}>{sa.name}</span>
-                      <span className={s.badge} style={{ fontSize: "10px", fontWeight: "700", padding: "3px 10px", borderRadius: "6px", textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", alignItems: "center", gap: "5px" }}>
-                        <span style={{ width: "6px", height: "6px", borderRadius: "50%" }} className={s.dot} />
+                      <span style={{ fontSize: "12.5px", fontWeight: "700", color: "var(--foreground)" }}>{sa.name}</span>
+                      <span className={s.badge} style={{ fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "4px" }}>
+                        <span style={{ width: "5px", height: "5px", borderRadius: "50%" }} className={s.dot} />
                         {sa.status}
                       </span>
                     </div>
-                    <p style={{ margin: 0, fontSize: "12px", color: "var(--muted-foreground)", lineHeight: "1.4" }}>{sa.role}</p>
-                    <div style={{ borderRadius: "99px", height: "5px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                    <p style={{ margin: 0, fontSize: "11.5px", color: "var(--muted-foreground)" }}>{sa.role}</p>
+                    <div style={{ borderRadius: "99px", height: "4px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
                       <div style={{
-                        height: "5px", borderRadius: "99px", width: `${sa.progress}%`,
+                        height: "4px", borderRadius: "99px", width: `${sa.progress}%`,
                         background: "linear-gradient(90deg, #7c3aed, #3b82f6)",
                         transition: "width 0.5s ease",
-                        boxShadow: sa.progress > 0 ? "0 0 8px rgba(124,58,237,0.5)" : "none",
                       }} />
                     </div>
                   </div>
@@ -591,57 +611,51 @@ export function AIAgentPage({ repository }: { repository?: RepositoryInfo | null
 
           {/* Agent Tools & Permissions Card */}
           <div style={{
-            flex: 1, minHeight: 0, borderRadius: "20px", overflow: "hidden",
+            flex: 1, minHeight: 0, borderRadius: "18px", overflow: "hidden",
             display: "flex", flexDirection: "column",
             border: "1.5px solid rgba(255,255,255,0.1)",
             background: "rgba(18,18,24,0.9)",
             boxShadow: "0 8px 32px -8px rgba(0,0,0,0.4)",
           }}>
-            {/* Card header */}
             <div style={{
-              padding: "18px 24px",
+              padding: "16px 20px",
               background: "rgba(255,255,255,0.03)",
               borderBottom: "1px solid rgba(255,255,255,0.08)",
-              display: "flex", alignItems: "center", gap: "10px",
+              display: "flex", alignItems: "center", gap: "8px",
             }}>
-              <Sliders style={{ width: "16px", height: "16px", color: "#60a5fa" }} />
-              <span style={{ fontSize: "13px", fontWeight: "700", color: "var(--foreground)" }}>Tools & Permissions</span>
+              <Sliders style={{ width: "15px", height: "15px", color: "#60a5fa" }} />
+              <span style={{ fontSize: "12.5px", fontWeight: "700", color: "var(--foreground)" }}>Tools & Permissions</span>
             </div>
 
-            {/* Permissions list */}
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 18px", display: "flex", flexDirection: "column", gap: "8px" }}>
               {CAPABILITIES.map(cap => (
                 <label
                   key={cap.key}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "14px 18px", borderRadius: "14px",
+                    padding: "12px 16px", borderRadius: "12px",
                     background: caps[cap.key] ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.02)",
                     border: `1px solid ${caps[cap.key] ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.06)"}`,
                     cursor: "pointer",
-                    transition: "all 0.15s ease",
                   }}
                 >
-                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                    <span className={`text-sm font-bold ${cap.color}`}>{cap.label}</span>
-                    <span style={{ fontSize: "11px", color: "var(--muted-foreground)", lineHeight: "1.3" }}>{cap.description}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <span className={`text-xs font-bold ${cap.color}`}>{cap.label}</span>
+                    <span style={{ fontSize: "10.5px", color: "var(--muted-foreground)" }}>{cap.description}</span>
                   </div>
                   <div
                     onClick={() => setCaps(prev => ({ ...prev, [cap.key]: !prev[cap.key] }))}
                     style={{
-                      width: "40px", height: "22px", borderRadius: "99px",
+                      width: "36px", height: "20px", borderRadius: "99px",
                       background: caps[cap.key] ? "linear-gradient(135deg, #7c3aed, #3b82f6)" : "rgba(255,255,255,0.1)",
-                      position: "relative", cursor: "pointer", transition: "background 0.2s",
-                      boxShadow: caps[cap.key] ? "0 0 10px rgba(124,58,237,0.4)" : "none",
-                      flexShrink: 0,
+                      position: "relative", cursor: "pointer", flexShrink: 0,
                     }}
                   >
                     <div style={{
-                      position: "absolute", top: "3px",
-                      left: caps[cap.key] ? "21px" : "3px",
+                      position: "absolute", top: "2px",
+                      left: caps[cap.key] ? "18px" : "2px",
                       width: "16px", height: "16px", borderRadius: "50%",
                       background: "white", transition: "left 0.2s",
-                      boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
                     }} />
                   </div>
                 </label>

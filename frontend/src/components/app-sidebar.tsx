@@ -1,13 +1,13 @@
-import * as React from "react"
 import {
   IconChartBar,
   IconDashboard,
   IconFolder,
+  IconFolders,
   IconGitBranch,
   IconRobot,
   IconSettings,
   IconTerminal2,
-} from "@tabler/icons-react"
+} from "@tabler/icons-react";
 
 import {
   Sidebar,
@@ -17,21 +17,25 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
-import type { RepositoryInfo } from "@/types/domain"
+} from "@/components/ui/sidebar";
+import type { RepositoryInfo } from "@/types/domain";
+import { ProjectsSidebarNav } from "@/components/ProjectsSidebarNav";
 
 export function AppSidebar({
   activeTab = "dashboard",
   onSelectTab,
   repository,
+  onOpenRepository,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   activeTab?: string;
   onSelectTab?: (tab: string) => void;
   repository?: RepositoryInfo | null;
+  onOpenRepository?: (path: string) => Promise<void> | void;
 }) {
   const navItems = [
     { title: "Dashboard", id: "dashboard", icon: IconDashboard },
+    { title: "Projects", id: "projects", icon: IconFolders },
     { title: "File Explorer", id: "explorer", icon: IconFolder },
     { title: "Terminal", id: "terminal", icon: IconTerminal2 },
     { title: "Git Repository", id: "git", icon: IconGitBranch },
@@ -49,7 +53,7 @@ export function AppSidebar({
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden">
-                <img src="/logo.png" alt="IFROG Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img src="/logo.png" alt="IFROG Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">IFROG</span>
@@ -62,7 +66,7 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="p-2">
+      <SidebarContent className="p-2 flex flex-col gap-2 overflow-y-auto">
         <SidebarMenu>
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -81,6 +85,15 @@ export function AppSidebar({
             );
           })}
         </SidebarMenu>
+
+        {/* ── Projects Tree & Threads Section (Visible when expanded) ──── */}
+        <div className="group-data-[collapsible=icon]:hidden mt-2 pt-2 border-t border-sidebar-border">
+          <ProjectsSidebarNav
+            currentRepository={repository}
+            onOpenRepository={onOpenRepository}
+            onSelectTab={onSelectTab}
+          />
+        </div>
       </SidebarContent>
 
       <SidebarFooter className="p-2 border-t border-sidebar-border text-xs text-muted-foreground flex flex-col gap-2">

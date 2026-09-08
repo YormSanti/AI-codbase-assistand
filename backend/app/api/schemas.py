@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.domain.models import CodeSymbol, Language, RepositoryInfo, SymbolKind, TreeNode
+from app.domain.models import CodeSymbol, FilePreview, Language, RepositoryInfo, SymbolKind, TreeNode
 
 
 class OpenRepositoryRequest(BaseModel):
@@ -80,6 +80,24 @@ class CodeSymbolResponse(BaseModel):
             parent_name=symbol.parent_name,
             start_line=symbol.start_line,
             end_line=symbol.end_line,
+        )
+
+
+class FilePreviewResponse(BaseModel):
+    file_id: int
+    path: str
+    content: str | None
+    is_binary: bool
+    truncated: bool
+
+    @classmethod
+    def from_domain(cls, preview: FilePreview) -> "FilePreviewResponse":
+        return cls(
+            file_id=preview.file_id,
+            path=preview.path,
+            content=preview.content,
+            is_binary=preview.is_binary,
+            truncated=preview.truncated,
         )
 
 

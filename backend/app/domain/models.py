@@ -103,3 +103,14 @@ class TreeNode:
     size_bytes: int | None = None
     file_id: int | None = None
     children: list["TreeNode"] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class FilePreview:
+    """A bounded, display-safe preview of an indexed file."""
+
+    file_id: int
+    path: str
+    content: str | None
+    is_binary: bool
+    truncated: bool = False

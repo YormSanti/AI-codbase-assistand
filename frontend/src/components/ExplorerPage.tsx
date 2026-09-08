@@ -14,6 +14,7 @@ interface Props {
   onOpen: (path: string) => void;
   onSelectFile: (node: TreeNode) => void;
   onCloseFile: () => void;
+  onAskAI: (file: TreeNode) => void;
 }
 
 export const ExplorerPage: React.FC<Props> = ({
@@ -24,6 +25,7 @@ export const ExplorerPage: React.FC<Props> = ({
   onOpen,
   onSelectFile,
   onCloseFile,
+  onAskAI,
 }) => {
   const cardStyle = {
     borderRadius: '20px',
@@ -34,7 +36,7 @@ export const ExplorerPage: React.FC<Props> = ({
   };
 
   return (
-    <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '32px', width: '100%', boxSizing: 'border-box' }}>
+    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', boxSizing: 'border-box' }}>
       {/* Header Section */}
       <div style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -84,9 +86,9 @@ export const ExplorerPage: React.FC<Props> = ({
           <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)' }}>Choose a folder with the repository picker above.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: '32px', minHeight: '600px' }}>
+        <div className="explorer-workspace-grid" style={{ gap: '20px', minHeight: '620px', height: 'calc(100vh - 310px)' }}>
           {/* Left Column: Repository Tree */}
-          <div style={{ ...cardStyle, flex: 1, display: 'flex', flexDirection: 'column', padding: '24px' }}>
+          <div style={{ ...cardStyle, minWidth: 0, display: 'flex', flexDirection: 'column', padding: '18px' }}>
             <h3 style={{ margin: '0 0 20px 0', color: 'white', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <HardDrive size={18} color="#60a5fa" />
               Project Files
@@ -97,7 +99,7 @@ export const ExplorerPage: React.FC<Props> = ({
           </div>
 
           {/* Right Column: File Inspector */}
-          <div style={{ ...cardStyle, flex: 1, display: 'flex', flexDirection: 'column', padding: '24px' }}>
+          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {!selectedFile ? (
                <div style={{ 
                 flex: 1, 
@@ -115,7 +117,7 @@ export const ExplorerPage: React.FC<Props> = ({
                 </div>
               </div>
             ) : (
-              <FileInspector file={selectedFile} onClose={onCloseFile} />
+              <FileInspector file={selectedFile} onClose={onCloseFile} onAskAI={onAskAI} />
             )}
           </div>
         </div>
