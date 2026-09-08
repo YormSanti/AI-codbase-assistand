@@ -7,19 +7,6 @@ export function useAutoUpdater() {
   useEffect(() => {
     async function checkForUpdates() {
       try {
-        // For testing purposes in development mode, we'll simulate the update dialog
-        // since the real updater requires signed production builds.
-        if (false) {
-          const yes = await ask(
-            `Update to v1.0.1 is available!\\n\\nRelease notes: This is a simulated update for testing the UI.\\n\\nDo you want to install it now?`,
-            { title: 'Update Available', kind: 'info', okLabel: 'Update', cancelLabel: 'Later' }
-          );
-          if (yes) {
-            await message('In a production build, this would download the new version and restart automatically. Simulation complete!', { title: 'Update Simulation', kind: 'info' });
-          }
-          return;
-        }
-
         const update = await check();
         if (update) {
           const yes = await ask(

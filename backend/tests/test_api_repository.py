@@ -47,6 +47,23 @@ def test_list_repositories_endpoint(api_client: TestClient, git_repo_path: Path)
     assert len(response.json()) == 1
 
 
+def test_delete_repository_endpoint(api_client: TestClient, git_repo_path: Path) -> None:
+    opened = api_client.post("/api/repositories/open", json={"path": str(git_repo_path)})
+    repository_id = opened.json()["id"]
+
+    response = api_client.delete(f"/api/repositories/{repository_id}")
+
+    assert response.status_code == 204
+    assert api_client.get("/api/repositories").json() == []
+    assert api_client.get(f"/api/repositories/{repository_id}/tree").status_code == 404
+
+
+def test_delete_unknown_repository_returns_404(api_client: TestClient) -> None:
+    response = api_client.delete("/api/repositories/999")
+
+    assert response.status_code == 404
+
+
 def test_health_endpoint(api_client: TestClient) -> None:
     response = api_client.get("/health")
 

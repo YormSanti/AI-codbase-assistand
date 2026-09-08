@@ -100,7 +100,7 @@ function TerminalSession({
         try {
           fitAddon.fit();
           sendSize();
-        } catch (e) {}
+        } catch {}
       }
     };
     window.addEventListener("resize", handleResize);
@@ -186,7 +186,7 @@ function TerminalSession({
     const timer = setTimeout(() => {
       try {
         fitAddonRef.current?.fit();
-      } catch (e) {}
+      } catch {}
     }, 50);
     return () => clearTimeout(timer);
   }, [isActive]);

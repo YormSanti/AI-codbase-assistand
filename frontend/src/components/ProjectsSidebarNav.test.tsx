@@ -9,6 +9,7 @@ vi.mock("../api/repositoryApi", () => ({
   repositoryApi: {
     list: vi.fn(),
     open: vi.fn(),
+    remove: vi.fn(),
   },
 }));
 
@@ -39,7 +40,7 @@ describe("ProjectsSidebarNav", () => {
     localStorage.clear();
   });
 
-  it("renders Projects header with AI, list, and add buttons", () => {
+  it("renders Projects header with AI, list, and add buttons", async () => {
     vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
 
     render(
@@ -53,6 +54,7 @@ describe("ProjectsSidebarNav", () => {
     expect(screen.getByTitle("AI Assistant")).toBeInTheDocument();
     expect(screen.getByTitle("Projects Catalog")).toBeInTheDocument();
     expect(screen.getByTitle("Add Project")).toBeInTheDocument();
+    await waitFor(() => expect(repositoryApi.list).toHaveBeenCalled());
   });
 
   it("renders the active project card with terminal and AI actions", async () => {
@@ -99,6 +101,31 @@ describe("ProjectsSidebarNav", () => {
     expect(onSelectTab).toHaveBeenCalledWith("ai");
     expect(onSelectThread).toHaveBeenCalled();
     expect(screen.getByText("Thread 1")).toBeInTheDocument();
+  });
+
+  it("deletes a thread after confirmation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<ProjectsSidebarNav currentRepository={mockProjects[0]} />);
+    await user.click(screen.getByText("New thread"));
+    await user.click(screen.getByTitle("Delete Thread"));
+
+    expect(screen.queryByText("Thread 1")).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("threads_1") ?? "[]")).toEqual([]);
+  });
+
+  it("removes a project after confirmation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
+    vi.mocked(repositoryApi.remove).mockResolvedValue();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<ProjectsSidebarNav currentRepository={mockProjects[0]} />);
+    await user.click(screen.getByLabelText("Remove pharmacy-mobile-v2"));
+
+    expect(repositoryApi.remove).toHaveBeenCalledWith(1);
   });
 
   it("renders other projects with green status indicator", async () => {

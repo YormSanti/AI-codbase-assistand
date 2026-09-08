@@ -23,11 +23,11 @@ describe("AIThreadStartHero", () => {
       />
     );
 
-    expect(screen.getByText("Start in")).toBeInTheDocument();
+    expect(screen.getByText(/What should we build in/)).toBeInTheDocument();
     expect(screen.getAllByText("pharmacy-mobile-v2").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Antigravity")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "IFROG" })).toBeInTheDocument();
+    expect(screen.getByText("Gemini")).toBeInTheDocument();
     expect(screen.getByText("High")).toBeInTheDocument();
-    expect(screen.getByText("Local")).toBeInTheDocument();
     expect(screen.getByText("santi")).toBeInTheDocument();
   });
 
@@ -42,7 +42,7 @@ describe("AIThreadStartHero", () => {
       />
     );
 
-    const textarea = screen.getByPlaceholderText("Ask for a change, bug fix, or file...");
+    const textarea = screen.getByPlaceholderText("Ask about your codebase…");
     await user.type(textarea, "Refactor auth controller");
 
     const sendBtn = screen.getByTitle("Send instruction");
@@ -50,7 +50,7 @@ describe("AIThreadStartHero", () => {
 
     expect(onSubmitPrompt).toHaveBeenCalledWith(
       "Refactor auth controller",
-      "Antigravity",
+      "Gemini",
       "High"
     );
   });

@@ -8,8 +8,9 @@ const VIEW_LABELS: Record<string, string> = {
   terminal: "Terminal",
   git: "Git Repository",
   ai: "AI Agent Studio",
-  "ai-agent": "AI Agent Studio",
-  analytics: "Analytics",
+  analytics: "Code Analytics & Charts",
+  chart: "Code Analytics & Charts",
+  charts: "Code Analytics & Charts",
   settings: "Settings",
 };
 

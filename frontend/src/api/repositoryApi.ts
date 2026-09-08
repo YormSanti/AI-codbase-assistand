@@ -13,6 +13,12 @@ export const repositoryApi = {
     return apiRequest<RepositoryInfo[]>("/api/repositories");
   },
 
+  remove(repositoryId: number): Promise<void> {
+    return apiRequest<void>(`/api/repositories/${repositoryId}`, {
+      method: "DELETE",
+    });
+  },
+
   getTree(repositoryId: number): Promise<TreeNode> {
     return apiRequest<TreeNode>(`/api/repositories/${repositoryId}/tree`);
   },

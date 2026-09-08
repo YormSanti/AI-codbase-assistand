@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import type { RepositoryInfo } from "@/types/domain";
 import { repositoryApi } from "@/api/repositoryApi";
+import { Trash2 } from "lucide-react";
 
 export interface ProjectThread {
   id: string;
@@ -14,6 +15,7 @@ interface ProjectsSidebarNavProps {
   onOpenRepository?: (path: string) => Promise<void> | void;
   onSelectTab?: (tab: string) => void;
   onSelectThread?: (threadId: string) => void;
+  onDeleteRepository?: (repositoryId: number) => Promise<void> | void;
 }
 
 // Fine multi-ray starburst icon matching the screenshot
@@ -165,6 +167,7 @@ export function ProjectsSidebarNav({
   onOpenRepository,
   onSelectTab,
   onSelectThread,
+  onDeleteRepository,
 }: ProjectsSidebarNavProps) {
   const [projectsList, setProjectsList] = useState<RepositoryInfo[]>([]);
   const [threads, setThreads] = useState<ProjectThread[]>([]);
@@ -173,6 +176,7 @@ export function ProjectsSidebarNav({
   const [newProjectPath, setNewProjectPath] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Load projects
   useEffect(() => {
@@ -276,6 +280,35 @@ export function ProjectsSidebarNav({
     }
   };
 
+  const handleDeleteThread = (event: React.MouseEvent, thread: ProjectThread) => {
+    event.stopPropagation();
+    if (!window.confirm(`Delete “${thread.title}”?`)) return;
+
+    const updated = threads.filter((item) => item.id !== thread.id);
+    setThreads(updated);
+    if (activeThreadId === thread.id) setActiveThreadId(null);
+    const storageKey = currentRepository ? `threads_${currentRepository.id}` : "threads_default";
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+  };
+
+  const handleDeleteProject = async (event: React.MouseEvent, project: RepositoryInfo) => {
+    event.stopPropagation();
+    if (!window.confirm(`Remove “${project.name}” from IFROG? Your project files will not be deleted.`)) return;
+
+    setDeleteError(null);
+    try {
+      if (onDeleteRepository) {
+        await onDeleteRepository(project.id);
+      } else {
+        await repositoryApi.remove(project.id);
+      }
+      localStorage.removeItem(`threads_${project.id}`);
+      setProjectsList((current) => current.filter((item) => item.id !== project.id));
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Could not remove this project.");
+    }
+  };
+
   const handleOpenNewProject = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = newProjectPath.trim();
@@ -367,6 +400,11 @@ export function ProjectsSidebarNav({
 
       {/* ── Projects List Container ───────────────────────────────────────── */}
       <div className="flex flex-col gap-1 px-1.5 py-1">
+        {deleteError && (
+          <div role="alert" className="mx-1 mb-1 rounded-md border border-rose-500/20 bg-rose-500/10 px-2 py-1.5 text-[11px] text-rose-300">
+            {deleteError}
+          </div>
+        )}
         {/* ── Active Project Card ─────────────────────────────────────────── */}
         <div
           className="group relative flex items-center justify-between rounded-xl px-2.5 py-2 bg-[#121927] border border-[#1e293b]/90 shadow-sm cursor-pointer hover:border-blue-500/30 transition-all"
@@ -410,6 +448,18 @@ export function ProjectsSidebarNav({
             >
               <SparklePlusIcon className="w-3.5 h-3.5" />
             </button>
+
+            {currentRepository && (
+              <button
+                type="button"
+                onClick={(event) => void handleDeleteProject(event, currentRepository)}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-rose-500/15 hover:text-rose-300 focus-visible:text-rose-300"
+                title="Remove Project"
+                aria-label={`Remove ${currentRepository.name}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -450,7 +500,18 @@ export function ProjectsSidebarNav({
                 <StarburstIcon className="w-3 h-3 text-indigo-400/80 flex-shrink-0" />
                 <span className="truncate text-[12.5px]">{thread.title}</span>
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono">{thread.createdAt}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-zinc-500 font-mono">{thread.createdAt}</span>
+                <button
+                  type="button"
+                  onClick={(event) => handleDeleteThread(event, thread)}
+                  className="flex h-5 w-5 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-rose-500/15 hover:text-rose-300 focus-visible:text-rose-300"
+                  title="Delete Thread"
+                  aria-label={`Delete ${thread.title}`}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -479,12 +540,20 @@ export function ProjectsSidebarNav({
                 </span>
               </div>
 
-              {/* Green status dot */}
-              <div className="flex-shrink-0 flex items-center pr-1">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <span
                   className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
                   title="Indexed & Ready"
                 />
+                <button
+                  type="button"
+                  onClick={(event) => void handleDeleteProject(event, p)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-rose-500/15 hover:text-rose-300 focus-visible:text-rose-300"
+                  title="Remove Project"
+                  aria-label={`Remove ${p.name}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
           ))

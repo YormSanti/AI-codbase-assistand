@@ -186,13 +186,13 @@ export function AIAgentPage({
     }
   };
 
-  const handleRunAgent = async (customPrompt?: string) => {
+  const handleRunAgent = async (customPrompt?: string, providerOverride?: Provider) => {
     const targetPrompt = customPrompt || prompt;
     if (!targetPrompt.trim() || isRunning) return;
 
-    setViewMode("chat");
-    const currentProvider = provider;
-    const currentProviderName = providerName;
+    const currentProvider = providerOverride ?? provider;
+    const currentProviderName = currentProvider === "codex" ? "Codex" : "Gemini";
+    if (providerOverride) setProvider(providerOverride);
     const priorConversation = chatHistory
       .filter(turn => turn.provider === currentProvider)
       .slice(-8)
@@ -270,8 +270,9 @@ export function AIAgentPage({
     }
   };
 
-  const handleHeroSubmit = (heroPrompt: string, _selectedModel: string, _thinking: string) => {
-    void handleRunAgent(heroPrompt);
+  const handleHeroSubmit = (heroPrompt: string, selectedModel: string, _thinking: string) => {
+    const selectedProvider: Provider = selectedModel === "Codex" ? "codex" : "gemini";
+    void handleRunAgent(heroPrompt, selectedProvider);
   };
 
   const handleResetThread = () => {
@@ -295,7 +296,7 @@ export function AIAgentPage({
   };
 
   // If in start mode and no active turns
-  if (viewMode === "start" && chatHistory.length === 0) {
+  if (viewMode === "start") {
     return (
       <div className="w-full h-full flex flex-col bg-[#080c14] overflow-y-auto">
         <AIThreadStartHero
@@ -304,6 +305,7 @@ export function AIAgentPage({
           isLoading={isRunning}
           initialPrompt={initialPrompt}
           onInitialPromptConsumed={onInitialPromptConsumed}
+          messages={logs}
         />
       </div>
     );
