@@ -63,6 +63,11 @@ class IndexingService:
             raise RepositoryNotFoundError(f"No repository with id={repository_id}")
         return info
 
+    def delete_repository(self, repository_id: int) -> None:
+        if self._file_repository.get_repository(repository_id) is None:
+            raise RepositoryNotFoundError(f"No repository with id={repository_id}")
+        self._file_repository.delete_repository(repository_id)
+
     def get_tree(self, repository_id: int) -> TreeNode:
         info = self.get_repository(repository_id)
         files = self._file_repository.list_files(repository_id)

@@ -18,6 +18,7 @@ import {
   Bot,
   BarChart3,
   Files,
+  Trash2,
 } from "lucide-react";
 import type { RepositoryInfo } from "../types/domain";
 import { repositoryApi } from "../api/repositoryApi";
@@ -36,17 +37,21 @@ import {
 } from "./ProjectsSidebarNav";
 
 interface Props {
+  onSelectThread?: (threadId: string) => void;
   currentRepository: RepositoryInfo | null;
   isLoading: boolean;
   onOpen: (path: string) => Promise<void> | void;
   onNavigate: (tab: string) => void;
+  onDeleteRepository?: (repositoryId: number) => Promise<void> | void;
 }
 
 export function ProjectsPage({
+  onSelectThread,
   currentRepository,
   isLoading,
   onOpen,
   onNavigate,
+  onDeleteRepository,
 }: Props) {
   const [projects, setProjects] = useState<RepositoryInfo[]>([]);
   const [isFetchingProjects, setIsFetchingProjects] = useState(false);
@@ -126,6 +131,22 @@ export function ProjectsPage({
     setTimeout(() => setCopiedPath(null), 2000);
   };
 
+  const handleDeleteProject = async (e: React.MouseEvent, project: RepositoryInfo) => {
+    e.stopPropagation();
+    if (!window.confirm(`Remove “${project.name}” from IFROG? Your project files will not be deleted.`)) return;
+    try {
+      if (onDeleteRepository) {
+        await onDeleteRepository(project.id);
+      } else {
+        await repositoryApi.remove(project.id);
+      }
+      localStorage.removeItem(`threads_${project.id}`);
+      void fetchProjects();
+    } catch (err) {
+      console.error("Failed to delete repository", err);
+    }
+  };
+
   const handleCreateNewThread = () => {
     const projId = currentRepository?.id || "default";
     const newThread: ProjectThread = {
@@ -137,6 +158,7 @@ export function ProjectsPage({
     const updated = [newThread, ...threads];
     setThreads(updated);
     setActiveThreadId(newThread.id);
+    onSelectThread?.(newThread.id);
     localStorage.setItem(
       currentRepository ? `threads_${currentRepository.id}` : "threads_default",
       JSON.stringify(updated)
@@ -592,6 +614,7 @@ export function ProjectsPage({
                 }}
                 onClick={() => {
                   setActiveThreadId(t.id);
+                  onSelectThread?.(t.id);
                   onNavigate("ai");
                 }}
               >
@@ -735,6 +758,17 @@ export function ProjectsPage({
                   >
                     <BarChart3 size={13} className="text-orange-400" />
                     <span>Analytics</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => void handleDeleteProject(e, currentRepository)}
+                    className="rounded-lg bg-rose-500/10 border-rose-500/20 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold flex items-center gap-1.5"
+                    title="Remove Project"
+                    aria-label={`Remove ${currentRepository.name}`}
+                  >
+                    <Trash2 size={13} />
+                    <span>Remove</span>
                   </Button>
                 </div>
               </div>
@@ -1037,21 +1071,32 @@ export function ProjectsPage({
                         </h4>
                       </div>
 
-                      {isActive && (
-                        <span
-                          style={{
-                            fontSize: "10.5px",
-                            fontWeight: "700",
-                            padding: "2px 8px",
-                            borderRadius: "99px",
-                            background: "rgba(16,185,129,0.15)",
-                            color: "#34d399",
-                            border: "1px solid rgba(52,211,153,0.3)",
-                          }}
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        {isActive && (
+                          <span
+                            style={{
+                              fontSize: "10.5px",
+                              fontWeight: "700",
+                              padding: "2px 8px",
+                              borderRadius: "99px",
+                              background: "rgba(16,185,129,0.15)",
+                              color: "#34d399",
+                              border: "1px solid rgba(52,211,153,0.3)",
+                            }}
+                          >
+                            Active
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => void handleDeleteProject(e, project)}
+                          title="Remove Project"
+                          aria-label={`Remove ${project.name}`}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-rose-500/15 hover:text-rose-300"
                         >
-                          Active
-                        </span>
-                      )}
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
 
                     <p

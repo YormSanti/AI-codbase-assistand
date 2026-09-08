@@ -35,4 +35,16 @@ describe("repositoryApi", () => {
     await expect(repositoryApi.open("/tmp")).rejects.toThrow(ApiError);
     await expect(repositoryApi.open("/tmp")).rejects.toThrow("is not a Git repository");
   });
+
+  it("deletes an indexed repository", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await repositoryApi.remove(3);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/repositories/3"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
 });

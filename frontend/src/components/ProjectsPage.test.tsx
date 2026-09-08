@@ -130,4 +130,30 @@ describe("ProjectsPage", () => {
 
     expect(onOpen).toHaveBeenCalledWith("/home/user/FastAPI-Backend");
   });
+
+  it("handles removing a project after confirmation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onDeleteRepository = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ProjectsPage
+        currentRepository={mockProjects[0]}
+        isLoading={false}
+        onOpen={vi.fn()}
+        onNavigate={vi.fn()}
+        onDeleteRepository={onDeleteRepository}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("FastAPI-Backend")).toBeInTheDocument();
+    });
+
+    const removeBtn = screen.getByRole("button", { name: "Remove FastAPI-Backend" });
+    await user.click(removeBtn);
+
+    expect(onDeleteRepository).toHaveBeenCalledWith(2);
+  });
 });

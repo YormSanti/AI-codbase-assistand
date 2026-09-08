@@ -26,12 +26,16 @@ export function AppSidebar({
   onSelectTab,
   repository,
   onOpenRepository,
+  onDeleteRepository,
+  onSelectThread,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   activeTab?: string;
   onSelectTab?: (tab: string) => void;
   repository?: RepositoryInfo | null;
   onOpenRepository?: (path: string) => Promise<void> | void;
+  onDeleteRepository?: (repositoryId: number) => Promise<void> | void;
+  onSelectThread?: (threadId: string) => void;
 }) {
   const navItems = [
     { title: "Dashboard", id: "dashboard", icon: IconDashboard },
@@ -91,6 +95,8 @@ export function AppSidebar({
           <ProjectsSidebarNav
             currentRepository={repository}
             onOpenRepository={onOpenRepository}
+            onDeleteRepository={onDeleteRepository}
+            onSelectThread={onSelectThread}
             onSelectTab={onSelectTab}
           />
         </div>

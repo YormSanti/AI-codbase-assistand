@@ -1,7 +1,7 @@
 """Repository indexing endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.deps import IndexingServiceDep
 from app.api.schemas import OpenRepositoryRequest, RepositoryResponse, TreeNodeResponse
@@ -31,6 +31,15 @@ def get_repository(repository_id: int, service: IndexingServiceDep) -> Repositor
     except RepositoryNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return RepositoryResponse.from_domain(info)
+
+
+@router.delete("/{repository_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_repository(repository_id: int, service: IndexingServiceDep) -> Response:
+    try:
+        service.delete_repository(repository_id)
+    except RepositoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{repository_id}/tree", response_model=TreeNodeResponse)
