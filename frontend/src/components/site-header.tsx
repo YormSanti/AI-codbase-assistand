@@ -3,6 +3,7 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 
 const VIEW_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
+  projects: "Projects",
   explorer: "File Explorer",
   terminal: "Terminal",
   git: "Git Repository",

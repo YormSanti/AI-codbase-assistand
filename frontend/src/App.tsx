@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { AIAgentPage } from "@/components/AIAgentPage";
 import { DashboardPage } from "@/components/DashboardPage";
+import { ProjectsPage } from "@/components/ProjectsPage";
 import { ExplorerPage } from "@/components/ExplorerPage";
 import { GitPage } from "@/components/GitPage";
 import { TerminalPage } from "@/components/TerminalPage";
@@ -27,6 +28,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [hasVisitedTerminal, setHasVisitedTerminal] = useState(false);
   const [hasVisitedAi, setHasVisitedAi] = useState(false);
+  const [aiDraft, setAiDraft] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeTab === "terminal" && !hasVisitedTerminal) {
@@ -153,12 +155,18 @@ export default function App() {
     }
   }
 
+  function handleAskAIAboutFile(node: TreeNode) {
+    setAiDraft(`Review @${node.path}. Explain its responsibility, identify likely issues, and suggest focused improvements.`);
+    setActiveTab("ai");
+  }
+
   return (
     <SidebarProvider>
       <AppSidebar
         activeTab={activeTab}
         onSelectTab={(tab) => setActiveTab(tab)}
         repository={repository}
+        onOpenRepository={handleOpen}
       />
 
       <SidebarInset>
@@ -182,6 +190,16 @@ export default function App() {
             />
           )}
 
+          {/* Projects */}
+          {activeTab === "projects" && (
+            <ProjectsPage
+              currentRepository={repository}
+              isLoading={isLoading}
+              onOpen={handleOpen}
+              onNavigate={(tab) => setActiveTab(tab)}
+            />
+          )}
+
           {/* File Explorer */}
           {activeTab === "explorer" && (
             <ExplorerPage
@@ -192,6 +210,7 @@ export default function App() {
               onOpen={handleOpen}
               onSelectFile={handleSelectFile}
               onCloseFile={() => setSelectedFile(null)}
+              onAskAI={handleAskAIAboutFile}
             />
           )}
 
@@ -213,7 +232,11 @@ export default function App() {
           {/* AI Agent */}
           {hasVisitedAi && (
             <div style={{ display: (activeTab === "ai" || activeTab === "ai-agent") ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
-              <AIAgentPage repository={repository} />
+              <AIAgentPage
+                repository={repository}
+                initialPrompt={aiDraft}
+                onInitialPromptConsumed={() => setAiDraft(null)}
+              />
             </div>
           )}
 

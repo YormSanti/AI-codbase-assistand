@@ -29,3 +29,24 @@ def test_get_file_symbols_unknown_file_returns_404(api_client: TestClient) -> No
     response = api_client.get("/api/files/999/symbols")
 
     assert response.status_code == 404
+
+
+def test_get_file_content_returns_source(api_client: TestClient, git_repo_path: Path) -> None:
+    file_id = _open_and_get_main_py_file_id(api_client, git_repo_path)
+
+    response = api_client.get(f"/api/files/{file_id}/content")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "file_id": file_id,
+        "path": "main.py",
+        "content": "def main():\n    pass\n",
+        "is_binary": False,
+        "truncated": False,
+    }
+
+
+def test_get_file_content_unknown_file_returns_404(api_client: TestClient) -> None:
+    response = api_client.get("/api/files/999/content")
+
+    assert response.status_code == 404

@@ -8,9 +8,10 @@ swapped onto different infrastructure later without changes here.
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from app.domain.exceptions import IndexedFileNotFoundError, RepositoryNotFoundError
-from app.domain.models import CodeSymbol, FileMetadata, RepositoryInfo, TreeNode
+from app.domain.models import CodeSymbol, FileMetadata, FilePreview, RepositoryInfo, TreeNode
 from app.domain.ports import FileMetadataRepositoryPort, GitClientPort
 from app.domain.tree_builder import build_tree
 from app.services.parsing_service import SymbolExtractionService
@@ -71,3 +72,36 @@ class IndexingService:
         if self._file_repository.get_file(file_id) is None:
             raise IndexedFileNotFoundError(f"No file with id={file_id}")
         return self._symbol_extraction_service.list_for_file(file_id)
+
+    def get_file_preview(self, file_id: int, max_bytes: int = 512_000) -> FilePreview:
+        """Return a bounded text preview without allowing paths outside the repository."""
+        file = self._file_repository.get_file(file_id)
+        if file is None or file.repository_id is None:
+            raise IndexedFileNotFoundError(f"No file with id={file_id}")
+
+        repository = self.get_repository(file.repository_id)
+        root = Path(repository.root_path).resolve()
+        absolute_path = (root / file.relative_path).resolve()
+        if not absolute_path.is_relative_to(root) or not absolute_path.is_file():
+            raise IndexedFileNotFoundError(f"Indexed file id={file_id} is no longer available")
+
+        if file.is_binary:
+            return FilePreview(file_id, file.relative_path, None, is_binary=True)
+
+        try:
+            with absolute_path.open("rb") as source:
+                raw = source.read(max_bytes + 1)
+        except OSError as exc:
+            raise IndexedFileNotFoundError(
+                f"Indexed file id={file_id} could not be read"
+            ) from exc
+
+        truncated = len(raw) > max_bytes
+        content = raw[:max_bytes].decode("utf-8", errors="replace")
+        return FilePreview(
+            file_id=file_id,
+            path=file.relative_path,
+            content=content,
+            is_binary=False,
+            truncated=truncated,
+        )

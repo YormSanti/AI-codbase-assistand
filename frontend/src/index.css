@@ -130,6 +130,33 @@ h1, h2, h3, h4, h5, h6 {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
 }
 
+.file-inspector-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+}
+
+.explorer-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.34fr) minmax(0, 1fr);
+}
+
+@media (max-width: 840px) {
+  .explorer-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .file-inspector-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .file-inspector-grid aside {
+    display: none;
+  }
+}
+
 @media (max-width: 1150px) {
   .ai-agent-page {
     overflow-y: auto !important;
