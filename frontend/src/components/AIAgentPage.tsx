@@ -233,21 +233,54 @@ export function AIAgentPage({
       }
 
       const { invoke } = await import("@tauri-apps/api/core");
-      const response = await invoke<AgentResponse>("run_agent", {
-        request: {
-          provider: currentProvider,
-          prompt: agentPrompt,
-          workingDirectory: repository?.root_path ?? null,
-        },
-      });
+      const { listen } = await import("@tauri-apps/api/event");
 
+      // Create a live log entry that we append streamed chunks to.
+      const streamId = crypto.randomUUID();
+      const logId = crypto.randomUUID();
+      const startTime = new Date().toLocaleTimeString("en-US", { hour12: false });
       setLogs(prev => [...prev, {
-        id: crypto.randomUUID(),
-        timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+        id: logId,
+        timestamp: startTime,
         type: "result",
         title: `${currentProviderName} response`,
-        content: response.content,
+        content: "",
       }]);
+
+      const unlisten = await listen<{ streamId: string; chunk: string }>(
+        "agent-stream",
+        event => {
+          if (event.payload.streamId !== streamId) return;
+          setLogs(prev =>
+            prev.map(log =>
+              log.id === logId
+                ? { ...log, content: log.content + event.payload.chunk }
+                : log,
+            ),
+          );
+        },
+      );
+
+      let response: AgentResponse;
+      try {
+        response = await invoke<AgentResponse>("run_agent", {
+          request: {
+            provider: currentProvider,
+            prompt: agentPrompt,
+            workingDirectory: repository?.root_path ?? null,
+            streamId,
+          },
+        });
+      } finally {
+        unlisten();
+      }
+
+      // Ensure the final log holds the complete, trimmed response.
+      setLogs(prev =>
+        prev.map(log =>
+          log.id === logId ? { ...log, content: response.content } : log,
+        ),
+      );
       setChatHistory(prev => [
         ...prev,
         { role: "user", content: targetPrompt, provider: currentProvider },
@@ -298,7 +331,7 @@ export function AIAgentPage({
   // If in start mode and no active turns
   if (viewMode === "start") {
     return (
-      <div className="w-full h-full flex flex-col bg-[#080c14] overflow-y-auto">
+      <div className="w-full h-full flex-1 flex flex-col bg-black overflow-hidden">
         <AIThreadStartHero
           repository={repository}
           onSubmitPrompt={handleHeroSubmit}
@@ -306,6 +339,7 @@ export function AIAgentPage({
           initialPrompt={initialPrompt}
           onInitialPromptConsumed={onInitialPromptConsumed}
           messages={logs}
+          onResetThread={handleResetThread}
         />
       </div>
     );

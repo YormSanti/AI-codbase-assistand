@@ -1,12 +1,13 @@
 use std::env;
 use std::ffi::OsString;
 use std::fs;
+use std::io::{BufReader, Read};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
-use tauri::{Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -189,11 +190,19 @@ struct AgentRequest {
     provider: String,
     prompt: String,
     working_directory: Option<String>,
+    stream_id: Option<String>,
 }
 
 #[derive(serde::Serialize)]
 struct AgentResponse {
     content: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentStreamChunk {
+    stream_id: String,
+    chunk: String,
 }
 
 fn agent_working_directory(requested: Option<String>) -> Result<PathBuf, String> {
@@ -221,9 +230,9 @@ fn command_failure(provider: &str, stderr: &[u8]) -> String {
 }
 
 #[tauri::command]
-async fn run_agent(request: AgentRequest) -> Result<AgentResponse, String> {
+async fn run_agent(app: AppHandle, request: AgentRequest) -> Result<AgentResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let prompt = request.prompt.trim();
+        let prompt = request.prompt.trim().to_string();
         if prompt.is_empty() {
             return Err("Enter a message for the agent.".to_string());
         }
@@ -231,60 +240,94 @@ async fn run_agent(request: AgentRequest) -> Result<AgentResponse, String> {
             return Err("The message is too long. Keep it under 64,000 characters.".to_string());
         }
 
-        let directory = agent_working_directory(request.working_directory)?;
-        let output = match request.provider.as_str() {
-            "codex" => {
-                let binary = find_codex_binary().ok_or_else(|| {
-                    "Codex CLI was not found. Connect or install Codex first.".to_string()
-                })?;
-                Command::new(binary)
-                    .args([
-                        "exec",
-                        "--ephemeral",
-                        "--sandbox",
-                        "read-only",
-                        "--color",
-                        "never",
-                        "--skip-git-repo-check",
-                        "--",
-                    ])
-                    .arg(prompt)
-                    .current_dir(directory)
-                    .stdin(Stdio::null())
-                    .output()
-                    .map_err(|error| format!("Could not run Codex: {error}"))?
-            }
-            "gemini" => {
-                let binary = find_gemini_binary().ok_or_else(|| {
-                    "Gemini CLI was not found. Connect or install Gemini first.".to_string()
-                })?;
-                Command::new(binary)
-                    .args([
-                        "--prompt",
-                        prompt,
-                        "--output-format",
-                        "text",
-                        "--approval-mode",
-                        "plan",
-                    ])
-                    .current_dir(directory)
-                    .stdin(Stdio::null())
-                    .output()
-                    .map_err(|error| format!("Could not run Gemini: {error}"))?
-            }
-            _ => return Err("Choose Codex or Gemini before sending a message.".to_string()),
-        };
-
         let provider_name = if request.provider == "codex" {
             "Codex"
         } else {
             "Gemini"
         };
-        if !output.status.success() {
-            return Err(command_failure(provider_name, &output.stderr));
+        let stream_id = request.stream_id.clone();
+
+        let directory = agent_working_directory(request.working_directory)?;
+        let mut command = match request.provider.as_str() {
+            "codex" => {
+                let binary = find_codex_binary().ok_or_else(|| {
+                    "Codex CLI was not found. Connect or install Codex first.".to_string()
+                })?;
+                let mut command = Command::new(binary);
+                command.args([
+                    "exec",
+                    "--ephemeral",
+                    "--sandbox",
+                    "read-only",
+                    "--color",
+                    "never",
+                    "--skip-git-repo-check",
+                    "--",
+                ]);
+                command.arg(&prompt);
+                command
+            }
+            "gemini" => {
+                let binary = find_gemini_binary().ok_or_else(|| {
+                    "Gemini CLI was not found. Connect or install Gemini first.".to_string()
+                })?;
+                let mut command = Command::new(binary);
+                // Dropped `--approval-mode plan`: plain answers are shorter and
+                // faster than planning-style responses for chat.
+                command.args(["--prompt", &prompt, "--output-format", "text"]);
+                command
+            }
+            _ => return Err("Choose Codex or Gemini before sending a message.".to_string()),
+        };
+
+        let mut child = command
+            .current_dir(directory)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("Could not run {provider_name}: {error}"))?;
+
+        // Read stdout incrementally and emit each chunk to the frontend so the
+        // response appears progressively instead of after the process exits.
+        let mut content = String::new();
+        if let Some(stdout) = child.stdout.take() {
+            let mut reader = BufReader::new(stdout);
+            let mut buffer = [0u8; 4096];
+            loop {
+                let read = reader
+                    .read(&mut buffer)
+                    .map_err(|error| format!("Failed reading {provider_name} output: {error}"))?;
+                if read == 0 {
+                    break;
+                }
+                let chunk = String::from_utf8_lossy(&buffer[..read]).to_string();
+                content.push_str(&chunk);
+                if let Some(ref id) = stream_id {
+                    let _ = app.emit(
+                        "agent-stream",
+                        AgentStreamChunk {
+                            stream_id: id.clone(),
+                            chunk,
+                        },
+                    );
+                }
+            }
         }
 
-        let content = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let mut stderr_output = String::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            let _ = stderr.read_to_string(&mut stderr_output);
+        }
+
+        let status = child
+            .wait()
+            .map_err(|error| format!("{provider_name} process failed: {error}"))?;
+        if !status.success() {
+            return Err(command_failure(provider_name, stderr_output.as_bytes()));
+        }
+
+        let content = content.trim().to_string();
         if content.is_empty() {
             return Err(format!("{provider_name} returned an empty response."));
         }
