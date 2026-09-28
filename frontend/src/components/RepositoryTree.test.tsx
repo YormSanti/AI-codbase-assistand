@@ -10,6 +10,7 @@ const sampleTree: TreeNode = {
   is_directory: true,
   language: null,
   size_bytes: null,
+  file_id: null,
   children: [
     {
       name: "src",
@@ -17,6 +18,7 @@ const sampleTree: TreeNode = {
       is_directory: true,
       language: null,
       size_bytes: null,
+      file_id: null,
       children: [
         {
           name: "main.py",
@@ -24,6 +26,7 @@ const sampleTree: TreeNode = {
           is_directory: false,
           language: "python",
           size_bytes: 120,
+          file_id: 1,
           children: [],
         },
       ],
@@ -34,6 +37,7 @@ const sampleTree: TreeNode = {
       is_directory: false,
       language: "markdown",
       size_bytes: 40,
+      file_id: 2,
       children: [],
     },
   ],

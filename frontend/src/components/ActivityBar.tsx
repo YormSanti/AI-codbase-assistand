@@ -1,6 +1,6 @@
-import { FolderTree, GitBranch, Sparkles, Settings, Terminal } from "lucide-react";
+import { FolderTree, GitBranch, Sparkles, Settings } from "lucide-react";
 
-export type ActiveTab = "explorer" | "git" | "ai" | "settings";
+export type ActiveTab = "dashboard" | "projects" | "explorer" | "git" | "ai" | "settings" | "analytics" | "terminal";
 
 export function ActivityBar({
   activeTab,
@@ -14,8 +14,8 @@ export function ActivityBar({
   return (
     <aside className="activity-bar">
       <div className="activity-bar-top">
-        <div className="activity-logo" title="DevPilot AI">
-          <Terminal className="h-5 w-5" />
+        <div className="activity-logo" title="IFROG DevPilot">
+          <img src="/logo.png" alt="Logo" style={{ width: "20px", height: "20px", borderRadius: "4px", objectFit: "cover" }} />
         </div>
 
         <button

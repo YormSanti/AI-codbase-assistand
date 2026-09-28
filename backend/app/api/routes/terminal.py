@@ -48,6 +48,14 @@ async def terminal_websocket(websocket: WebSocket):
     if pid == 0:
         # Child process
         os.environ["TERM"] = "xterm-256color"
+        
+        # PyInstaller overrides LD_LIBRARY_PATH, which breaks external 
+        # commands (like node). Restore the original library path.
+        if "LD_LIBRARY_PATH_ORIG" in os.environ:
+            os.environ["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH_ORIG"]
+        else:
+            os.environ.pop("LD_LIBRARY_PATH", None)
+
         os.chdir(cwd)
         os.execv("/bin/bash", ["bash", "-i"])
     else:

@@ -41,5 +41,25 @@ export interface TreeNode {
   is_directory: boolean;
   language: Language | null;
   size_bytes: number | null;
+  file_id: number | null;
   children: TreeNode[];
+}
+
+export type SymbolKind = "class" | "function" | "method" | "import";
+
+export interface CodeSymbol {
+  id: number;
+  name: string;
+  kind: SymbolKind;
+  parent_name: string | null;
+  start_line: number;
+  end_line: number;
+}
+
+export interface FilePreview {
+  file_id: number;
+  path: string;
+  content: string | null;
+  is_binary: boolean;
+  truncated: boolean;
 }

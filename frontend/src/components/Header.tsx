@@ -1,4 +1,4 @@
-import { Terminal, Sparkles, CheckCircle2, Circle } from "lucide-react";
+import { CheckCircle2, Circle } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { Badge } from "./ui/badge";
 
@@ -6,9 +6,8 @@ export function Header({ hasRepository }: { hasRepository: boolean }) {
   return (
     <header className="app-header">
       <div className="header-brand">
-        <div className="logo-badge">
-          <Terminal className="logo-icon" />
-          <Sparkles className="logo-sparkle" />
+        <div className="logo-badge" style={{ padding: 0, overflow: "hidden" }}>
+          <img src="/logo.png" alt="IFROG Logo" style={{ width: "24px", height: "24px", objectFit: "cover", borderRadius: "6px" }} />
         </div>
         <div className="brand-text">
           <h1 className="brand-title">

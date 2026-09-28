@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { AIAgentPage } from "@/components/AIAgentPage";
 import { DashboardPage } from "@/components/DashboardPage";
+import { ProjectsPage } from "@/components/ProjectsPage";
 import { ExplorerPage } from "@/components/ExplorerPage";
 import { GitPage } from "@/components/GitPage";
 import { TerminalPage } from "@/components/TerminalPage";
@@ -27,6 +28,18 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [hasVisitedTerminal, setHasVisitedTerminal] = useState(false);
   const [hasVisitedAi, setHasVisitedAi] = useState(false);
+  const [aiDraft, setAiDraft] = useState<string | null>(null);
+  const [activeThread, setActiveThread] = useState("default");
+  const [visitedThreads, setVisitedThreads] = useState<string[]>(["default"]);
+
+  const [isSessionRestored, setIsSessionRestored] = useState(false);
+
+  function handleSelectThread(threadId: string) {
+    setAiDraft(null);
+    setActiveThread(threadId);
+    setVisitedThreads(current => current.includes(threadId) ? current : [...current, threadId]);
+    setActiveTab("ai");
+  }
 
   useEffect(() => {
     if (activeTab === "terminal" && !hasVisitedTerminal) {
@@ -89,9 +102,16 @@ export default function App() {
               setError(err instanceof ApiError ? err.message : "Failed to restore repository");
             }
           } finally {
-            if (isMounted) setIsLoading(false);
+            if (isMounted) {
+              setIsLoading(false);
+              setIsSessionRestored(true);
+            }
           }
+        } else if (isMounted) {
+          setIsSessionRestored(true);
         }
+      } else if (isMounted) {
+        setIsSessionRestored(true);
       }
     };
     
@@ -101,13 +121,17 @@ export default function App() {
 
   // Save session
   useEffect(() => {
+    if (!isSessionRestored) return;
+
     const saveSession = async () => {
       let label = "main";
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         try {
           const { getCurrentWindow } = await import('@tauri-apps/api/window');
           label = getCurrentWindow().label;
-        } catch (e) {}
+        } catch {
+          // ignore
+        }
       }
       
       if (label === "main") {
@@ -126,8 +150,7 @@ export default function App() {
     };
     
     saveSession();
-  }, [activeTab, repository?.root_path, selectedFile?.path]);
-
+  }, [activeTab, isSessionRestored, repository?.root_path, selectedFile?.path, selectedFile]);
 
   async function handleOpen(path: string) {
     setIsLoading(true);
@@ -142,6 +165,7 @@ export default function App() {
       setRepository(null);
       setTree(null);
       setError(err instanceof ApiError ? err.message : "Failed to open repository");
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -153,12 +177,32 @@ export default function App() {
     }
   }
 
+  function handleAskAIAboutFile(node: TreeNode) {
+    setAiDraft(`Review @${node.path}. Explain its responsibility, identify likely issues, and suggest focused improvements.`);
+    setActiveTab("ai");
+  }
+
+  async function handleDeleteRepository(repositoryId: number) {
+    await repositoryApi.remove(repositoryId);
+    if (repository?.id === repositoryId) {
+      setRepository(null);
+      setTree(null);
+      setSelectedFile(null);
+      localStorage.removeItem("ifrog_repo_path");
+      localStorage.removeItem("ifrog_selected_file");
+      setActiveTab("projects");
+    }
+  }
+
   return (
     <SidebarProvider>
       <AppSidebar
         activeTab={activeTab}
         onSelectTab={(tab) => setActiveTab(tab)}
         repository={repository}
+        onOpenRepository={handleOpen}
+        onDeleteRepository={handleDeleteRepository}
+        onSelectThread={handleSelectThread}
       />
 
       <SidebarInset>
@@ -182,6 +226,18 @@ export default function App() {
             />
           )}
 
+          {/* Projects */}
+          {activeTab === "projects" && (
+            <ProjectsPage
+              onSelectThread={handleSelectThread}
+              currentRepository={repository}
+              isLoading={isLoading}
+              onOpen={handleOpen}
+              onDeleteRepository={handleDeleteRepository}
+              onNavigate={(tab) => setActiveTab(tab)}
+            />
+          )}
+
           {/* File Explorer */}
           {activeTab === "explorer" && (
             <ExplorerPage
@@ -192,6 +248,7 @@ export default function App() {
               onOpen={handleOpen}
               onSelectFile={handleSelectFile}
               onCloseFile={() => setSelectedFile(null)}
+              onAskAI={handleAskAIAboutFile}
             />
           )}
 
@@ -213,15 +270,25 @@ export default function App() {
           {/* AI Agent */}
           {hasVisitedAi && (
             <div style={{ display: (activeTab === "ai" || activeTab === "ai-agent") ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
-              <AIAgentPage repository={repository} />
+              {visitedThreads.map(threadId => (
+              <div key={`${repository?.id ?? "none"}:${threadId}`} style={{ display: threadId === activeThread ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
+              <AIAgentPage
+                repository={repository}
+                initialPrompt={threadId === activeThread ? aiDraft : null}
+                onInitialPromptConsumed={() => setAiDraft(null)}
+              />
+              </div>
+              ))}
             </div>
           )}
 
-          {/* Analytics */}
-          {activeTab === "analytics" && (
+          {/* Analytics & Code Charts */}
+          {(activeTab === "analytics" || activeTab === "chart" || activeTab === "charts") && (
             <AnalyticsPage
               repository={repository}
               tree={tree}
+              onNavigate={(tab) => setActiveTab(tab)}
+              onOpen={handleOpen}
             />
           )}
 

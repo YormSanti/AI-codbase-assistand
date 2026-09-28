@@ -41,6 +41,10 @@ class FileMetadataRepositoryPort(ABC):
     def list_repositories(self) -> list[RepositoryInfo]: ...
 
     @abstractmethod
+    def delete_repository(self, repository_id: int) -> None:
+        """Delete a repository and its indexed files."""
+
+    @abstractmethod
     def replace_files(self, repository_id: int, files: list[FileMetadata]) -> list[FileMetadata]:
         """Atomically replace all indexed files for a repository (re-index)."""
 

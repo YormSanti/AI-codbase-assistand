@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "IFROG",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.ifrog.desktop",
   "build": {
     "beforeDevCommand": "npm run desktop:web:dev",
@@ -43,5 +43,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/YormSanti/AI-codbase-assistand/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNDQ0FEMkJGQjYwNDIxQTgKUldTb0lRUzJ2OUxLUEZoOGs0a1puOVp0ZTBXb2dWVnFHWFAyRU1OYkF5eU1jM0kya2szR1B0LzcK"
+    }
   }
 }

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.models import FileMetadata, Language, RepositoryInfo
 from app.domain.ports import FileMetadataRepositoryPort
-from app.infrastructure.db.orm_models import FileRecord, RepositoryRecord
+from app.infrastructure.db.orm_models import FileRecord, RepositoryRecord, SymbolRecord
 
 
 def _to_repository_info(record: RepositoryRecord, file_count: int = 0) -> RepositoryInfo:
@@ -74,6 +74,15 @@ class SqlAlchemyFileMetadataRepository(FileMetadataRepositoryPort):
     def list_repositories(self) -> list[RepositoryInfo]:
         records = self._session.scalars(select(RepositoryRecord)).all()
         return [_to_repository_info(r, file_count=self._count_files(r.id)) for r in records]
+
+    def delete_repository(self, repository_id: int) -> None:
+        file_ids_subquery = select(FileRecord.id).where(FileRecord.repository_id == repository_id)
+        self._session.execute(delete(SymbolRecord).where(SymbolRecord.file_id.in_(file_ids_subquery)))
+        self._session.execute(delete(FileRecord).where(FileRecord.repository_id == repository_id))
+        self._session.execute(
+            delete(RepositoryRecord).where(RepositoryRecord.id == repository_id)
+        )
+        self._session.flush()
 
     def replace_files(self, repository_id: int, files: list[FileMetadata]) -> list[FileMetadata]:
         self._session.execute(delete(FileRecord).where(FileRecord.repository_id == repository_id))
