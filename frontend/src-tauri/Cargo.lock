@@ -1853,7 +1853,7 @@ dependencies = [
 
 [[package]]
 name = "ifrog"
-version = "1.3.2"
+version = "1.3.3"
 dependencies = [
  "serde",
  "serde_json",

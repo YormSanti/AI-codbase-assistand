@@ -37,7 +37,7 @@ def remote_web_url(remote: str) -> str | None:
 class GitReviewClient(GitReviewPort):
     def _repository(self, path: str) -> Repo:
         try:
-            repo = Repo(path)
+            repo = Repo(path, search_parent_directories=True)
             if repo.bare or not repo.working_tree_dir:
                 raise NotAGitRepositoryError("Select a Git working tree to review changes.")
             return repo
@@ -87,6 +87,7 @@ class GitReviewClient(GitReviewPort):
 
     def get_status(self, path: str) -> GitStatus:
         repo = self._repository(path)
+        root = str(repo.working_tree_dir)
         try:
             branch = None if repo.head.is_detached else repo.active_branch.name
             has_head = repo.head.is_valid()
@@ -95,7 +96,7 @@ class GitReviewClient(GitReviewPort):
             upstream = tracking.name if tracking is not None else None
             ahead = behind = None
             if has_head and tracking is not None and tracking.is_valid():
-                counts, _ = self._run(path, "rev-list", "--left-right", "--count", f"HEAD...{tracking.path}")
+                counts, _ = self._run(root, "rev-list", "--left-right", "--count", f"HEAD...{tracking.path}")
                 ahead, behind = map(int, counts.split())
             remotes = list(repo.remotes)
             remote = next((item for item in remotes if item.name == "origin"), remotes[0] if remotes else None)
@@ -111,13 +112,14 @@ class GitReviewClient(GitReviewPort):
             ] if has_head else []
             return GitStatus(
                 branch, head_commit, upstream, ahead, behind,
-                remote_url, self._changes(path), commits,
+                remote_url, self._changes(root), commits,
             )
         except (GitError, ValueError, IndexError) as exc:
             raise GitReviewError("Git metadata is no longer available. Try refreshing.") from exc
 
     def get_diff(self, root_path: str, path: str, staged: bool) -> GitDiff:
-        self._repository(root_path)
+        repo = self._repository(root_path)
+        root_path = str(repo.working_tree_dir)
         relative = PurePosixPath(path)
         if not path or relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
             raise GitReviewError("Select a changed file inside the repository.")

@@ -33,6 +33,31 @@ def test_open_supports_non_git_directory(tmp_path: Path) -> None:
     assert files == ["sample.py"]
 
 
+def test_open_subfolder_keeps_selected_root_and_relative_files(git_repo_path: Path) -> None:
+    from git import Repo
+
+    frontend = git_repo_path / "frontend"
+    frontend.mkdir()
+    (frontend / "app.ts").write_text("export const x = 1;\n")
+    (frontend / "file with spaces.ts").write_text("export const y = 2;\n")
+    (frontend / "new.ts").write_text("export const z = 3;\n")
+    (frontend / "ignored.txt").write_text("ignored by parent Git rules\n")
+    sibling = git_repo_path / "frontend-other"
+    sibling.mkdir()
+    (sibling / "other.ts").write_text("outside the selected folder\n")
+    repo = Repo(git_repo_path)
+    repo.index.add(["frontend/app.ts", "frontend/file with spaces.ts"])
+    client = GitPythonClient()
+
+    info = client.open(str(frontend))
+
+    assert info.name == "frontend"
+    assert info.root_path == str(frontend)
+    assert info.current_branch == repo.active_branch.name
+    assert info.head_commit == repo.head.commit.hexsha
+    assert client.list_tracked_files(str(frontend)) == ["app.ts", "file with spaces.ts", "new.ts"]
+
+
 def test_open_rejects_nonexistent_path(tmp_path: Path) -> None:
     client = GitPythonClient()
 
