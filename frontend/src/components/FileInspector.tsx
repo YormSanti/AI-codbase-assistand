@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
   AlertCircle,
   Binary,
@@ -12,6 +12,8 @@ import {
   Pencil,
   Save,
   Search,
+  Undo2,
+  Redo2,
   X,
 } from "lucide-react";
 import { fileApi } from "../api/fileApi";
@@ -23,8 +25,15 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useAppSettings } from "../hooks/useAppSettings";
 import type { CodeEditorHandle } from "./CodeEditorSurface";
+import type { EditorCommand } from "../editor/editorCommands";
 
 const CodeEditorSurface = lazy(async () => ({ default: (await import("./CodeEditorSurface")).CodeEditorSurface }));
+
+export interface FileInspectorHandle {
+  save: () => Promise<boolean>;
+  focus: () => void;
+  runCommand: (command: EditorCommand) => void;
+}
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null || bytes === undefined) return "Unknown size";
@@ -48,6 +57,7 @@ const symbolColors: Record<SymbolKind, string> = {
 };
 
 export function FileInspector({
+  ref,
   file,
   onClose,
   onAskAI,
@@ -60,7 +70,12 @@ export function FileInspector({
   onCloseOpenFile,
   outlineVisible = true,
   localRepositoryId,
+  active = true,
+  manageCloseGuard = true,
+  fileStates,
+  minimap = true,
 }: {
+  ref?: Ref<FileInspectorHandle>;
   file: TreeNode;
   onClose: () => void;
   onAskAI?: (file: TreeNode) => void;
@@ -73,6 +88,10 @@ export function FileInspector({
   onCloseOpenFile?: (file: TreeNode) => void;
   outlineVisible?: boolean;
   localRepositoryId?: number;
+  active?: boolean;
+  manageCloseGuard?: boolean;
+  fileStates?: Record<string, { dirty: boolean; saving: boolean }>;
+  minimap?: boolean;
 }) {
   const { settings } = useAppSettings();
   const [preview, setPreview] = useState<FilePreview | null>(null);
@@ -108,17 +127,17 @@ export function FileInspector({
   }, [onEditorStateChange]);
 
   useEffect(() => {
-    if (!isDirty && !isSaving) return;
+    if (!manageCloseGuard || (!isDirty && !isSaving)) return;
     const beforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
-  }, [isDirty, isSaving]);
+  }, [isDirty, isSaving, manageCloseGuard]);
 
   useEffect(() => {
-    if (!("__TAURI_INTERNALS__" in window)) return;
+    if (!manageCloseGuard || !("__TAURI_INTERNALS__" in window)) return;
     let active = true;
     let unlisten: (() => void) | undefined;
     void import("@tauri-apps/api/window")
@@ -135,7 +154,7 @@ export function FileInspector({
       active = false;
       unlisten?.();
     };
-  }, []);
+  }, [manageCloseGuard]);
 
   useEffect(() => {
     let active = true;
@@ -233,8 +252,9 @@ export function FileInspector({
     onClose();
   };
 
-  const handleSave = async () => {
-    if (!isDirty || !canEdit || !preview?.content_hash || file.file_id === null || savingRef.current || readOnly) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!isDirty) return true;
+    if (!canEdit || !preview?.content_hash || file.file_id === null || savingRef.current || readOnly) return false;
     savingRef.current = true;
     setIsSaving(true);
     setSaveError(null);
@@ -257,27 +277,42 @@ export function FileInspector({
       } catch {
         setSaveNotice("Saved to disk. Reopen the file to refresh its outline.");
       }
+      return true;
     } catch (requestError) {
       setSaveError(requestError instanceof ApiError ? requestError.message : "Could not save this file. Try again.");
+      return false;
     } finally {
       savingRef.current = false;
       setIsSaving(false);
     }
   };
 
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+    focus: () => { codeEditorRef.current?.focus(); editorRef.current?.focus(); },
+    runCommand: command => {
+      if (command === "save") { void handleSave(); return; }
+      if (command === "goToLine") codeEditorRef.current?.showGoToLine();
+      else if (command === "find") codeEditorRef.current?.find();
+      else if (command === "selectAll") codeEditorRef.current?.selectAll();
+      else if ((command === "undo" || command === "redo") && !savingRef.current && !readOnly) codeEditorRef.current?.[command]();
+    },
+  }));
+
   return (
     <section className={autoEdit ? "vscode-inspector" : "flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card"} aria-label={`Inspect ${file.name}`}>
       <header className={autoEdit ? "vscode-editor-header" : "flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3"}>
         {autoEdit ? <div className="vscode-tabs" role="tablist" aria-label="Open files">
           {(openFiles?.length ? openFiles : [file]).map((openFile) => {
-            const selected = openFile.file_id === file.file_id;
-            return <div key={openFile.file_id} className={`vscode-tab ${selected ? "is-active" : ""}`}>
-              <button type="button" role="tab" aria-selected={selected} aria-controls="code-editor-content" title={openFile.path} onClick={() => onSelectOpenFile?.(openFile)}>
+            const selected = openFile.path === file.path;
+            const dirty = selected ? isDirty : fileStates?.[openFile.path]?.dirty;
+            return <div key={openFile.path} className={`vscode-tab ${selected ? "is-active" : ""}`}>
+              <button type="button" role="tab" aria-selected={selected} aria-controls={`code-editor-content-${openFile.file_id}`} title={openFile.path} onClick={() => onSelectOpenFile?.(openFile)}>
                 <FileCode2 size={14} className={`file-color-${openFile.language ?? "other"}`} />
                 <span>{openFile.name}</span>
               </button>
-              <button type="button" className="vscode-tab-close" disabled={selected && isSaving} onClick={() => selected ? closeFile() : onCloseOpenFile?.(openFile)} title={selected ? "Close file preview" : `Close ${openFile.name}`} aria-label={`Close ${openFile.name}`}>
-                {selected && isDirty ? <span className="vscode-dirty-dot" /> : <X size={13} />}
+              <button type="button" className="vscode-tab-close" disabled={selected ? isSaving : fileStates?.[openFile.path]?.saving} onClick={() => selected ? closeFile() : onCloseOpenFile?.(openFile)} title={selected ? "Close file preview" : `Close ${openFile.name}`} aria-label={`Close ${openFile.name}`}>
+                {dirty ? <span className="vscode-dirty-dot" aria-label="Unsaved changes" /> : <X size={13} />}
               </button>
             </div>;
           })}
@@ -297,6 +332,11 @@ export function FileInspector({
         </div>}
 
         <div className={autoEdit ? "vscode-editor-actions" : "flex items-center gap-1.5"}>
+          {autoEdit && isEditing && <>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Undo" title="Undo (Ctrl/Cmd+Z)" disabled={isSaving || readOnly} onClick={() => codeEditorRef.current?.undo()}><Undo2 className="h-3.5 w-3.5" /></Button>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)" disabled={isSaving || readOnly} onClick={() => codeEditorRef.current?.redo()}><Redo2 className="h-3.5 w-3.5" /></Button>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Find in file" title="Find and replace (Ctrl/Cmd+F)" onClick={() => codeEditorRef.current?.find()}><Search className="h-3.5 w-3.5" /></Button>
+          </>}
           {isEditing ? <>
             <Button variant="outline" size="sm" className="h-8 text-xs" disabled={isSaving || readOnly} onClick={discardEdits}>Discard</Button>
             <Button size="sm" className="h-8 gap-1.5 text-xs" disabled={!isDirty || isSaving || readOnly} onClick={() => void handleSave()} title="Save (Ctrl/Cmd+S)">
@@ -364,7 +404,7 @@ export function FileInspector({
           </div>
         </div>
       ) : (
-        <div id={autoEdit ? "code-editor-content" : undefined} role={autoEdit ? "tabpanel" : undefined} aria-label={autoEdit ? file.name : undefined} className={`file-inspector-grid min-h-0 flex-1 ${autoEdit ? "vscode-editor-grid" : ""}`} style={autoEdit && !outlineVisible ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
+        <div id={autoEdit ? `code-editor-content-${file.file_id}` : undefined} role={autoEdit ? "tabpanel" : undefined} aria-label={autoEdit ? file.name : undefined} className={`file-inspector-grid min-h-0 flex-1 ${autoEdit ? "vscode-editor-grid" : ""}`} style={autoEdit && !outlineVisible ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
           {isEditing && autoEdit ? <Suspense fallback={<div className="flex items-center justify-center text-xs text-muted-foreground">Loading editor…</div>}><CodeEditorSurface
             ref={codeEditorRef}
             value={draft}
@@ -374,6 +414,9 @@ export function FileInspector({
             lineNumbers={settings.lineNumbers}
             wordWrap={settings.wordWrap}
             readOnly={isSaving || readOnly}
+            active={active}
+            minimap={minimap}
+            cursorLine={cursor.line}
             onChange={(value) => { setDraft(value); setSaveNotice(null); }}
             onSave={() => void handleSave()}
             onCursorChange={setCursor}
@@ -384,7 +427,7 @@ export function FileInspector({
               </div>}
               <textarea
                 ref={editorRef}
-                autoFocus
+                autoFocus={active}
                 aria-label={`Edit ${file.name}`}
                 className="h-full min-h-0 min-w-0 flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-[12px] leading-5 text-foreground outline-none"
                 style={{ tabSize: settings.tabSize }}
@@ -397,7 +440,7 @@ export function FileInspector({
                 onChange={(event) => { setDraft(event.target.value); setSaveNotice(null); }}
                 onScroll={(event) => { if (gutterRef.current) gutterRef.current.scrollTop = event.currentTarget.scrollTop; }}
                 onKeyDown={(event) => {
-                  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+                  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "s") {
                     event.preventDefault();
                     void handleSave();
                   } else if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !isSaving && !readOnly) {
@@ -484,7 +527,7 @@ export function FileInspector({
       {autoEdit && <footer className="vscode-file-status" aria-label="Editor status">
         <span>{isSaving ? "Saving…" : isDirty ? "Modified" : canEdit ? "Ready" : "Read-only"}</span>
         <div>
-          <span>Ln {cursor.line}, Col {cursor.column}</span>
+          <button type="button" title="Go to line (Ctrl/Cmd+G)" disabled={!isEditing} onClick={() => codeEditorRef.current?.showGoToLine()}>Ln {cursor.line}, Col {cursor.column}</button>
           <span>Spaces: {settings.tabSize}</span>
           <span>UTF-8</span>
           <span>{preview?.content?.includes("\r\n") ? "CRLF" : "LF"}</span>

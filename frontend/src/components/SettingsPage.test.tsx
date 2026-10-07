@@ -6,6 +6,7 @@ import { SettingsPage } from "./SettingsPage";
 import { ThemeToggle } from "./ThemeToggle";
 import { AIThreadStartHero } from "./AIThreadStartHero";
 import { FileInspector } from "./FileInspector";
+import appConfig from "../../src-tauri/tauri.conf.json";
 
 vi.mock("../api/fileApi", () => ({ fileApi: {
   getContent: vi.fn().mockResolvedValue({ file_id: 1, path: "main.py", content: "\tprint('hello')", is_binary: false, truncated: false }),
@@ -121,7 +122,7 @@ describe("Settings", () => {
     render(<SettingsPage />);
     expect(screen.getByRole("slider", { name: "Interface font size: 16px" })).toHaveValue("16");
     fireEvent.click(screen.getByRole("button", { name: "About" }));
-    expect(screen.getByText("1.1.0")).toBeInTheDocument();
+    expect(screen.getByText(appConfig.version)).toBeInTheDocument();
     expect(screen.queryByText("1.0.0-beta")).not.toBeInTheDocument();
   });
 });

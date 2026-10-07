@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { ChevronDown, FileCode2, Files, FolderOpen, GitBranch, PanelLeft, PanelRight, RefreshCw, Search, WrapText, X } from 'lucide-react';
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Ref } from 'react';
+import { FileCode2, Files, FolderOpen, GitBranch, PanelLeft, PanelRight, RefreshCw, SaveAll, Search, WrapText, X } from 'lucide-react';
 import type { FilePreview, RepositoryInfo, TreeNode } from '../types/domain';
 import { RepositoryPicker } from './RepositoryPicker';
 import { RepositorySummary } from './RepositorySummary';
@@ -10,8 +10,12 @@ import { Input } from './ui/input';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import './CodeEditor.css';
 import { editorApi } from '../api/editorApi';
+import { useEditorDocuments } from '../editor/useEditorDocuments';
+import type { EditorWorkspaceHandle } from '../editor/editorCommands';
 
 interface Props {
+  ref?: Ref<EditorWorkspaceHandle>;
+  embedded?: boolean;
   mode?: 'explorer' | 'editor';
   repository: RepositoryInfo | null;
   tree: TreeNode | null;
@@ -30,7 +34,7 @@ function collectFiles(node: TreeNode | null): TreeNode[] {
   return node.is_directory ? node.children.flatMap(collectFiles) : [node];
 }
 
-export function ExplorerPage({ mode = 'explorer', repository, tree: indexedTree, selectedFile, isLoading, onOpen, onSelectFile, onCloseFile, onAskAI, onEditorStateChange, onFileSaved }: Props) {
+export function ExplorerPage({ ref, embedded = false, mode = 'explorer', repository, tree: indexedTree, selectedFile, isLoading, onOpen, onSelectFile, onCloseFile, onAskAI, onEditorStateChange, onFileSaved }: Props) {
   const isEditor = mode === 'editor';
   const [localTree, setLocalTree] = useState<{ repository: RepositoryInfo; tree: TreeNode } | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -38,10 +42,12 @@ export function ExplorerPage({ mode = 'explorer', repository, tree: indexedTree,
   const [refreshVersion, setRefreshVersion] = useState(0);
   const tree = isEditor && localTree?.repository === repository ? localTree.tree : indexedTree;
   const { settings, updateSettings } = useAppSettings();
-  const [openFiles, setOpenFiles] = useState<TreeNode[]>([]);
+  const documents = useEditorDocuments({ selectedFile, onSelectFile, onCloseFile, onStateChange: onEditorStateChange });
+  const { openFiles, closeFile, saveAll } = documents;
   const [showExplorer, setShowExplorer] = useState(true);
   const [showOutline, setShowOutline] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [showMinimap, setShowMinimap] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [fileQuery, setFileQuery] = useState('');
@@ -51,6 +57,28 @@ export function ExplorerPage({ mode = 'explorer', repository, tree: indexedTree,
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const files = useMemo(() => collectFiles(tree), [tree]);
   const matches = useMemo(() => files.filter(file => file.path.toLowerCase().includes(fileQuery.toLowerCase())).slice(0, 30), [files, fileQuery]);
+
+  useImperativeHandle(ref, () => ({ runCommand: command => {
+    if (command !== 'openFile' && command !== 'openFolder') documents.focusSelected();
+    switch (command) {
+      case 'openFolder': if (!isLoading) setShowFolderPicker(true); break;
+      case 'openFile': if (tree) { setFileQuery(''); setQuickIndex(0); setShowQuickOpen(true); } break;
+      case 'saveAll': if (!isLoading) void saveAll(); break;
+      case 'closeFile': if (selectedFile) closeFile(selectedFile); break;
+      case 'toggleExplorer': setShowExplorer(value => !value); break;
+      case 'toggleOutline': setShowOutline(value => !value); break;
+      case 'toggleMinimap': setShowMinimap(value => !value); break;
+      case 'toggleWordWrap': updateSettings({ wordWrap: !settings.wordWrap }); break;
+      case 'refreshFiles': setRefreshVersion(value => value + 1); break;
+      case 'previousFile': case 'nextFile': {
+        if (!openFiles.length) break;
+        const index = openFiles.findIndex(file => file.path === selectedFile?.path);
+        onSelectFile(openFiles[(index + (command === 'previousFile' ? -1 : 1) + openFiles.length) % openFiles.length]);
+        break;
+      }
+      default: documents.runSelectedCommand(command);
+    }
+  } }));
 
   useEffect(() => {
     if (!isEditor || !repository) {
@@ -76,43 +104,56 @@ export function ExplorerPage({ mode = 'explorer', repository, tree: indexedTree,
     onFileSaved?.(preview);
   };
 
-  useEffect(() => { setOpenFiles([]); }, [repository]);
-  useEffect(() => {
-    if (!selectedFile) return;
-    setOpenFiles(current => current.some(file => file.file_id === selectedFile.file_id)
-      ? current.map(file => file.file_id === selectedFile.file_id ? selectedFile : file)
-      : [...current, selectedFile]);
-  }, [selectedFile]);
-
   useEffect(() => {
     if (!isEditor) return;
+    // Capture Save All before CodeMirror can treat a shifted lowercase key as Save.
+    const saveAllShortcut = (event: KeyboardEvent) => {
+      if (!(event.target instanceof Node) || !workspaceRef.current?.contains(event.target)) return;
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!isLoading) void saveAll();
+      }
+    };
     const quickOpen = (event: KeyboardEvent) => {
+      const target = event.target;
+      const inWorkspace = target instanceof Node && workspaceRef.current?.contains(target);
+      if (inWorkspace && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'w' && selectedFile && !showQuickOpen && !showFolderPicker) {
+        event.preventDefault();
+        closeFile(selectedFile);
+      }
+      if (inWorkspace && (event.ctrlKey || event.metaKey) && event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && openFiles.length) {
+        event.preventDefault();
+        const index = openFiles.findIndex(file => file.path === selectedFile?.path);
+        onSelectFile(openFiles[(index + (event.key === 'ArrowLeft' ? -1 : 1) + openFiles.length) % openFiles.length]);
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault();
         if (tree) { setFileQuery(''); setQuickIndex(0); setShowQuickOpen(true); }
       }
       if (event.key === 'Escape') { setShowQuickOpen(false); setShowFolderPicker(false); }
     };
+    window.addEventListener('keydown', saveAllShortcut, true);
     window.addEventListener('keydown', quickOpen);
-    return () => window.removeEventListener('keydown', quickOpen);
-  }, [isEditor, tree]);
+    return () => {
+      window.removeEventListener('keydown', saveAllShortcut, true);
+      window.removeEventListener('keydown', quickOpen);
+    };
+  }, [isEditor, tree, isLoading, selectedFile, openFiles, onSelectFile, closeFile, saveAll, showQuickOpen, showFolderPicker]);
 
   useEffect(() => { if (showQuickOpen) quickInputRef.current?.focus(); }, [showQuickOpen]);
 
-  const closeSelectedFile = () => {
-    setOpenFiles(current => current.filter(file => file.file_id !== selectedFile?.file_id));
-    onCloseFile();
-  };
   const openFromSearch = (file: TreeNode) => { onSelectFile(file); setShowQuickOpen(false); };
   const cardStyle: CSSProperties = { borderRadius: 20, backgroundColor: 'rgba(18, 18, 24, 0.9)', border: '1.5px solid rgba(255, 255, 255, 0.08)', padding: '24px 28px', boxShadow: '0 8px 32px -8px rgba(0, 0, 0, 0.4)' };
 
   return (
     <div ref={workspaceRef} className={isEditor ? 'vscode-workspace' : 'explorer-page'} style={isEditor ? undefined : { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, width: '100%', boxSizing: 'border-box' }}>
-      <div className={isEditor ? 'vscode-titlebar' : undefined} style={isEditor ? undefined : { ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24 }}>
+      <div hidden={isEditor && embedded} className={isEditor ? 'vscode-titlebar' : undefined} style={isEditor ? undefined : { ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24 }}>
         {isEditor ? <>
           <div className="vscode-workspace-title"><FileCode2 size={17} /><h1>Code Editor</h1><span>/</span><span title={repository?.root_path}>{repository?.name ?? 'No folder opened'}</span></div>
           <button type="button" className="vscode-command-search" disabled={!tree} onClick={() => { setFileQuery(''); setQuickIndex(0); setShowQuickOpen(true); }}><Search size={13} /><span>Search files by name</span><kbd>Ctrl/Cmd P</kbd></button>
           <div className="vscode-layout-actions">
+            <button type="button" aria-label="Save all files" title="Save all files (Ctrl/Cmd+Shift+S)" disabled={!documents.dirtyCount || documents.saving || isLoading} onClick={() => void saveAll()}><SaveAll size={16} /></button>
             <button type="button" aria-label="Toggle file explorer" aria-pressed={showExplorer} title="Toggle file explorer" onClick={() => setShowExplorer(value => !value)}><PanelLeft size={16} /></button>
             <button type="button" aria-label="Toggle word wrap" aria-pressed={settings.wordWrap} title="Toggle word wrap" onClick={() => updateSettings({ wordWrap: !settings.wordWrap })}><WrapText size={16} /></button>
             <button type="button" aria-label="Toggle symbol outline" aria-pressed={showOutline} title="Toggle symbol outline" onClick={() => setShowOutline(value => !value)}><PanelRight size={16} /></button>
@@ -129,6 +170,7 @@ export function ExplorerPage({ mode = 'explorer', repository, tree: indexedTree,
       {!isEditor && repository && <div style={{ ...cardStyle, padding: '20px 28px' }}><RepositorySummary repository={repository} /></div>}
 
       {isEditor && filesError && <div role="alert">{filesError}<button type="button" onClick={() => setRefreshVersion(value => value + 1)}>Retry loading files</button></div>}
+      {isEditor && documents.notice && <div className="vscode-workspace-notice" role="status">{documents.notice}</div>}
       {isEditor && repository && !tree ? <div className="vscode-welcome"><p>{filesLoading ? 'Loading local files…' : 'Local files are unavailable.'}</p></div> : !tree ? (
         <div className={isEditor ? 'vscode-welcome' : undefined} style={isEditor ? undefined : { ...cardStyle, padding: '80px 40px', textAlign: 'center' }}>
           <FileCode2 size={78} strokeWidth={1} className="vscode-welcome-mark" />
@@ -145,11 +187,7 @@ export function ExplorerPage({ mode = 'explorer', repository, tree: indexedTree,
               {isEditor && <button type="button" aria-label="Refresh local files" title="Refresh local files" disabled={filesLoading} onClick={() => setRefreshVersion(value => value + 1)}><RefreshCw size={15} /></button>}
               {isEditor && <button type="button" aria-label="Open project folder" title="Open project folder" disabled={isLoading} onClick={() => setShowFolderPicker(true)}><FolderOpen size={15} /></button>}
             </div>
-            {isEditor && openFiles.length > 0 && <div className="vscode-open-editors">
-              <h3><ChevronDown size={13} /> OPEN EDITORS <span>{openFiles.length}</span></h3>
-              {openFiles.map(file => <button type="button" key={file.file_id} className={file.file_id === selectedFile?.file_id ? 'is-selected' : ''} onClick={() => onSelectFile(file)}><FileCode2 size={13} className={'file-color-' + (file.language ?? 'other')} /><span>{file.name}</span></button>)}
-            </div>}
-            <div className="vscode-project-tree" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}><RepositoryTree root={tree} onSelectFile={onSelectFile} selectedFilePath={selectedFile?.path} /></div>
+            <div className="vscode-project-tree" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}><RepositoryTree root={tree} onSelectFile={onSelectFile} selectedFilePath={selectedFile?.path} showFilter={!isEditor} /></div>
           </aside>
 
           {isEditor && <div className="vscode-sidebar-resizer" role="separator" aria-label="Resize file explorer" aria-orientation="vertical" aria-valuenow={sidebarWidth} aria-valuemin={180} aria-valuemax={400} tabIndex={showExplorer ? 0 : -1}
@@ -171,20 +209,41 @@ export function ExplorerPage({ mode = 'explorer', repository, tree: indexedTree,
                   <span>Save file <kbd>Ctrl/Cmd S</kbd></span><span>Find in file <kbd>Ctrl/Cmd F</kbd></span>
                 </div>}
               </div>
-            ) : <FileInspector key={selectedFile.file_id} file={selectedFile} onClose={closeSelectedFile} onAskAI={selectedFile.file_id !== null && selectedFile.file_id < 0 ? undefined : onAskAI} onEditorStateChange={onEditorStateChange} onSaved={fileSaved} localRepositoryId={selectedFile.file_id !== null && selectedFile.file_id < 0 ? repository?.id : undefined} readOnly={isLoading} autoEdit={isEditor} openFiles={openFiles.filter(file => isEditor || (file.file_id !== null && file.file_id >= 0))} onSelectOpenFile={onSelectFile} onCloseOpenFile={file => setOpenFiles(current => current.filter(open => open.file_id !== file.file_id))} outlineVisible={!isEditor || showOutline} />}
+            ) : null}
+            {openFiles.map(file => <div key={file.path} className="vscode-document" hidden={file.path !== selectedFile?.path}>
+              <FileInspector
+                ref={documents.refFor(file.path)}
+                file={file}
+                active={file.path === selectedFile?.path}
+                manageCloseGuard={false}
+                onClose={() => closeFile(file, true)}
+                onAskAI={file.file_id !== null && file.file_id < 0 ? undefined : onAskAI}
+                onEditorStateChange={documents.reporterFor(file.path)}
+                onSaved={fileSaved}
+                localRepositoryId={file.file_id !== null && file.file_id < 0 ? repository?.id : undefined}
+                readOnly={isLoading}
+                autoEdit={isEditor}
+                openFiles={openFiles.filter(open => isEditor || (open.file_id !== null && open.file_id >= 0))}
+                fileStates={documents.states}
+                onSelectOpenFile={onSelectFile}
+                onCloseOpenFile={closeFile}
+                outlineVisible={!isEditor || showOutline}
+                minimap={showMinimap}
+              />
+            </div>)}
           </div>
         </div>
       )}
 
       {isEditor && <footer className="vscode-workspace-status" aria-label="Workspace status">
         <div><span className="vscode-remote-mark"><FileCode2 size={13} /></span><span><GitBranch size={12} />{repository?.current_branch ?? 'Local workspace'}</span></div>
-        <div><span>{isLoading ? 'Opening project…' : filesLoading ? 'Loading local files…' : files.length + ' files'}</span><span>IFROG</span></div>
+        <div>{documents.dirtyCount > 0 && <span>{documents.dirtyCount} unsaved</span>}<span>{isLoading ? 'Opening project…' : filesLoading ? 'Loading local files…' : files.length + ' files'}</span><span>IFROG</span></div>
       </footer>}
 
       <DialogPrimitive.Root open={isEditor && (showQuickOpen || showFolderPicker)} onOpenChange={open => { if (!open) { setShowQuickOpen(false); setShowFolderPicker(false); } }}>
         <DialogPrimitive.Portal container={workspaceRef.current}>
           <DialogPrimitive.Overlay asChild><div className="vscode-dialog-backdrop" onClick={() => { setShowQuickOpen(false); setShowFolderPicker(false); }}>
-          <DialogPrimitive.Content asChild onCloseAutoFocus={event => { event.preventDefault(); workspaceRef.current?.querySelector<HTMLElement>('[role="textbox"][aria-label^="Edit "]')?.focus(); }}>
+          <DialogPrimitive.Content asChild onCloseAutoFocus={event => { event.preventDefault(); documents.focusSelected(); }}>
         <section className={'vscode-dialog ' + (showQuickOpen ? 'vscode-quick-open' : '')} onClick={event => event.stopPropagation()}>
           <DialogPrimitive.Title className="sr-only">{showQuickOpen ? 'Go to file' : 'Open project folder'}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">{showQuickOpen ? 'Search and select a file in your project.' : 'Choose a local folder to open in your workspace.'}</DialogPrimitive.Description>

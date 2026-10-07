@@ -103,7 +103,7 @@ PTY terminal currently supports Linux and macOS shells.
 3. Enter an absolute path to a local Git repository and click
    "Open repository". The file tree appears once indexing completes.
 4. Select a file in **File Explorer** to view its source and symbol outline.
-   Open **Code Editor** from the sidebar to edit files directly, or click
+   Open **code** near Settings at the bottom of the sidebar to edit files directly, or click
    **Edit** in the file preview. Make changes, then **Save** or press **Ctrl/Cmd+S**. **Tab**
    inserts the configured indentation. **Discard** returns to the saved source.
 
@@ -124,11 +124,40 @@ undo/redo, and cursor/encoding information. **Ctrl/Cmd+P** searches project
 files; **Ctrl/Cmd+F** searches the current file. Toolbar controls toggle the
 explorer, word wrap, and symbol outline. The editor follows the workspace
 theme and indentation preferences and loads its editor engine locally.
+Each open file keeps its own draft, cursor, and undo history when switching
+tabs. Dirty dots and the status bar show unsaved files. **Save All** or
+**Ctrl/Cmd+Shift+S** saves every modified tab; a conflict keeps that file's
+draft and selects it for review. Close a tab with **Ctrl/Cmd+W** and switch
+tabs with **Ctrl/Cmd+Alt+Left/Right**. The toolbar provides Undo, Redo, and
+Find/Replace; **Ctrl/Cmd+G** or the line/column indicator opens Go to Line.
 Its explorer lists local files including untracked files, `.env`, hidden
 folders, and files excluded by `.gitignore`. Refresh local files to pick up
 new files created outside IFROG. This complete listing applies only to Code
 Editor; File Explorer, AI indexing, and analytics keep their existing filters.
 Editor-only files are read and saved directly without adding them to that index.
+
+Click **code** near Settings to enter the dedicated **IFROG Editor** app inside the
+same window. It fills the workspace and provides its own toolbar and navigation
+rail. The compact menu bar provides File, Edit, Selection, View, Go, Terminal,
+and Help actions, with project file search in the center. **View** toggles the
+Explorer, symbol outline, word wrap, and clickable code minimap. **Help** shows
+keyboard shortcuts. **Back to IFROG** returns to the dashboard; **File > File
+Explorer** opens the shared File Explorer. The rail toggles the Explorer and
+opens file search, Git Repository, AI Assistant, or editor settings. Switching between File
+Explorer and the editor retains all open file drafts, including editor-only
+files hidden from File Explorer. Leaving the workspace, changing projects,
+or closing IFROG asks before discarding any unsaved files.
+
+Use **Terminal** or **Ctrl/Cmd+\`** to show a resizable terminal below the
+editor. It starts in the opened project folder and keeps its session when
+hidden or when switching to File Explorer. A project switch closes the old
+editor terminal; if the panel is open, a terminal starts in the new project.
+Leaving the file workspace closes its integrated terminal. The separate
+Terminal page continues to keep its existing sessions for each project.
+
+The dedicated editor app lives in `frontend/src/editor/EditorApp.tsx` and
+`EditorApp.css`. It shares the file workspace, CodeMirror engine, file APIs,
+and save/conflict handling with the existing File Explorer.
 
 ## Git Repository dashboard
 

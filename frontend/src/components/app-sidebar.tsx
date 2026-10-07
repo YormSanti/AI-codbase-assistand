@@ -42,7 +42,6 @@ export function AppSidebar({
   const navItems = [
     { title: "Dashboard", id: "dashboard", icon: IconDashboard },
     { title: "File Explorer", id: "explorer", icon: IconFolder },
-    { title: "Code Editor", id: "editor", icon: IconCode },
     { title: "Terminal", id: "terminal", icon: IconTerminal2 },
     { title: "Git Repository", id: "git", icon: IconGitBranch },
     { title: "AI Assistant", id: "ai", icon: IconRobot },
@@ -107,6 +106,16 @@ export function AppSidebar({
 
       <SidebarFooter className="p-2 border-t border-sidebar-border text-xs text-muted-foreground flex flex-col gap-2">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={activeTab === "editor"}
+              onClick={() => onSelectTab?.("editor")}
+              tooltip="code"
+            >
+              <IconCode className="size-4" />
+              <span>code</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={activeTab === "settings"}
