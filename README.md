@@ -135,6 +135,9 @@ folders, and files excluded by `.gitignore`. Refresh local files to pick up
 new files created outside IFROG. This complete listing applies only to Code
 Editor; File Explorer, AI indexing, and analytics keep their existing filters.
 Editor-only files are read and saved directly without adding them to that index.
+Opening a folder inside a Git repository keeps that selected folder as the
+workspace root. For example, opening `frontend` lists files inside `frontend`
+and starts its terminal there. Git status and diffs use the containing repository.
 
 Click **code** near Settings to enter the dedicated **IFROG Editor** app inside the
 same window. It fills the workspace and provides its own toolbar and navigation

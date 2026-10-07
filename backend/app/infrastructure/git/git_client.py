@@ -44,13 +44,13 @@ class GitPythonClient(GitClientPort):
         if not target_path.is_dir():
             raise NotAGitRepositoryError(f"'{path}' is not a directory")
 
-        # 1. Direct Git repository
+        # 1. Git repository containing the selected folder. Keep the selected
+        # folder as the workspace root even when Git lives in a parent folder.
         repo = self._load_repo_or_none(target_path)
         if repo is not None and repo.working_tree_dir:
-            root_path = repo.working_tree_dir
             return RepositoryInfo(
-                name=Path(root_path).name,
-                root_path=root_path,
+                name=target_path.name,
+                root_path=str(target_path),
                 current_branch=self._current_branch(repo),
                 head_commit=self._head_commit(repo),
             )
@@ -96,12 +96,18 @@ class GitPythonClient(GitClientPort):
         if not target_path.exists() or not target_path.is_dir():
             return []
 
-        # 1. Direct Git repository
+        # Git reports paths relative to its working tree, while the scanner
+        # needs paths relative to the selected folder.
         repo = self._load_repo_or_none(target_path)
-        if repo is not None:
-            tracked = repo.git.ls_files().splitlines()
+        if repo is not None and repo.working_tree_dir:
+            tracked = repo.git.ls_files("-z").split("\0")
             untracked = repo.untracked_files  # already excludes .gitignore'd paths
-            return sorted({p for p in (*tracked, *untracked) if p})
+            prefix = target_path.relative_to(Path(repo.working_tree_dir).resolve()).as_posix()
+            prefix = "" if prefix == "." else prefix + "/"
+            return sorted({
+                p.removeprefix(prefix) for p in (*tracked, *untracked)
+                if p and (not prefix or p.startswith(prefix))
+            })
 
         # 2. Check for sub-repositories (multi-repo workspace)
         sub_repos = self._find_sub_repos(target_path)

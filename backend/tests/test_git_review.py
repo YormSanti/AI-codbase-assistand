@@ -33,6 +33,33 @@ def test_live_status_history_and_remote_without_reindex(api_client: TestClient, 
     assert status["ahead"] is None
 
 
+def test_subfolder_workspace_reviews_containing_git_repository(api_client: TestClient, git_repo_path: Path) -> None:
+    frontend = git_repo_path / "frontend"
+    frontend.mkdir()
+    (frontend / "app.ts").write_text("export const original = true;\n")
+    repo = Repo(git_repo_path)
+    repo.index.add(["frontend/app.ts"])
+    base = open_project(api_client, frontend)
+    (frontend / "app.ts").write_text("export const updated = true;\n")
+    (frontend / "new.ts").write_text("frontend draft\n")
+    (git_repo_path / "main.py").write_text("print('parent change')\n")
+
+    response = api_client.get(base)
+    assert response.status_code == 200
+    status = response.json()
+    assert status['branch'] == repo.active_branch.name
+    assert {'frontend/app.ts', 'frontend/new.ts', 'main.py'} <= {change['path'] for change in status['changes']}
+    staged = api_client.get(base + '/diff', params={'path': 'frontend/app.ts', 'staged': True})
+    assert staged.status_code == 200
+    assert '+export const original = true;' in staged.json()['content']
+    worktree = api_client.get(base + '/diff', params={'path': 'frontend/app.ts'})
+    assert worktree.status_code == 200
+    assert '+export const updated = true;' in worktree.json()['content']
+    untracked = api_client.get(base + '/diff', params={'path': 'frontend/new.ts'})
+    assert untracked.status_code == 200
+    assert '+frontend draft' in untracked.json()['content']
+
+
 def test_staged_and_worktree_diffs_are_separate_and_read_only(api_client: TestClient, git_repo_path: Path) -> None:
     base = open_project(api_client, git_repo_path)
     repo = Repo(git_repo_path)

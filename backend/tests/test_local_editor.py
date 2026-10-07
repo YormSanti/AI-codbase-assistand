@@ -15,6 +15,43 @@ def open_editor(client: TestClient, root: Path) -> str:
     return f"/api/repositories/{info['id']}/editor"
 
 
+def test_open_subfolder_scopes_index_editor_and_saves(api_client, git_repo_path):
+    from git import Repo
+
+    frontend = git_repo_path / "frontend"
+    frontend.mkdir()
+    (frontend / "app.ts").write_text("export const x = 1;\n")
+    (frontend / "ignored.txt").write_text("local draft\n")
+    (git_repo_path / "backend").mkdir()
+    (git_repo_path / "backend/server.py").write_text("print('backend')\n")
+    Repo(git_repo_path).index.add(["frontend/app.ts", "backend/server.py"])
+
+    info = api_client.post('/api/repositories/open', json={'path': str(frontend)}).json()
+    assert info['name'] == 'frontend'
+    assert info['root_path'] == str(frontend)
+    base = f"/api/repositories/{info['id']}"
+    indexed = paths(api_client.get(base + '/tree').json())
+    assert set(indexed) == {'', 'app.ts'}
+    preview = api_client.get(f"/api/files/{indexed['app.ts']['file_id']}/content").json()
+    assert preview['content'] == 'export const x = 1;\n'
+
+    local = paths(api_client.get(base + '/editor/tree').json())
+    assert set(local) == {'', 'app.ts', 'ignored.txt'}
+    assert local['']['name'] == 'frontend'
+    preview = api_client.get(base + '/editor/content', params={'path': 'ignored.txt'}).json()
+    saved = api_client.put(base + '/editor/content', params={'path': 'ignored.txt'}, json={
+        'content': 'updated\n', 'expected_hash': preview['content_hash'],
+    })
+    assert saved.status_code == 200
+    assert (frontend / 'ignored.txt').read_text() == 'updated\n'
+    assert api_client.get(base + '/editor/content', params={'path': '../main.py'}).status_code == 404
+    assert (git_repo_path / 'main.py').read_text() == 'def main():\n    pass\n'
+
+    parent = api_client.post('/api/repositories/open', json={'path': str(git_repo_path)}).json()
+    assert parent['id'] != info['id']
+    assert api_client.get(base).json()['root_path'] == str(frontend)
+
+
 @pytest.mark.parametrize('git_project', [True, False], ids=['git', 'plain'])
 def test_complete_listing_is_exclusive_to_editor(api_client, git_repo_path, tmp_path, git_project):
     root = git_repo_path if git_project else tmp_path / 'plain'
