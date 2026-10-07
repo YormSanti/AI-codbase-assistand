@@ -15,7 +15,7 @@ const mockRepo: RepositoryInfo = {
 };
 
 describe("AIThreadStartHero", () => {
-  it("renders header with project name and pill selectors", () => {
+  it("renders agenda title, ask anything input, think button, and quick actions", () => {
     render(
       <AIThreadStartHero
         repository={mockRepo}
@@ -23,12 +23,13 @@ describe("AIThreadStartHero", () => {
       />
     );
 
-    expect(screen.getByText(/What should we build in/)).toBeInTheDocument();
-    expect(screen.getAllByText("pharmacy-mobile-v2").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole("img", { name: "IFROG" })).toBeInTheDocument();
-    expect(screen.getByText("Gemini")).toBeInTheDocument();
-    expect(screen.getByText("High")).toBeInTheDocument();
-    expect(screen.getByText("santi")).toBeInTheDocument();
+    expect(screen.getByText("What’s on the agenda today?")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask anything")).toBeInTheDocument();
+    expect(screen.getByText("Think")).toBeInTheDocument();
+    expect(screen.getByTitle("Voice input")).toBeInTheDocument();
+    expect(screen.getByTitle("Send instruction")).toBeInTheDocument();
+    expect(screen.getByText("Write or edit")).toBeInTheDocument();
+    expect(screen.getByText("Search the web")).toBeInTheDocument();
   });
 
   it("submits prompt when clicking send button", async () => {
@@ -42,8 +43,8 @@ describe("AIThreadStartHero", () => {
       />
     );
 
-    const textarea = screen.getByPlaceholderText("Ask about your codebase…");
-    await user.type(textarea, "Refactor auth controller");
+    const input = screen.getByPlaceholderText("Ask anything");
+    await user.type(input, "Refactor auth controller");
 
     const sendBtn = screen.getByTitle("Send instruction");
     await user.click(sendBtn);
@@ -53,5 +54,47 @@ describe("AIThreadStartHero", () => {
       "Gemini",
       "High"
     );
+  });
+
+  it("submits prompt when pressing Enter", async () => {
+    const user = userEvent.setup();
+    const onSubmitPrompt = vi.fn();
+
+    render(
+      <AIThreadStartHero
+        repository={mockRepo}
+        onSubmitPrompt={onSubmitPrompt}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("Ask anything");
+    await user.type(input, "Explain main logic{Enter}");
+
+    expect(onSubmitPrompt).toHaveBeenCalledWith(
+      "Explain main logic",
+      "Gemini",
+      "High"
+    );
+  });
+
+  it("populates prompt when clicking quick action suggestions", async () => {
+    const user = userEvent.setup();
+    render(
+      <AIThreadStartHero
+        repository={mockRepo}
+        onSubmitPrompt={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("Ask anything");
+    const writeOrEdit = screen.getByText("Write or edit");
+    await user.click(writeOrEdit);
+
+    expect(input).toHaveValue("Write or edit: ");
+
+    const searchWeb = screen.getByText("Search the web");
+    await user.click(searchWeb);
+
+    expect(input).toHaveValue("Search the web for: ");
   });
 });

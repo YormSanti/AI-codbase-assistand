@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RepositoryTree } from "./RepositoryTree";
 import type { TreeNode } from "../types/domain";
 
@@ -67,5 +67,26 @@ describe("RepositoryTree", () => {
     render(<RepositoryTree root={sampleTree} />);
 
     expect(screen.getByText("markdown")).toBeInTheDocument();
+  });
+
+  it("reveals the selected file and supports opening it with the keyboard", async () => {
+    const user = userEvent.setup();
+    const onSelectFile = vi.fn();
+    render(<RepositoryTree root={sampleTree} selectedFilePath="src/main.py" onSelectFile={onSelectFile} />);
+    const file = screen.getByRole("treeitem", { name: "src/main.py" });
+    expect(file).toHaveAttribute("aria-selected", "true");
+    file.focus();
+    await user.keyboard("{Enter}");
+    expect(onSelectFile).toHaveBeenCalledWith(expect.objectContaining({ path: "src/main.py" }));
+  });
+
+  it("does not steal focus when a slash is typed in the code editor", async () => {
+    const user = userEvent.setup();
+    render(<><RepositoryTree root={sampleTree} /><textarea aria-label="Edit code" /></>);
+    const editor = screen.getByRole("textbox", { name: "Edit code" });
+    await user.click(editor);
+    await user.keyboard("/");
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveValue("/");
   });
 });

@@ -1,8 +1,8 @@
 import {
   IconChartBar,
+  IconCode,
   IconDashboard,
   IconFolder,
-  IconFolders,
   IconGitBranch,
   IconRobot,
   IconSettings,
@@ -26,6 +26,7 @@ export function AppSidebar({
   onSelectTab,
   repository,
   onOpenRepository,
+  onOpenTerminal,
   onDeleteRepository,
   onSelectThread,
   ...props
@@ -34,13 +35,14 @@ export function AppSidebar({
   onSelectTab?: (tab: string) => void;
   repository?: RepositoryInfo | null;
   onOpenRepository?: (path: string) => Promise<void> | void;
+  onOpenTerminal?: (path: string) => Promise<void> | void;
   onDeleteRepository?: (repositoryId: number) => Promise<void> | void;
   onSelectThread?: (threadId: string) => void;
 }) {
   const navItems = [
     { title: "Dashboard", id: "dashboard", icon: IconDashboard },
-    { title: "Projects", id: "projects", icon: IconFolders },
     { title: "File Explorer", id: "explorer", icon: IconFolder },
+    { title: "Code Editor", id: "editor", icon: IconCode },
     { title: "Terminal", id: "terminal", icon: IconTerminal2 },
     { title: "Git Repository", id: "git", icon: IconGitBranch },
     { title: "AI Assistant", id: "ai", icon: IconRobot },
@@ -95,6 +97,7 @@ export function AppSidebar({
           <ProjectsSidebarNav
             currentRepository={repository}
             onOpenRepository={onOpenRepository}
+            onOpenTerminal={onOpenTerminal}
             onDeleteRepository={onDeleteRepository}
             onSelectThread={onSelectThread}
             onSelectTab={onSelectTab}

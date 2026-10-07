@@ -1,6 +1,6 @@
-import { FolderTree, GitBranch, Sparkles, Settings } from "lucide-react";
+import { FileCode2, FolderTree, GitBranch, Sparkles, Settings } from "lucide-react";
 
-export type ActiveTab = "dashboard" | "projects" | "explorer" | "git" | "ai" | "settings" | "analytics" | "terminal";
+export type ActiveTab = "dashboard" | "explorer" | "editor" | "git" | "ai" | "settings" | "analytics" | "terminal";
 
 export function ActivityBar({
   activeTab,
@@ -27,6 +27,17 @@ export function ActivityBar({
         >
           <FolderTree className="h-5 w-5" />
           <span className="activity-tooltip">Explorer</span>
+        </button>
+
+        <button
+          type="button"
+          className={`activity-btn ${activeTab === "editor" ? "activity-btn--active" : ""}`}
+          onClick={() => onSelectTab("editor")}
+          title="Code Editor"
+          aria-label="Code Editor"
+        >
+          <FileCode2 className="h-5 w-5" />
+          <span className="activity-tooltip">Code Editor</span>
         </button>
 
         <button

@@ -38,6 +38,10 @@ function TreeNodeItem({
 }) {
   const [expanded, setExpanded] = useState(depth < 1);
 
+  useEffect(() => {
+    if (node.is_directory && selectedFilePath?.startsWith(`${node.path}/`)) setExpanded(true);
+  }, [node.is_directory, node.path, selectedFilePath]);
+
   const isSearching = searchQuery.trim().length > 0;
   const isExpandedEffective = isSearching ? true : expanded;
 
@@ -48,6 +52,11 @@ function TreeNodeItem({
         className={`tree-row tree-row--file ${isSelected ? "tree-row--selected" : ""}`}
         style={{ paddingLeft: depth * 16 + 8 }}
         onClick={() => onSelectFile?.(node)}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isSelected}
+        aria-label={node.path}
+        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectFile?.(node); } }}
       >
         {getFileIcon(node.name, node.language)}
         <span className="tree-name font-mono">{node.name}</span>
@@ -135,6 +144,7 @@ export function RepositoryTree({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"], [role="textbox"]')) return;
       if (e.key === "/" && document.activeElement !== inputRef.current) {
         e.preventDefault();
         inputRef.current?.focus();

@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Match useAppearance's explicit theme, rather than the operating-system media query. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --background: #09090b;
@@ -31,9 +34,9 @@
     --sidebar-ring: #3b82f6;
     --radius: 0.75rem;
 
-    --font-heading: 'Outfit', sans-serif;
-    --font-body: 'Inter', sans-serif;
-    --font-code: 'JetBrains Mono', monospace;
+    --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-code: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace;
   }
 
   .light, [data-theme="light"] {
@@ -105,11 +108,13 @@
   --font-heading: var(--font-heading);
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  border-color: var(--border);
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border-color: var(--border);
+  }
 }
 
 body {

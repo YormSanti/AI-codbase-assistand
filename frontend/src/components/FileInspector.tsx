@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Binary,
@@ -9,15 +9,22 @@ import {
   FileCode2,
   LoaderCircle,
   MessageSquareCode,
+  Pencil,
+  Save,
   Search,
   X,
 } from "lucide-react";
 import { fileApi } from "../api/fileApi";
+import { editorApi } from "../api/editorApi";
 import { ApiError } from "../api/client";
 import type { CodeSymbol, FilePreview, SymbolKind, TreeNode } from "../types/domain";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { useAppSettings } from "../hooks/useAppSettings";
+import type { CodeEditorHandle } from "./CodeEditorSurface";
+
+const CodeEditorSurface = lazy(async () => ({ default: (await import("./CodeEditorSurface")).CodeEditorSurface }));
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null || bytes === undefined) return "Unknown size";
@@ -44,11 +51,30 @@ export function FileInspector({
   file,
   onClose,
   onAskAI,
+  onEditorStateChange,
+  onSaved,
+  readOnly = false,
+  autoEdit = false,
+  openFiles,
+  onSelectOpenFile,
+  onCloseOpenFile,
+  outlineVisible = true,
+  localRepositoryId,
 }: {
   file: TreeNode;
   onClose: () => void;
   onAskAI?: (file: TreeNode) => void;
+  onEditorStateChange?: (state: { dirty: boolean; saving: boolean }) => void;
+  onSaved?: (preview: FilePreview) => void;
+  readOnly?: boolean;
+  autoEdit?: boolean;
+  openFiles?: TreeNode[];
+  onSelectOpenFile?: (file: TreeNode) => void;
+  onCloseOpenFile?: (file: TreeNode) => void;
+  outlineVisible?: boolean;
+  localRepositoryId?: number;
 }) {
+  const { settings } = useAppSettings();
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [symbols, setSymbols] = useState<CodeSymbol[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,7 +82,60 @@ export function FileInspector({
   const [copied, setCopied] = useState(false);
   const [symbolQuery, setSymbolQuery] = useState("");
   const [activeLine, setActiveLine] = useState<number | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const savingRef = useRef(false);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<HTMLDivElement>(null);
+  const codeEditorRef = useRef<CodeEditorHandle>(null);
+  const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const baseline = preview?.content?.replace(/\r\n/g, "\n") ?? "";
+  const isDirty = isEditing && draft !== baseline;
+  const canEdit = preview?.editable === true && Boolean(preview.content_hash);
+  const editorStatusRef = useRef({ dirty: false, saving: false });
+  editorStatusRef.current = { dirty: isDirty, saving: isSaving };
+
+  useEffect(() => {
+    onEditorStateChange?.({ dirty: isDirty, saving: isSaving });
+  }, [isDirty, isSaving, onEditorStateChange]);
+
+  useEffect(() => () => {
+    onEditorStateChange?.({ dirty: false, saving: false });
+  }, [onEditorStateChange]);
+
+  useEffect(() => {
+    if (!isDirty && !isSaving) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [isDirty, isSaving]);
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => getCurrentWindow().onCloseRequested((event) => {
+        if (!active) return;
+        const status = editorStatusRef.current;
+        if (status.saving || (status.dirty && !window.confirm("Discard your unsaved changes and close the app?"))) {
+          event.preventDefault();
+        }
+      }))
+      .then((stopListening) => { if (active) unlisten = stopListening; else stopListening(); })
+      .catch((requestError) => console.error("Could not register the editor close guard", requestError));
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -66,6 +145,11 @@ export function FileInspector({
     setSymbols([]);
     setSymbolQuery("");
     setActiveLine(null);
+    setCursor({ line: 1, column: 1 });
+    setIsEditing(false);
+    setDraft("");
+    setSaveError(null);
+    setSaveNotice(null);
 
     if (file.file_id === null) {
       setError("This file has not been indexed yet.");
@@ -73,7 +157,9 @@ export function FileInspector({
       return () => { active = false; };
     }
 
-    Promise.all([fileApi.getContent(file.file_id), fileApi.getSymbols(file.file_id)])
+    Promise.all(localRepositoryId !== undefined
+      ? [editorApi.getContent(localRepositoryId, file.path), editorApi.getSymbols(localRepositoryId, file.path)]
+      : [fileApi.getContent(file.file_id), fileApi.getSymbols(file.file_id)])
       .then(([content, fileSymbols]) => {
         if (!active) return;
         setPreview(content);
@@ -88,9 +174,17 @@ export function FileInspector({
       });
 
     return () => { active = false; };
-  }, [file.file_id]);
+  }, [file.file_id, file.path, localRepositoryId]);
+
+  useEffect(() => {
+    if (autoEdit && canEdit && !isEditing) {
+      setDraft(baseline);
+      setIsEditing(true);
+    }
+  }, [autoEdit, canEdit, isEditing, baseline]);
 
   const lines = useMemo(() => preview?.content?.split("\n") ?? [], [preview?.content]);
+  const draftLines = useMemo(() => draft.split("\n"), [draft]);
   const filteredSymbols = useMemo(() => {
     const query = symbolQuery.trim().toLowerCase();
     return query
@@ -108,15 +202,86 @@ export function FileInspector({
 
   const jumpToLine = (line: number) => {
     setActiveLine(line);
+    if (autoEdit && isEditing) {
+      codeEditorRef.current?.goToLine(line);
+      return;
+    }
+    if (isEditing && editorRef.current) {
+      const offset = draft.split("\n").slice(0, line - 1).reduce((total, row) => total + row.length + 1, 0);
+      editorRef.current.focus();
+      editorRef.current.setSelectionRange(offset, offset);
+      editorRef.current.scrollTop = Math.max(0, (line - 3) * 20);
+      if (gutterRef.current) gutterRef.current.scrollTop = editorRef.current.scrollTop;
+      return;
+    }
     sourceRef.current
       ?.querySelector<HTMLElement>(`[data-line="${line}"]`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
+  const discardEdits = () => {
+    if (savingRef.current || (isDirty && !window.confirm("Discard your unsaved changes?"))) return;
+    setDraft(baseline);
+    setIsEditing(autoEdit);
+    setSaveError(null);
+    setSaveNotice(null);
+  };
+
+  const closeFile = () => {
+    if (savingRef.current || (isDirty && !window.confirm("Discard your unsaved changes and close this file?"))) return;
+    onEditorStateChange?.({ dirty: false, saving: false });
+    onClose();
+  };
+
+  const handleSave = async () => {
+    if (!isDirty || !canEdit || !preview?.content_hash || file.file_id === null || savingRef.current || readOnly) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveNotice(null);
+    // Textareas use LF internally; retain an existing CRLF file's line endings.
+    const usesCRLF = preview.content?.includes("\r\n") && !preview.content.replace(/\r\n/g, "").includes("\n");
+    const content = usesCRLF ? draft.replace(/\n/g, "\r\n") : draft;
+    try {
+      const saved = localRepositoryId !== undefined
+        ? await editorApi.saveContent(localRepositoryId, file.path, content, preview.content_hash)
+        : await fileApi.saveContent(file.file_id, content, preview.content_hash);
+      setPreview(saved);
+      setDraft(saved.content?.replace(/\r\n/g, "\n") ?? "");
+      onSaved?.(saved);
+      setSaveNotice("Saved to disk.");
+      try {
+        setSymbols(localRepositoryId !== undefined
+          ? await editorApi.getSymbols(localRepositoryId, file.path)
+          : await fileApi.getSymbols(file.file_id));
+      } catch {
+        setSaveNotice("Saved to disk. Reopen the file to refresh its outline.");
+      }
+    } catch (requestError) {
+      setSaveError(requestError instanceof ApiError ? requestError.message : "Could not save this file. Try again.");
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
+  };
+
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card" aria-label={`Inspect ${file.name}`}>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+    <section className={autoEdit ? "vscode-inspector" : "flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card"} aria-label={`Inspect ${file.name}`}>
+      <header className={autoEdit ? "vscode-editor-header" : "flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3"}>
+        {autoEdit ? <div className="vscode-tabs" role="tablist" aria-label="Open files">
+          {(openFiles?.length ? openFiles : [file]).map((openFile) => {
+            const selected = openFile.file_id === file.file_id;
+            return <div key={openFile.file_id} className={`vscode-tab ${selected ? "is-active" : ""}`}>
+              <button type="button" role="tab" aria-selected={selected} aria-controls="code-editor-content" title={openFile.path} onClick={() => onSelectOpenFile?.(openFile)}>
+                <FileCode2 size={14} className={`file-color-${openFile.language ?? "other"}`} />
+                <span>{openFile.name}</span>
+              </button>
+              <button type="button" className="vscode-tab-close" disabled={selected && isSaving} onClick={() => selected ? closeFile() : onCloseOpenFile?.(openFile)} title={selected ? "Close file preview" : `Close ${openFile.name}`} aria-label={`Close ${openFile.name}`}>
+                {selected && isDirty ? <span className="vscode-dirty-dot" /> : <X size={13} />}
+              </button>
+            </div>;
+          })}
+        </div> : <div className="flex min-w-0 items-center gap-2.5">
           <FileCode2 className="h-4 w-4 shrink-0 text-blue-400" />
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -129,9 +294,20 @@ export function FileInspector({
             </div>
             <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground" title={file.path}>{file.path}</p>
           </div>
-        </div>
+        </div>}
 
-        <div className="flex items-center gap-1.5">
+        <div className={autoEdit ? "vscode-editor-actions" : "flex items-center gap-1.5"}>
+          {isEditing ? <>
+            <Button variant="outline" size="sm" className="h-8 text-xs" disabled={isSaving || readOnly} onClick={discardEdits}>Discard</Button>
+            <Button size="sm" className="h-8 gap-1.5 text-xs" disabled={!isDirty || isSaving || readOnly} onClick={() => void handleSave()} title="Save (Ctrl/Cmd+S)">
+              {isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              {isSaving ? "Saving…" : "Save"}
+            </Button>
+          </> : preview && !preview.is_binary && !error && (
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={!canEdit || readOnly} title={preview.editing_disabled_reason ?? undefined} onClick={() => { setDraft(baseline); setIsEditing(true); setSaveNotice(null); }}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+          )}
           {onAskAI && (
             <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => onAskAI(file)}>
               <MessageSquareCode className="h-3.5 w-3.5 text-violet-400" />
@@ -141,18 +317,30 @@ export function FileInspector({
           <Button variant="ghost" size="icon" className="size-8" onClick={() => void handleCopyPath()} title="Copy relative path">
             {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
           </Button>
-          <Button variant="ghost" size="icon" className="size-8" onClick={onClose} title="Close file preview">
+          {!autoEdit && <Button variant="ghost" size="icon" className="size-8" disabled={isSaving} onClick={closeFile} title="Close file preview">
             <X className="h-4 w-4" />
-          </Button>
+          </Button>}
         </div>
       </header>
 
-      <div className="flex items-center gap-4 border-b border-border bg-secondary/30 px-4 py-2 text-[11px] text-muted-foreground">
-        <span>{formatBytes(file.size_bytes)}</span>
-        <span>{lines.length ? `${lines.length.toLocaleString()} lines` : "No source loaded"}</span>
+      {autoEdit ? <nav className="vscode-breadcrumbs" aria-label="File breadcrumbs">
+        {file.path.split("/").map((part, index, parts) => <span key={index}>
+          {index > 0 && <ChevronRight size={12} />}
+          {index === parts.length - 1 && <FileCode2 size={13} className={`file-color-${file.language ?? "other"}`} />}
+          {part}
+        </span>)}
+        {isDirty && <span className="vscode-unsaved-tag" role="status">Unsaved changes</span>}
+      </nav> : <div className="flex items-center gap-4 border-b border-border bg-secondary/30 px-4 py-2 text-[11px] text-muted-foreground">
+        <span>{formatBytes(preview?.size_bytes ?? file.size_bytes)}</span>
+        <span>{isEditing ? `${draftLines.length.toLocaleString()} lines` : lines.length ? `${lines.length.toLocaleString()} lines` : "No source loaded"}</span>
         <span>{symbols.length} {symbols.length === 1 ? "symbol" : "symbols"}</span>
         {preview?.truncated && <span className="text-amber-300">Preview limited to 500 KB</span>}
-      </div>
+        {isDirty && <span className="text-amber-300" role="status">Unsaved changes</span>}
+      </div>}
+
+      {saveError && <p className="border-b border-border px-4 py-2 text-xs text-destructive" role="alert">{saveError}</p>}
+      {saveNotice && <p className="border-b border-border px-4 py-2 text-xs text-emerald-500" role="status">{saveNotice}</p>}
+      {preview?.editing_disabled_reason && !preview.is_binary && <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">{preview.editing_disabled_reason}</p>}
 
       {isLoading ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -176,36 +364,82 @@ export function FileInspector({
           </div>
         </div>
       ) : (
-        <div className="file-inspector-grid min-h-0 flex-1">
-          <div ref={sourceRef} className="min-h-0 overflow-auto bg-background py-2 font-mono text-[12px] leading-5" role="region" aria-label="Source code">
+        <div id={autoEdit ? "code-editor-content" : undefined} role={autoEdit ? "tabpanel" : undefined} aria-label={autoEdit ? file.name : undefined} className={`file-inspector-grid min-h-0 flex-1 ${autoEdit ? "vscode-editor-grid" : ""}`} style={autoEdit && !outlineVisible ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
+          {isEditing && autoEdit ? <Suspense fallback={<div className="flex items-center justify-center text-xs text-muted-foreground">Loading editor…</div>}><CodeEditorSurface
+            ref={codeEditorRef}
+            value={draft}
+            label={`Edit ${file.name}`}
+            language={file.language}
+            tabSize={settings.tabSize}
+            lineNumbers={settings.lineNumbers}
+            wordWrap={settings.wordWrap}
+            readOnly={isSaving || readOnly}
+            onChange={(value) => { setDraft(value); setSaveNotice(null); }}
+            onSave={() => void handleSave()}
+            onCursorChange={setCursor}
+          /></Suspense> : isEditing ? (
+            <div className="flex min-h-0 overflow-hidden bg-background font-mono text-[12px] leading-5">
+              {settings.lineNumbers && !settings.wordWrap && <div ref={gutterRef} aria-hidden="true" className="w-14 shrink-0 overflow-hidden py-2 pr-3 text-right text-muted-foreground select-none">
+                {draftLines.map((_, index) => <div key={index}>{index + 1}</div>)}
+              </div>}
+              <textarea
+                ref={editorRef}
+                autoFocus
+                aria-label={`Edit ${file.name}`}
+                className="h-full min-h-0 min-w-0 flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-[12px] leading-5 text-foreground outline-none"
+                style={{ tabSize: settings.tabSize }}
+                wrap={settings.wordWrap ? "soft" : "off"}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                value={draft}
+                readOnly={isSaving || readOnly}
+                onChange={(event) => { setDraft(event.target.value); setSaveNotice(null); }}
+                onScroll={(event) => { if (gutterRef.current) gutterRef.current.scrollTop = event.currentTarget.scrollTop; }}
+                onKeyDown={(event) => {
+                  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+                    event.preventDefault();
+                    void handleSave();
+                  } else if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !isSaving && !readOnly) {
+                    event.preventDefault();
+                    const { selectionStart, selectionEnd } = event.currentTarget;
+                    const spaces = " ".repeat(settings.tabSize);
+                    setDraft(draft.slice(0, selectionStart) + spaces + draft.slice(selectionEnd));
+                    setSaveNotice(null);
+                    requestAnimationFrame(() => editorRef.current?.setSelectionRange(selectionStart + spaces.length, selectionStart + spaces.length));
+                  }
+                }}
+              />
+            </div>
+          ) : <div ref={sourceRef} style={{ tabSize: settings.tabSize }} className="min-h-0 overflow-auto bg-background py-2 font-mono text-[12px] leading-5" role="region" aria-label="Source code">
             {lines.map((line, index) => {
               const lineNumber = index + 1;
               return (
                 <div
                   key={lineNumber}
                   data-line={lineNumber}
-                  className={`flex min-w-max border-l-2 ${activeLine === lineNumber ? "border-blue-400 bg-blue-500/10" : "border-transparent"}`}
+                  className={`flex ${settings.wordWrap ? "min-w-0" : "min-w-max"} border-l-2 ${activeLine === lineNumber ? "border-blue-400 bg-blue-500/10" : "border-transparent"}`}
                 >
-                  <button
+                  {settings.lineNumbers && <button
                     type="button"
                     className="w-14 shrink-0 select-none pr-3 text-right text-zinc-600 hover:text-zinc-300"
                     onClick={() => setActiveLine(lineNumber)}
                     aria-label={`Line ${lineNumber}`}
                   >
                     {lineNumber}
-                  </button>
-                  <code className="whitespace-pre pr-6 text-foreground/85">{line || " "}</code>
+                  </button>}
+                  <code style={{ whiteSpace: settings.wordWrap ? "pre-wrap" : "pre", overflowWrap: settings.wordWrap ? "anywhere" : undefined }} className={`min-w-0 pr-6 text-foreground/85 ${settings.lineNumbers ? "" : "pl-3"}`}>{line || " "}</code>
                 </div>
               );
             })}
             {lines.length === 0 && <p className="p-6 text-center text-xs text-muted-foreground">This file is empty.</p>}
-          </div>
+          </div>}
 
-          <aside className="flex min-h-0 flex-col border-l border-border bg-card" aria-label="Symbol outline">
+          {(!autoEdit || outlineVisible) && <aside className="flex min-h-0 flex-col border-l border-border bg-card" aria-label="Symbol outline">
             <div className="border-b border-border p-3">
               <div className="mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                  <Braces className="h-3.5 w-3.5 text-violet-400" /> Outline
+                  <Braces className="h-3.5 w-3.5 text-violet-400" /> {isDirty ? "Outline (last saved)" : "Outline"}
                 </span>
                 <span className="text-[10px] text-muted-foreground">{filteredSymbols.length}</span>
               </div>
@@ -244,9 +478,20 @@ export function FileInspector({
                 </p>
               )}
             </div>
-          </aside>
+          </aside>}
         </div>
       )}
+      {autoEdit && <footer className="vscode-file-status" aria-label="Editor status">
+        <span>{isSaving ? "Saving…" : isDirty ? "Modified" : canEdit ? "Ready" : "Read-only"}</span>
+        <div>
+          <span>Ln {cursor.line}, Col {cursor.column}</span>
+          <span>Spaces: {settings.tabSize}</span>
+          <span>UTF-8</span>
+          <span>{preview?.content?.includes("\r\n") ? "CRLF" : "LF"}</span>
+          <span className="capitalize">{file.language === "other" ? "Plain Text" : file.language ?? "Plain Text"}</span>
+          <span>{formatBytes(preview?.size_bytes ?? file.size_bytes)}</span>
+        </div>
+      </footer>}
     </section>
   );
 }

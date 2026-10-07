@@ -40,7 +40,7 @@ describe("ProjectsSidebarNav", () => {
     localStorage.clear();
   });
 
-  it("renders Projects header with AI, list, and add buttons", async () => {
+  it("renders Projects header with AI, refresh, and add buttons", async () => {
     vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
 
     render(
@@ -52,7 +52,7 @@ describe("ProjectsSidebarNav", () => {
 
     expect(screen.getByText("Projects")).toBeInTheDocument();
     expect(screen.getByTitle("AI Assistant")).toBeInTheDocument();
-    expect(screen.getByTitle("Projects Catalog")).toBeInTheDocument();
+    expect(screen.getByTitle("Refresh projects")).toBeInTheDocument();
     expect(screen.getByTitle("Add Project")).toBeInTheDocument();
     await waitFor(() => expect(repositoryApi.list).toHaveBeenCalled());
   });
@@ -69,15 +69,41 @@ describe("ProjectsSidebarNav", () => {
     );
 
     expect(screen.getByText("pharmacy-mobile-v2")).toBeInTheDocument();
-    expect(screen.getByTitle("Open Terminal")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open terminal for pharmacy-mobile-v2" })).toBeInTheDocument();
     expect(screen.getByTitle("AI Agent Studio")).toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.click(screen.getByTitle("Open Terminal"));
+    await user.click(screen.getByRole("button", { name: "Open terminal for pharmacy-mobile-v2" }));
     expect(onSelectTab).toHaveBeenCalledWith("terminal");
 
     await user.click(screen.getByTitle("AI Agent Studio"));
     expect(onSelectTab).toHaveBeenCalledWith("ai");
+  });
+
+  it("opens another project's terminal without triggering the project row", async () => {
+    const user = userEvent.setup();
+    vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
+    const onOpenTerminal = vi.fn().mockResolvedValue(undefined);
+    const onOpenRepository = vi.fn();
+    const onSelectTab = vi.fn();
+    render(<ProjectsSidebarNav currentRepository={mockProjects[0]} onOpenTerminal={onOpenTerminal} onOpenRepository={onOpenRepository} onSelectTab={onSelectTab} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open terminal for pharmkulen-web" }));
+    expect(onOpenTerminal).toHaveBeenCalledExactlyOnceWith(mockProjects[1].root_path);
+    expect(onOpenRepository).not.toHaveBeenCalled();
+    expect(onSelectTab).not.toHaveBeenCalled();
+  });
+
+  it("shows a terminal-opening failure and allows retrying", async () => {
+    const user = userEvent.setup();
+    vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
+    const onOpenTerminal = vi.fn().mockRejectedValue(new Error("Project directory is missing"));
+    render(<ProjectsSidebarNav currentRepository={mockProjects[0]} onOpenTerminal={onOpenTerminal} />);
+
+    const button = await screen.findByRole("button", { name: "Open terminal for pharmkulen-web" });
+    await user.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Project directory is missing");
+    expect(button).toBeEnabled();
   });
 
   it("handles creating a new thread when clicking 'New thread'", async () => {
@@ -94,13 +120,13 @@ describe("ProjectsSidebarNav", () => {
       />
     );
 
-    const newThreadBtn = screen.getByText("New thread");
+    const newThreadBtn = screen.getByText("Start new session");
     expect(newThreadBtn).toBeInTheDocument();
 
     await user.click(newThreadBtn);
-    expect(onSelectTab).toHaveBeenCalledWith("ai");
     expect(onSelectThread).toHaveBeenCalled();
-    expect(screen.getByText("Thread 1")).toBeInTheDocument();
+    expect(onSelectTab).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Session ·/)).toBeInTheDocument();
   });
 
   it("deletes a thread after confirmation", async () => {
@@ -109,10 +135,10 @@ describe("ProjectsSidebarNav", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<ProjectsSidebarNav currentRepository={mockProjects[0]} />);
-    await user.click(screen.getByText("New thread"));
+    await user.click(screen.getByText("Start new session"));
     await user.click(screen.getByTitle("Delete Thread"));
 
-    expect(screen.queryByText("Thread 1")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Session ·/)).not.toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem("threads_1") ?? "[]")).toEqual([]);
   });
 
@@ -141,4 +167,16 @@ describe("ProjectsSidebarNav", () => {
       expect(screen.getByText("pharmkulen-web")).toBeInTheDocument();
     });
   });
+  it("does not invent projects when the list is empty", async () => {
+    vi.mocked(repositoryApi.list).mockResolvedValue([]);
+    render(<ProjectsSidebarNav currentRepository={null} />);
+    await waitFor(() => expect(repositoryApi.list).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Open your first project" })).toBeInTheDocument();
+    expect(screen.queryByText("pharmkulen-web")).not.toBeInTheDocument();
+    expect(screen.queryByText("pharmacy-mobile-v2")).not.toBeInTheDocument();
+    expect(screen.queryByText("Start new session")).not.toBeInTheDocument();
+  });
+
+
+
 });

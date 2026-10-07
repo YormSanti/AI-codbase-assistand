@@ -1,6 +1,6 @@
 [package]
 name = "ifrog"
-version = "0.1.1"
+version = "1.1.0"
 description = "AI-powered developer intelligence desktop app"
 authors = ["DevPilot contributors"]
 edition = "2021"

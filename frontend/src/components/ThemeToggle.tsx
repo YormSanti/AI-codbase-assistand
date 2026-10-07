@@ -1,27 +1,11 @@
-import { useEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
+import { useAppearance } from "../hooks/useAppearance";
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    const saved = localStorage.getItem("devpilot_theme");
-    if (saved === "light" || saved === "dark") return saved;
-    return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: light)")?.matches
-      ? "light"
-      : "dark";
-  });
-
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("devpilot_theme", theme);
-  }, [theme]);
+  const { resolvedTheme: theme, updateSettings } = useAppearance();
 
   const toggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+    updateSettings({ theme: theme === "dark" ? "light" : "dark" });
   };
 
   const isDark = theme === "dark";

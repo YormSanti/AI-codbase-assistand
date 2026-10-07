@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import {
   BarChart3,
   FileText,
-  Folder,
   HardDrive,
   Code2,
   PieChart as PieChartIcon,
@@ -14,6 +13,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import {
   BarChart,
@@ -32,6 +32,7 @@ import type { RepositoryInfo, TreeNode } from '../types/domain';
 interface Props {
   repository: RepositoryInfo | null;
   tree: TreeNode | null;
+  isLoading?: boolean;
   onNavigate?: (tab: string) => void;
   onOpen?: (path: string) => Promise<void> | void;
 }
@@ -117,7 +118,7 @@ const formatBytes = (bytes: number): string => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 };
 
-export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
+export function AnalyticsPage({ repository, tree, isLoading = false, onNavigate }: Props) {
   const [metricMode, setMetricMode] = useState<'count' | 'size'>('count');
   const [chartType, setChartType] = useState<'bar' | 'donut'>('bar');
 
@@ -193,7 +194,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
       { name: '1-10 KB', files: sizeTiers.small.count, color: '#34d399' },
       { name: '10-50 KB', files: sizeTiers.medium.count, color: '#fbbf24' },
       { name: '50-200 KB', files: sizeTiers.large.count, color: '#fb923c' },
-      { name: '> 200 KB', files: sizeTiers.huge.count, color: '#f43f5e' },
+      { name: '≥ 200 KB', files: sizeTiers.huge.count, color: '#f43f5e' },
     ];
 
     const topLanguage = sortedLangs[0];
@@ -212,10 +213,19 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
     };
   }, [tree, metricMode]);
 
+  if (isLoading) {
+    return (
+      <div role="status" className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+        <p className="text-sm">Loading repository analytics…</p>
+      </div>
+    );
+  }
+
   // Empty state when no repository or tree is loaded
   if (!repository || !tree) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full p-8 text-center bg-background">
+      <div className="flex flex-col items-center justify-center flex-1 min-h-0 min-w-0 w-full overflow-y-auto p-6 sm:p-8 text-center bg-background">
         <div className="relative mb-6 flex h-20 w-20 items-center justify-center rounded-2xl border border-violet-500/20 bg-gradient-to-b from-violet-500/10 to-transparent shadow-[0_0_40px_-10px_rgba(139,92,246,0.3)]">
           <BarChart3 className="h-10 w-10 text-violet-400" />
         </div>
@@ -225,16 +235,6 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
         </p>
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          {onNavigate && (
-            <button
-              type="button"
-              onClick={() => onNavigate('projects')}
-              className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-950/40 hover:bg-violet-500 transition-colors"
-            >
-              <Folder className="h-4 w-4" />
-              <span>Browse Projects</span>
-            </button>
-          )}
           {onNavigate && (
             <button
               type="button"
@@ -269,31 +269,34 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
     );
   }
 
-  const cardClass = 'rounded-2xl border border-border bg-card/80 p-6 shadow-sm flex flex-col';
+  const cardClass = '@container min-w-0 rounded-2xl border border-border bg-card/80 p-4 sm:p-6 shadow-sm flex flex-col';
+  const topLanguagePct = metricMode === 'count' ? stats.topLanguage?.countPct : stats.topLanguage?.sizePct;
+  const hasLanguageData = metricMode === 'count' ? stats.files > 0 : stats.totalBytes > 0;
+  const barChartHeight = Math.max(280, stats.sortedLangs.length * 32 + 40);
 
   return (
-    <div className="flex-1 w-full min-h-0 overflow-y-auto p-6 md:p-8 space-y-6 text-foreground bg-background">
+    <div className="flex-1 w-full min-h-0 min-w-0 overflow-y-auto p-4 sm:p-6 xl:p-8 space-y-6 text-foreground bg-background">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3.5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400">
             <BarChart3 className="h-6 w-6" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight text-foreground">Code Analytics</h1>
-              <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-400">
+              <span title={repository.name} className="max-w-full truncate rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[11px] font-semibold text-foreground">
                 {repository.name}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate max-w-md">
-              {repository.root_path} • {repository.current_branch || 'main'}
+            <p title={repository.root_path} className="text-xs text-muted-foreground font-mono mt-0.5 truncate max-w-md">
+              {repository.root_path} • {repository.current_branch || 'No active branch'}
             </p>
           </div>
         </div>
 
         {onNavigate && (
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => onNavigate('explorer')}
@@ -305,7 +308,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
             <button
               type="button"
               onClick={() => onNavigate('ai')}
-              className="flex items-center gap-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-300 hover:bg-violet-500/20 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-violet-500/20 transition-colors"
             >
               <Bot className="h-3.5 w-3.5" />
               <span>AI Review</span>
@@ -315,7 +318,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
       </div>
 
       {/* ── Top Metric Cards ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
             label: 'Total Files',
@@ -336,15 +339,15 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
           {
             label: 'Languages',
             value: stats.totalLangs,
-            sub: stats.topLanguage ? `${stats.topLanguage.lang} leads (${metricMode === 'count' ? stats.topLanguage.countPct : stats.topLanguage.sizePct}%)` : 'None',
+            sub: hasLanguageData && stats.topLanguage ? `${stats.topLanguage.lang} leads (${topLanguagePct}%)` : 'No data for this metric',
             icon: <Code2 className="h-5 w-5 text-emerald-400" />,
             border: 'border-emerald-500/30',
             bg: 'bg-emerald-500/5',
           },
           {
-            label: 'Large Files (>200KB)',
+            label: 'Large Files (≥200 KB)',
             value: stats.hugeFilesCount,
-            sub: stats.hugeFilesCount > 0 ? 'Review candidates' : 'Clean & modular',
+            sub: stats.hugeFilesCount > 0 ? 'Review candidates' : 'No large files indexed',
             icon: <AlertTriangle className={`h-5 w-5 ${stats.hugeFilesCount > 0 ? 'text-amber-400' : 'text-zinc-500'}`} />,
             border: stats.hugeFilesCount > 0 ? 'border-amber-500/30' : 'border-border',
             bg: stats.hugeFilesCount > 0 ? 'bg-amber-500/5' : 'bg-card',
@@ -352,7 +355,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
         ].map((metric, i) => (
           <div
             key={i}
-            className={`relative rounded-2xl border ${metric.border} ${metric.bg} p-5 shadow-sm transition-all duration-200 hover:border-violet-500/40`}
+            className={`relative min-w-0 rounded-2xl border ${metric.border} ${metric.bg} p-5 shadow-sm transition-all duration-200 hover:border-violet-500/40`}
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{metric.label}</span>
@@ -365,10 +368,10 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
       </div>
 
       {/* ── Interactive Charts Row ──────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Main Language Distribution Chart (2 cols) */}
-        <div className={`${cardClass} lg:col-span-2`}>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-border/60">
+        <div className={`${cardClass} xl:col-span-2`}>
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-border/60">
             <div>
               <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                 <Code2 className="h-4 w-4 text-violet-400" />
@@ -385,6 +388,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
                 <button
                   type="button"
                   onClick={() => setMetricMode('count')}
+                  aria-pressed={metricMode === 'count'}
                   className={`rounded-md px-2.5 py-1 font-medium transition-colors ${metricMode === 'count' ? 'bg-violet-600 text-white' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   Files
@@ -392,6 +396,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
                 <button
                   type="button"
                   onClick={() => setMetricMode('size')}
+                  aria-pressed={metricMode === 'size'}
                   className={`rounded-md px-2.5 py-1 font-medium transition-colors ${metricMode === 'size' ? 'bg-violet-600 text-white' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   Size
@@ -403,7 +408,9 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
                 <button
                   type="button"
                   onClick={() => setChartType('bar')}
-                  className={`rounded-md px-2.5 py-1 font-medium transition-colors ${chartType === 'bar' ? 'bg-zinc-800 text-zinc-100' : 'text-muted-foreground hover:text-foreground'}`}
+                  aria-label="Bar Chart"
+                  aria-pressed={chartType === 'bar'}
+                  className={`rounded-md px-2.5 py-1 font-medium transition-colors ${chartType === 'bar' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   title="Bar Chart"
                 >
                   <BarChart3 className="h-3.5 w-3.5" />
@@ -411,7 +418,9 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
                 <button
                   type="button"
                   onClick={() => setChartType('donut')}
-                  className={`rounded-md px-2.5 py-1 font-medium transition-colors ${chartType === 'donut' ? 'bg-zinc-800 text-zinc-100' : 'text-muted-foreground hover:text-foreground'}`}
+                  aria-label="Donut Chart"
+                  aria-pressed={chartType === 'donut'}
+                  className={`rounded-md px-2.5 py-1 font-medium transition-colors ${chartType === 'donut' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   title="Donut Chart"
                 >
                   <PieChartIcon className="h-3.5 w-3.5" />
@@ -421,34 +430,38 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
           </div>
 
           <div className="pt-6 flex-1 min-h-[300px]">
-            {stats.sortedLangs.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                No indexed language data available.
+            {!hasLanguageData ? (
+              <div role="status" className="flex min-h-[280px] items-center justify-center text-center text-sm text-muted-foreground">
+                {stats.files === 0 ? 'No indexed files available.' : 'Indexed files have no recorded size. Switch to Files to see language composition.'}
               </div>
             ) : chartType === 'bar' ? (
-              <div className="h-[280px] w-full" data-testid="language-bar-chart">
-                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 280 }}>
+              <div className="w-full min-w-0" style={{ height: barChartHeight }} data-testid="language-bar-chart">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 500, height: barChartHeight }}>
                   <BarChart
-                    data={stats.sortedLangs.slice(0, 10)}
+                    data={stats.sortedLangs}
                     layout="vertical"
-                    margin={{ top: 10, right: 30, left: 70, bottom: 0 }}
+                    margin={{ top: 10, right: 12, left: 0, bottom: 0 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(255,255,255,0.06)" />
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" />
                     <XAxis
                       type="number"
-                      tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 11 }}
-                      axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                      tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
+                      axisLine={{ stroke: 'var(--border)' }}
                       tickLine={false}
+                      allowDecimals={metricMode === 'size'}
+                      tickFormatter={metricMode === 'size' ? formatBytes : undefined}
                     />
                     <YAxis
                       type="category"
                       dataKey="lang"
-                      tick={{ fill: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 500 }}
-                      axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                      width={88}
+                      interval={0}
+                      tick={{ fill: 'var(--foreground)', fontSize: 11, fontWeight: 500 }}
+                      axisLine={{ stroke: 'var(--border)' }}
                       tickLine={false}
                     />
                     <Tooltip
-                      cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                      cursor={{ fill: 'var(--muted)' }}
                       content={({ active, payload }) => {
                         if (!active || !payload?.length) return null;
                         const data = payload[0].payload;
@@ -470,17 +483,17 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
                       dataKey={metricMode === 'count' ? 'count' : 'bytes'}
                       radius={[0, 6, 6, 0]}
                     >
-                      {stats.sortedLangs.slice(0, 10).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      {stats.sortedLangs.map((entry) => (
+                        <Cell key={entry.lang} fill={entry.color} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-6 h-[280px] w-full" data-testid="language-donut-chart">
-                <div className="h-[240px] w-[240px] shrink-0">
-                  <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 240, height: 240 }}>
+              <div className="flex flex-col @lg:flex-row items-center justify-center gap-6 min-h-[280px] w-full" data-testid="language-donut-chart">
+                <div className="h-[240px] w-full max-w-[240px] shrink-0">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 240, height: 240 }}>
                     <PieChart>
                       <Tooltip
                         content={({ active, payload }) => {
@@ -502,36 +515,37 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
                         }}
                       />
                       <Pie
-                        data={stats.sortedLangs.slice(0, 8)}
+                        data={stats.sortedLangs}
                         dataKey={metricMode === 'count' ? 'count' : 'bytes'}
                         nameKey="lang"
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={95}
-                        paddingAngle={3}
+                        innerRadius="55%"
+                        outerRadius="85%"
+                        paddingAngle={1}
+                        stroke="var(--card)"
                       >
-                        {stats.sortedLangs.slice(0, 8).map((entry, index) => (
-                          <Cell key={`donut-${index}`} fill={entry.color} />
+                        {stats.sortedLangs.map((entry) => (
+                          <Cell key={entry.lang} fill={entry.color} />
                         ))}
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
 
-                <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto pr-2 w-full max-w-[200px]">
-                  {stats.sortedLangs.slice(0, 8).map((item) => (
-                    <div key={item.lang} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 truncate">
+                <ul aria-label="Language composition" className="flex min-w-0 flex-col gap-2 max-h-[240px] overflow-y-auto pr-2 w-full max-w-[240px]">
+                  {stats.sortedLangs.map((item) => (
+                    <li key={item.lang} className="flex items-center justify-between gap-3 text-xs">
+                      <div className="flex min-w-0 items-center gap-2 truncate">
                         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: item.color }} />
                         <span className="truncate capitalize text-foreground">{item.lang}</span>
                       </div>
-                      <span className="font-mono text-muted-foreground text-[11px]">
+                      <span className="shrink-0 font-mono text-muted-foreground text-[11px]">
                         {metricMode === 'count' ? `${item.countPct}%` : `${item.sizePct}%`}
                       </span>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             )}
           </div>
@@ -548,22 +562,27 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
           </div>
 
           <div className="pt-6 flex-1 min-h-[240px]" data-testid="size-tier-chart">
-            <ResponsiveContainer width="100%" height={220} initialDimension={{ width: 280, height: 220 }}>
+            <ResponsiveContainer width="100%" height={220} minWidth={0} initialDimension={{ width: 280, height: 220 }}>
               <BarChart data={stats.sizeTierData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.06)" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 10 }}
-                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                  tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
+                  axisLine={{ stroke: 'var(--border)' }}
                   tickLine={false}
+                  interval={0}
+                  angle={-25}
+                  textAnchor="end"
+                  height={48}
                 />
                 <YAxis
-                  tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
-                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                  tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
+                  axisLine={{ stroke: 'var(--border)' }}
                   tickLine={false}
+                  allowDecimals={false}
                 />
                 <Tooltip
-                  cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                  cursor={{ fill: 'var(--muted)' }}
                   content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
                     const data = payload[0].payload;
@@ -609,6 +628,9 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
           </div>
 
           <div className="pt-4 space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+            {stats.topFiles.length === 0 && (
+              <p className="text-sm text-muted-foreground">No indexed files available.</p>
+            )}
             {stats.topFiles.map((file, idx) => {
               const pct = stats.totalBytes > 0 ? ((file.size / stats.totalBytes) * 100).toFixed(1) : '0';
               const color = LANG_COLORS[file.lang] || LANG_COLORS.other;
@@ -618,7 +640,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
                   key={file.path || idx}
                   className="group flex flex-col gap-1.5 rounded-xl border border-border/50 bg-background/50 p-3 hover:border-violet-500/30 hover:bg-background transition-colors"
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <span className="font-mono text-xs text-muted-foreground/80 w-5 shrink-0">#{idx + 1}</span>
                       <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -674,25 +696,25 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3.5 flex items-start gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
               <div className="text-xs leading-relaxed">
-                <span className="font-semibold text-foreground">Tree-sitter AST Ready: </span>
+                <span className="font-semibold text-foreground">Repository indexed: </span>
                 <span className="text-muted-foreground">
-                  {stats.files} files indexed across {stats.dirs} directories. Symbols, functions, and import graphs are fully searchable.
+                  {stats.files} files indexed across {stats.dirs} directories. Charts reflect the current repository index.
                 </span>
               </div>
             </div>
 
             <div className="rounded-xl border border-border bg-background/50 p-3.5 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-medium text-foreground">Dominant Stack</span>
+                <span className="font-medium text-foreground">Dominant Stack ({metricMode === 'count' ? 'files' : 'size'})</span>
                 <span className="font-mono font-semibold capitalize" style={{ color: stats.topLanguage?.color }}>
-                  {stats.topLanguage?.lang} ({stats.topLanguage?.countPct}%)
+                  {hasLanguageData && stats.topLanguage ? `${stats.topLanguage.lang} (${topLanguagePct}%)` : 'No data'}
                 </span>
               </div>
               <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                 <div
                   className="h-full rounded-full"
                   style={{
-                    width: `${stats.topLanguage?.countPct || 0}%`,
+                    width: `${topLanguagePct || 0}%`,
                     background: stats.topLanguage?.color || '#3b82f6',
                   }}
                 />
@@ -703,7 +725,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium text-foreground">File Granularity</span>
                 <span className="font-mono font-semibold text-foreground">
-                  {stats.avgFileSize < 20 * 1024 ? 'Highly Modular' : 'Standard'}
+                  {stats.files === 0 ? 'No indexed files' : stats.avgFileSize < 20 * 1024 ? 'Small average size' : 'Standard'}
                 </span>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -717,7 +739,7 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
                 <div className="text-xs leading-relaxed">
                   <span className="font-semibold text-foreground">Large Files Detected: </span>
                   <span className="text-muted-foreground">
-                    {stats.hugeFilesCount} files exceed 200 KB. Consider splitting or inspecting with the File Inspector.
+                    {stats.hugeFilesCount} files are 200 KB or larger. Consider splitting or inspecting with the File Inspector.
                   </span>
                 </div>
               </div>
@@ -725,9 +747,9 @@ export function AnalyticsPage({ repository, tree, onNavigate }: Props) {
               <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3.5 flex items-start gap-3">
                 <Sparkles className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
                 <div className="text-xs leading-relaxed">
-                  <span className="font-semibold text-foreground">Healthy Size Distribution: </span>
+                  <span className="font-semibold text-foreground">Large file check: </span>
                   <span className="text-muted-foreground">
-                    No files exceed 200 KB. The repository exhibits clean modular structure.
+                    {stats.files === 0 ? 'No indexed files to analyze.' : 'All indexed files are smaller than 200 KB.'}
                   </span>
                 </div>
               </div>
