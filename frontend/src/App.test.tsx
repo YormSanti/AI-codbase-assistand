@@ -25,7 +25,7 @@ vi.mock("@/components/app-sidebar", () => ({
     {["/a", "/b", "/c"].map(path => <button key={path} onClick={() => void onOpenRepository(path).catch(() => {})}>Open {path}</button>)}
     <button onClick={() => onSelectTab("terminal")}>Show terminal</button>
     <button onClick={() => onSelectTab("explorer")}>Show explorer</button>
-    <button onClick={() => onSelectTab("editor")}>Code Editor</button>
+    <button onClick={() => onSelectTab("editor")}>code</button>
     <button onClick={() => void onDeleteRepository(1)}>Delete /a</button>
     <ProjectsSidebarNav currentRepository={repository} onOpenRepository={onOpenRepository} onOpenTerminal={onOpenTerminal} onSelectTab={onSelectTab} onDeleteRepository={onDeleteRepository} />
   </>,
@@ -117,23 +117,66 @@ afterEach(() => {
 });
 
 describe("repository switching", () => {
-  it("keeps ignored files in Code Editor when discard is canceled and closes them before File Explorer", async () => {
+  it("opens a dedicated editor without a project and returns to the dashboard", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "code" }));
+    expect(screen.getByRole("region", { name: "IFROG Editor" })).toBeInTheDocument();
+    expect(screen.queryByText("Show explorer")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Toggle integrated terminal" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Back to IFROG" }));
+    expect(screen.queryByRole("region", { name: "IFROG Editor" })).not.toBeInTheDocument();
+    await waitFor(() => expect(localStorage.getItem("ifrog_active_tab")).toBe("dashboard"));
+  });
+
+  it("runs the integrated shell in the editor project and guards unsaved edits on exit", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.mocked(repositoryApi.open).mockResolvedValue(repo(1));
+    render(<App />);
+    fireEvent.click(screen.getByText("Open /a"));
+    await waitFor(() => expect(screen.getByTestId("repository")).toHaveTextContent("/a"));
+    fireEvent.click(screen.getByRole("button", { name: "code" }));
+    fireEvent.click(screen.getByText("Select file"));
+    fireEvent.click(screen.getByText("Edit source"));
+    expect(TerminalSocket.instances).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
+    await waitFor(() => expect(TerminalSocket.instances).toHaveLength(1));
+    const shell = TerminalSocket.instances[0];
+    expect(shell.url.searchParams.get("cwd")).toBe("/a");
+    fireEvent.click(screen.getByRole("button", { name: "Hide integrated terminal" }));
+    expect(shell.close).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "`", code: "Backquote", ctrlKey: true });
+    expect(screen.getByRole("region", { name: "Integrated terminal" })).toBeVisible();
+    expect(TerminalSocket.instances).toHaveLength(1);
+    expect(confirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back to IFROG" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("region", { name: "IFROG Editor" })).toBeInTheDocument();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Back to IFROG" }));
+    expect(screen.queryByRole("region", { name: "IFROG Editor" })).not.toBeInTheDocument();
+    expect(shell.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides ignored selections in File Explorer while still guarding their unsaved drafts", async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     vi.mocked(repositoryApi.open).mockResolvedValue(repo(1));
     render(<App />);
     fireEvent.click(screen.getByText('Open /a'));
     await waitFor(() => expect(screen.getByTestId('repository')).toHaveTextContent('/a'));
-    fireEvent.click(screen.getByText('Code Editor'));
+    fireEvent.click(screen.getByText('code'));
     fireEvent.click(screen.getByText('Select ignored file'));
     fireEvent.click(screen.getByText('Edit source'));
-    fireEvent.click(screen.getByText('Show explorer'));
-    expect(confirm).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('workspace-mode')).toHaveTextContent('editor');
-    expect(screen.getByTestId('selected')).toHaveTextContent('.env');
-    confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByText('Show explorer'));
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'File' }), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'File Explorer' }));
+    expect(confirm).not.toHaveBeenCalled();
     expect(screen.getByTestId('workspace-mode')).toHaveTextContent('explorer');
     expect(screen.getByTestId('selected')).toBeEmptyDOMElement();
+    fireEvent.click(screen.getByText('Show terminal'));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('workspace-mode')).toHaveTextContent('explorer');
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByText('Show terminal'));
+    expect(localStorage.getItem('ifrog_active_tab')).toBe('terminal');
   });
 
   it("restores an editor-only selection without replacing the filtered tree", async () => {
@@ -157,12 +200,15 @@ describe("repository switching", () => {
     await waitFor(() => expect(screen.getByTestId("repository")).toHaveTextContent("/a"));
     fireEvent.click(screen.getByText("Select file"));
     fireEvent.click(screen.getByText("Edit source"));
-    fireEvent.click(screen.getByRole("button", { name: "Code Editor" }));
+    fireEvent.click(screen.getByRole("button", { name: "code" }));
+    expect(screen.getByRole("region", { name: "IFROG Editor" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to IFROG" })).toBeInTheDocument();
     expect(screen.getByTestId("workspace-mode")).toHaveTextContent("editor");
     expect(screen.getByTestId("selected")).toHaveTextContent("/a/file.ts");
     expect(localStorage.getItem("ifrog_active_tab")).toBe("editor");
     expect(confirm).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("Show explorer"));
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "File" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "File Explorer" }));
     expect(screen.getByTestId("workspace-mode")).toHaveTextContent("explorer");
     expect(confirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Show terminal"));
@@ -170,7 +216,7 @@ describe("repository switching", () => {
     expect(screen.getByTestId("selected")).toHaveTextContent("/a/file.ts");
   });
 
-  it("keeps the current file, tab, and repository when discarding edits is canceled", async () => {
+  it("allows switching files and still guards unsaved drafts when leaving or changing projects", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     vi.mocked(repositoryApi.open).mockResolvedValue(repo(1));
     render(<App />);
@@ -179,15 +225,16 @@ describe("repository switching", () => {
     fireEvent.click(screen.getByText("Select file"));
     fireEvent.click(screen.getByText("Edit source"));
     fireEvent.click(screen.getByText("Select other file"));
-    expect(screen.getByTestId("selected")).toHaveTextContent("/a/file.ts");
+    expect(screen.getByTestId("selected")).toHaveTextContent("/a/other.ts");
+    expect(confirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Show terminal"));
     expect(localStorage.getItem("ifrog_active_tab")).toBe("explorer");
     fireEvent.click(screen.getByText("Open /b"));
     expect(repositoryApi.open).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("repository")).toHaveTextContent("/a");
     confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByText("Select other file"));
-    expect(screen.getByTestId("selected")).toHaveTextContent("/a/other.ts");
+    fireEvent.click(screen.getByText("Show terminal"));
+    expect(localStorage.getItem("ifrog_active_tab")).toBe("terminal");
     confirm.mockRestore();
   });
 

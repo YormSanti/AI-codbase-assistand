@@ -4,10 +4,10 @@ import {
   EditorView, drawSelection, highlightActiveLine, highlightActiveLineGutter,
   highlightSpecialChars, keymap, lineNumbers,
 } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentLess, indentMore } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentLess, indentMore, undo, redo, selectAll } from "@codemirror/commands";
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
-import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { gotoLine, highlightSelectionMatches, openSearchPanel, searchKeymap } from "@codemirror/search";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
@@ -16,10 +16,16 @@ import { css } from "@codemirror/lang-css";
 import { markdown } from "@codemirror/lang-markdown";
 import { tags } from "@lezer/highlight";
 import type { Language } from "../types/domain";
+import { EditorMinimap } from "../editor/EditorMinimap";
 
 export interface CodeEditorHandle {
   goToLine: (line: number) => void;
   focus: () => void;
+  find: () => void;
+  showGoToLine: () => void;
+  undo: () => void;
+  redo: () => void;
+  selectAll: () => void;
 }
 
 interface Props {
@@ -31,6 +37,9 @@ interface Props {
   lineNumbers: boolean;
   wordWrap: boolean;
   readOnly: boolean;
+  active?: boolean;
+  minimap?: boolean;
+  cursorLine?: number;
   onChange: (value: string) => void;
   onSave: () => void;
   onCursorChange: (position: { line: number; column: number }) => void;
@@ -75,6 +84,8 @@ const editorTheme = EditorView.theme({
   ".cm-matchingBracket": { backgroundColor: "var(--editor-selection)", outline: "1px solid var(--editor-border)" },
   ".cm-tooltip, .cm-panels": { backgroundColor: "var(--editor-panel)", color: "var(--editor-text)", borderColor: "var(--editor-border)" },
   ".cm-search input, .cm-search button": { color: "var(--editor-text)", backgroundColor: "var(--editor-bg)", border: "1px solid var(--editor-border)" },
+  ".cm-panels": { padding: "6px 10px", fontFamily: "var(--font-body)", fontSize: "12px" },
+  ".cm-panels input, .cm-panels button": { color: "var(--editor-text)", backgroundColor: "var(--editor-bg)", border: "1px solid var(--editor-border)", borderRadius: "3px", padding: "3px 7px" },
 }, { dark: true });
 
 const editorHighlight = HighlightStyle.define([
@@ -104,6 +115,11 @@ export function CodeEditorSurface(props: Props) {
       view.focus();
     },
     focus() { viewRef.current?.focus(); },
+    find() { if (viewRef.current) openSearchPanel(viewRef.current); },
+    showGoToLine() { if (viewRef.current) gotoLine(viewRef.current); },
+    undo() { if (viewRef.current) { undo(viewRef.current); viewRef.current.focus(); } },
+    redo() { if (viewRef.current) { redo(viewRef.current); viewRef.current.focus(); } },
+    selectAll() { if (viewRef.current) { selectAll(viewRef.current); viewRef.current.focus(); } },
   }), []);
 
   useEffect(() => {
@@ -119,6 +135,7 @@ export function CodeEditorSurface(props: Props) {
           closeBrackets(), autocompletion(), highlightSelectionMatches(),
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => { latestProps.current.onSave(); return true; } },
+            { key: "Mod-g", preventDefault: true, run: gotoLine },
             { key: "Tab", run: indentMore, shift: indentLess },
             ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...completionKeymap,
           ]),
@@ -135,9 +152,15 @@ export function CodeEditorSurface(props: Props) {
     });
     viewRef.current = view;
     latestProps.current.onCursorChange({ line: 1, column: 1 });
-    view.focus();
+    if (latestProps.current.active !== false) view.focus();
     return () => { view.destroy(); viewRef.current = null; };
   }, []);
+
+  useEffect(() => {
+    if (props.active === false) return;
+    viewRef.current?.requestMeasure();
+    viewRef.current?.focus();
+  }, [props.active]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -150,5 +173,14 @@ export function CodeEditorSurface(props: Props) {
     viewRef.current?.dispatch({ effects: configurationRef.current.reconfigure(configuration(latestProps.current)) });
   }, [props.language, props.tabSize, props.lineNumbers, props.wordWrap, props.readOnly, props.label]);
 
-  return <div ref={containerRef} className="vscode-code-surface" />;
+  return <div className="vscode-code-layout">
+    <div ref={containerRef} className="vscode-code-surface" />
+    {props.minimap && <EditorMinimap value={props.value} line={props.cursorLine ?? 1} onGoToLine={number => {
+      const view = viewRef.current;
+      if (!view) return;
+      const line = view.state.doc.line(Math.max(1, Math.min(number, view.state.doc.lines)));
+      view.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "center" }) });
+      view.focus();
+    }} />}
+  </div>;
 }

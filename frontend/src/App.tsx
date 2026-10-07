@@ -9,6 +9,8 @@ import { SiteHeader } from "@/components/site-header";
 import { AIAgentPage } from "@/components/AIAgentPage";
 import { DashboardPage } from "@/components/DashboardPage";
 import { ExplorerPage } from "@/components/ExplorerPage";
+import { EditorApp } from "./editor/EditorApp";
+import type { EditorWorkspaceHandle } from "./editor/editorCommands";
 import { GitPage } from "@/components/GitPage";
 import { TerminalPage } from "@/components/TerminalPage";
 import { AnalyticsPage } from "@/components/AnalyticsPage";
@@ -37,6 +39,7 @@ export default function App() {
   const [isSessionRestored, setIsSessionRestored] = useState(false);
   const repositoryRequest = useRef(0);
   const editorState = useRef({ dirty: false, saving: false });
+  const editorWorkspaceRef = useRef<EditorWorkspaceHandle>(null);
   const handleEditorStateChange = useCallback((state: { dirty: boolean; saving: boolean }) => {
     editorState.current = state;
   }, []);
@@ -53,7 +56,7 @@ export default function App() {
     if (tab === activeTab) return;
     const staysInWorkspace = ["explorer", "editor"].includes(activeTab) && ["explorer", "editor"].includes(tab);
     const editorOnlyFile = selectedFile?.file_id !== null && selectedFile?.file_id !== undefined && selectedFile.file_id < 0;
-    if ((!staysInWorkspace || editorOnlyFile) && !canLeaveEditor()) return;
+    if (!staysInWorkspace && !canLeaveEditor()) return;
     if (editorOnlyFile && tab !== "editor") setSelectedFile(null);
     setActiveTab(tab);
   }
@@ -221,7 +224,7 @@ export default function App() {
   }
 
   function handleSelectFile(node: TreeNode) {
-    if (!node.is_directory && (node.file_id !== selectedFile?.file_id || node.path !== selectedFile?.path) && canLeaveEditor()) {
+    if (!node.is_directory && (node.file_id !== selectedFile?.file_id || node.path !== selectedFile?.path)) {
       setSelectedFile(node);
     }
   }
@@ -250,7 +253,7 @@ export default function App() {
 
   return (
     <SidebarProvider className={settings.sidebarPosition === "right" ? "flex-row-reverse" : undefined}>
-      <AppSidebar
+      {activeTab !== "editor" && <AppSidebar
         side={settings.sidebarPosition}
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
@@ -259,12 +262,12 @@ export default function App() {
         onOpenTerminal={(path) => handleOpen(path, "terminal")}
         onDeleteRepository={handleDeleteRepository}
         onSelectThread={handleSelectThread}
-      />
+      />}
 
-      <SidebarInset className="min-w-0">
-        <SiteHeader hasRepository={Boolean(repository)} currentView={activeTab} />
+      <SidebarInset className="min-w-0" style={activeTab === "editor" ? { height: "100dvh", overflow: "hidden" } : undefined}>
+        {activeTab !== "editor" && <SiteHeader hasRepository={Boolean(repository)} currentView={activeTab} />}
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, overflowY: activeTab === "ai" || activeTab === "ai-agent" ? "hidden" : "auto", backgroundColor: "var(--background)" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, overflowY: ["editor", "ai", "ai-agent"].includes(activeTab) ? "hidden" : "auto", backgroundColor: "var(--background)" }}>
           {error && (
             <div className="error-banner" role="alert" style={{ margin: "16px 20px 0" }}>
               <AlertCircle className="error-icon" />
@@ -284,19 +287,24 @@ export default function App() {
 
           {/* Shared file workspace retains drafts between Explorer and Code Editor. */}
           {(activeTab === "explorer" || activeTab === "editor") && (
-            <ExplorerPage
-              mode={activeTab === "editor" ? "editor" : "explorer"}
-              repository={repository}
-              tree={tree}
-              selectedFile={selectedFile}
-              isLoading={isLoading}
-              onOpen={handleOpen}
-              onSelectFile={handleSelectFile}
-              onCloseFile={() => setSelectedFile(null)}
-              onAskAI={handleAskAIAboutFile}
-              onEditorStateChange={handleEditorStateChange}
-              onFileSaved={handleFileSaved}
-            />
+            <EditorApp active={activeTab === "editor"} repository={repository} isLoading={isLoading} hasSelectedFile={Boolean(selectedFile)} onNavigate={handleSelectTab} onCommand={command => editorWorkspaceRef.current?.runCommand(command)}>
+              <ExplorerPage
+                ref={editorWorkspaceRef}
+                embedded
+                key={`${repository?.id ?? 'none'}:${repository?.root_path ?? ''}`}
+                mode={activeTab === "editor" ? "editor" : "explorer"}
+                repository={repository}
+                tree={tree}
+                selectedFile={selectedFile}
+                isLoading={isLoading}
+                onOpen={handleOpen}
+                onSelectFile={handleSelectFile}
+                onCloseFile={() => setSelectedFile(null)}
+                onAskAI={handleAskAIAboutFile}
+                onEditorStateChange={handleEditorStateChange}
+                onFileSaved={handleFileSaved}
+              />
+            </EditorApp>
           )}
 
           {/* Terminal */}

@@ -1,0 +1,68 @@
+.ifrog-file-workspace { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.ifrog-file-workspace-body, .ifrog-file-workspace-content, .ifrog-file-workspace-page { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+
+.ifrog-editor-app { --editor-shell-bg: #181818; --editor-shell-border: #2b2b2b; --editor-shell-text: #cccccc; --editor-shell-muted: #969696; display: flex; flex: 1; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden; background: var(--editor-shell-bg); color: var(--editor-shell-text); }
+[data-theme="light"] .ifrog-editor-app { --editor-shell-bg: #f3f3f3; --editor-shell-border: #dddddd; --editor-shell-text: #333333; --editor-shell-muted: #666666; }
+.ifrog-editor-topbar { display: flex; align-items: center; gap: 12px; flex-shrink: 0; height: 36px; padding: 0 8px; border-bottom: 1px solid var(--editor-shell-border); background: var(--editor-shell-bg); }
+.ifrog-editor-topbar button, .ifrog-editor-rail button, .ifrog-editor-panel-header button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 4px; background: transparent; color: var(--editor-shell-muted); cursor: pointer; }
+.ifrog-editor-topbar button:hover, .ifrog-editor-rail button:hover, .ifrog-editor-panel-header button:hover { color: var(--foreground); background: var(--accent); }
+.ifrog-editor-topbar button:focus-visible, .ifrog-editor-rail button:focus-visible, .ifrog-editor-panel-header button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.ifrog-editor-topbar button:disabled, .ifrog-editor-rail button:disabled { opacity: .4; cursor: default; }
+.ifrog-editor-brand { display: flex; align-items: center; flex-shrink: 0; color: #23a9f2; }
+.ifrog-editor-menubar { display: flex; align-items: center; flex-shrink: 0; gap: 1px; }
+.ifrog-editor-menu-trigger { height: 26px; padding: 0 7px; font-size: 12px; }
+.ifrog-editor-menu-trigger[data-state="open"] { background: var(--accent); color: var(--foreground); }
+.ifrog-editor-topbar .ifrog-editor-command-center { flex: 1; max-width: 600px; min-width: 120px; height: 25px; margin: 0 auto; padding: 0 12px; border: 1px solid var(--editor-shell-border); font-size: 12px; }
+.ifrog-editor-command-center > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ifrog-editor-command-center kbd { margin-left: auto; color: var(--editor-shell-muted); font-size: 9px; }
+.ifrog-editor-topbar-actions { display: flex; align-items: center; gap: 1px; margin-left: auto; flex-shrink: 0; }
+.ifrog-editor-topbar-actions > button { width: 28px; height: 27px; padding: 0; }
+.ifrog-editor-topbar-actions > button[aria-label="Toggle visual theme"] { width: 28px; padding: 0 !important; border: 0 !important; border-radius: 4px !important; background: transparent !important; box-shadow: none !important; }
+.ifrog-editor-topbar-actions > button[aria-label="Toggle visual theme"] > span:nth-child(n+2) { display: none !important; }
+.ifrog-editor-app button[aria-pressed="true"] { color: #23a9f2; background: var(--accent); }
+.ifrog-editor-menu { min-width: 240px; padding: 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 8px 24px #00000050; z-index: 60; }
+.ifrog-editor-menu-item { display: flex; align-items: center; gap: 24px; padding: 6px 9px; border-radius: 3px; outline: none; font-size: 12px; cursor: default; }
+.ifrog-editor-menu-item[data-highlighted] { background: #007acc; color: white; }
+.ifrog-editor-menu-item[data-disabled] { opacity: .45; }
+.ifrog-editor-menu-item kbd { margin-left: auto; font-size: 10px; opacity: .75; }
+.ifrog-editor-menu-separator { height: 1px; background: var(--border); margin: 4px 0; }
+.ifrog-editor-body { display: flex; flex: 1; min-height: 0; }
+.ifrog-editor-rail { display: flex; flex-direction: column; align-items: center; justify-content: space-between; flex-shrink: 0; width: 46px; padding: 0 0 6px; border-right: 1px solid var(--editor-shell-border); background: var(--editor-shell-bg); }
+.ifrog-editor-rail-top { display: flex; flex-direction: column; align-items: center; gap: 0; }
+.ifrog-editor-rail button { width: 45px; height: 48px; border-radius: 0; }
+.ifrog-editor-rail .ifrog-editor-rail-active { border-left: 2px solid #23a9f2; color: var(--editor-shell-text); }
+.ifrog-editor-content { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.ifrog-editor-workspace { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
+.ifrog-editor-workspace > .vscode-workspace { flex: 1; height: 100%; }
+.ifrog-editor-terminal { display: flex; flex-direction: column; flex-shrink: 0; min-height: 160px; max-height: 65%; border-top: 1px solid var(--border); background: var(--background); }
+.ifrog-editor-terminal[hidden] { display: none; }
+.ifrog-editor-terminal-resizer { height: 4px; flex-shrink: 0; cursor: row-resize; touch-action: none; }
+.ifrog-editor-terminal-resizer:hover, .ifrog-editor-terminal-resizer:focus-visible { background: var(--sidebar-primary); }
+.ifrog-editor-panel-header { display: flex; align-items: center; gap: 15px; flex-shrink: 0; height: 30px; padding: 0 14px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-size: 10px; letter-spacing: .5px; }
+.ifrog-editor-panel-header span:first-child { color: var(--foreground); }
+.ifrog-editor-panel-header span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); letter-spacing: 0; }
+.ifrog-editor-panel-header button { margin-left: auto; width: 23px; height: 23px; }
+.ifrog-editor-terminal-session { flex: 1; min-height: 0; }
+.ifrog-editor-terminal-session > div { padding: 8px 12px !important; }
+.ifrog-editor-help-overlay { position: fixed; inset: 0; background: #00000066; z-index: 65; }
+.ifrog-editor-help { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover); color: var(--popover-foreground); z-index: 66; }
+.ifrog-editor-help h2 { font-size: 16px; margin-bottom: 8px; }
+.ifrog-editor-help p { font-size: 12px; color: var(--muted-foreground); }
+.ifrog-editor-help dl { display: grid; gap: 12px; margin-top: 24px; font-size: 12px; }
+.ifrog-editor-help dl > div { display: flex; justify-content: space-between; gap: 20px; }
+.ifrog-editor-help kbd { font-size: 11px; color: var(--muted-foreground); }
+.ifrog-editor-help-close { position: absolute; right: 10px; top: 10px; padding: 5px; cursor: pointer; }
+
+@media (max-width: 1100px) {
+  .ifrog-editor-topbar { gap: 5px; }
+  .ifrog-editor-menu-trigger { padding: 0 5px; font-size: 11px; }
+  .ifrog-editor-command-center kbd { display: none; }
+}
+
+@media (max-width: 760px) {
+  .ifrog-editor-topbar { flex-wrap: wrap; height: auto; min-height: 36px; padding: 4px 6px; }
+  .ifrog-editor-topbar .ifrog-editor-command-center { order: 3; flex-basis: 100%; max-width: none; }
+  .ifrog-editor-menubar { flex: 1; }
+  .ifrog-editor-rail { width: 40px; }
+  .ifrog-editor-rail button { width: 39px; }
+}
