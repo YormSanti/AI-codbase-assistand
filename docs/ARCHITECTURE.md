@@ -20,6 +20,9 @@ app/
                           tree, look up a file's symbols
     parsing_service.py   SymbolExtractionService — parse one file, persist
                           its symbols
+    local_editor_service.py  Live complete filesystem tree and direct file
+                              access, without adding ignored files to the index
+    file_content_service.py  Shared bounded previews and atomic file saves
 
   infrastructure/     Concrete adapters implementing the ports above.
     git/git_client.py             GitPythonClient(GitClientPort)
@@ -34,6 +37,7 @@ app/
     schemas.py            Pydantic request/response models
     deps.py                Composition root (constructs adapters, injects them)
     routes/repository.py   Repository/tree endpoints
+    routes/local_editor.py Code Editor's separate local tree/content/symbols
     routes/files.py        GET /api/files/{file_id}/symbols
 ```
 
@@ -117,7 +121,39 @@ loaded after (and so won, at equal specificity, over) the dark-mode
 override in `index.css`, making text nearly invisible in dark mode.
 Variables sidestep load-order entirely.
 
+## Live Git review
+
+`GitReviewService` resolves a persisted repository id to its root path, then
+uses `GitReviewPort` to read live metadata. `GitReviewClient` is a separate
+adapter from indexing, so status refreshes do not rescan or parse source
+files. Git review models live in `domain/git_models.py`; the HTTP routes are
+in `api/routes/git_review.py`.
+
+The adapter parses NUL-delimited porcelain status (including rename sources)
+and reads staged diffs from HEAD to the index and unstaged diffs from the
+index to the working tree. Paths are literal Git pathspecs, restricted to
+currently changed files. Untracked text is represented as an added-file
+patch; symlinks show their link value rather than reading the target. Git
+commands disable optional index locks, external diff helpers, and textconv.
+Diff output is spooled to a temporary file with a 15-second command timeout
+and a 256,000-byte response limit. No remote fetch or Git mutation occurs.
+
+The Git page keeps staged and unstaged selections distinct, ignores late
+responses after selection changes, and is keyed by project id in `App`.
+Selected diffs become AI drafts through the existing `initialPrompt` flow;
+AI previews are limited to 20,000 characters and disclose truncation.
+
 ## Data model (SQLite)
+
+File editing uses the existing file-id API and `IndexingService`. Content
+previews include a SHA-256 version token and editability information. Saving
+requires the loaded token, validates bounded UTF-8 content and repository
+containment, and replaces the file using a temporary file in the same
+directory while retaining its permissions. A process-wide lock serializes
+editor saves; a second version check detects external changes before replacement.
+The service updates metadata in place through `update_file` and re-extracts
+symbols, preserving file ids. The frontend retains failed drafts and guards
+file, project, and page navigation while edits are unsaved or a save is pending.
 
 ```
 repositories(id, name, root_path UNIQUE, current_branch, head_commit, opened_at)

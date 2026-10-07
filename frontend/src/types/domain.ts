@@ -62,4 +62,8 @@ export interface FilePreview {
   content: string | null;
   is_binary: boolean;
   truncated: boolean;
+  content_hash?: string | null;
+  size_bytes?: number | null;
+  editable?: boolean;
+  editing_disabled_reason?: string | null;
 }

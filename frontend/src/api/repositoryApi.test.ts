@@ -47,4 +47,30 @@ describe("repositoryApi", () => {
       expect.objectContaining({ method: "DELETE" }),
     );
   });
+
+  it("shares concurrent opens of the same project and permits later refreshes", async () => {
+    let finish!: (value: unknown) => void;
+    const response = { ok: true, json: async () => ({ id: 1, name: "repo" }) };
+    const fetchMock = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+    const first = repositoryApi.open("/same-project");
+    const second = repositoryApi.open("/same-project");
+    expect(second).toBe(first);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    finish(response);
+    expect(await first).toEqual(await second);
+    await repositoryApi.open("/same-project");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears failed pending opens so a retry can succeed", async () => {
+    const fetchMock = vi.fn().mockRejectedValueOnce(new Error("Connection failed")).mockResolvedValue({ ok: true, json: async () => ({ id: 1 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const first = repositoryApi.open("/retry-project");
+    const second = repositoryApi.open("/retry-project");
+    await expect(first).rejects.toThrow("Connection failed");
+    await expect(second).rejects.toThrow("Connection failed");
+    await expect(repositoryApi.open("/retry-project")).resolves.toEqual({ id: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

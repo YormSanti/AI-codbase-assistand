@@ -8,26 +8,49 @@ export function RepositoryPicker({
   onOpen,
   isLoading,
 }: {
-  onOpen: (path: string) => void;
+  onOpen: (path: string) => Promise<void> | void;
   isLoading: boolean;
 }) {
   const [path, setPath] = useState("");
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const trimmed = path.trim();
-    if (trimmed) {
-      onOpen(trimmed);
+  const [error, setError] = useState<string | null>(null);
+  const [isOpening, setIsOpening] = useState(false);
+  const busy = isLoading || isOpening;
+
+  async function openPath(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed || busy) return;
+    setError(null);
+    setIsOpening(true);
+    try {
+      await onOpen(trimmed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open project. Check the path and try again.");
+    } finally {
+      setIsOpening(false);
     }
   }
 
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    void openPath(path);
+  }
+
   async function handleBrowse() {
-    if (!("__TAURI_INTERNALS__" in window)) return;
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({ directory: true, multiple: false });
-    if (selected) {
-      setPath(selected);
-      onOpen(selected);
+    if (!("__TAURI_INTERNALS__" in window) || busy) return;
+    setError(null);
+    setIsOpening(true);
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ directory: true, multiple: false });
+      if (typeof selected === "string") {
+        setPath(selected);
+        await onOpen(selected);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open the selected folder. Please try again.");
+    } finally {
+      setIsOpening(false);
     }
   }
 
@@ -37,7 +60,8 @@ export function RepositoryPicker({
         <div className="input-wrapper">
           <Folder className="folder-icon" />
           <Input
-            placeholder="/absolute/path/to/repository"
+            disabled={busy}
+            placeholder="/absolute/path/to/project"
             value={path}
             onChange={(event) => setPath(event.target.value)}
             aria-label="Repository path"
@@ -49,6 +73,7 @@ export function RepositoryPicker({
               type="button"
               className="clear-btn"
               onClick={() => setPath("")}
+              disabled={busy}
               title="Clear input"
               aria-label="Clear path"
             >
@@ -58,10 +83,10 @@ export function RepositoryPicker({
         </div>
         <Button
           type="submit"
-          disabled={isLoading || path.trim().length === 0}
+          disabled={busy || path.trim().length === 0}
           className="submit-btn"
         >
-          {isLoading ? (
+          {busy ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Opening...</span>
@@ -75,12 +100,14 @@ export function RepositoryPicker({
         </Button>
       </form>
 
+      {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+
       {"__TAURI_INTERNALS__" in window && (
         <button
           type="button"
           className="preset-chip flex items-center gap-1.5 hover:border-primary/50 hover:bg-primary/10 transition-all"
           onClick={handleBrowse}
-          disabled={isLoading}
+          disabled={busy}
         >
           <Folder className="h-3.5 w-3.5 text-blue-400" />
           <span>Browse folders</span>

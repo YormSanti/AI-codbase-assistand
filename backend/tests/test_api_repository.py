@@ -14,9 +14,22 @@ def test_open_repository_endpoint(api_client: TestClient, git_repo_path: Path) -
 
 
 def test_open_repository_invalid_path_returns_400(api_client: TestClient, tmp_path: Path) -> None:
-    response = api_client.post("/api/repositories/open", json={"path": str(tmp_path)})
+    response = api_client.post("/api/repositories/open", json={"path": str(tmp_path / "non_existent")})
 
     assert response.status_code == 400
+
+
+def test_open_repository_non_git_directory(api_client: TestClient, tmp_path: Path) -> None:
+    folder = tmp_path / "my_project"
+    folder.mkdir()
+    (folder / "app.py").write_text("print('hello')\n")
+
+    response = api_client.post("/api/repositories/open", json={"path": str(folder)})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "my_project"
+    assert body["file_count"] == 1
 
 
 def test_get_tree_endpoint(api_client: TestClient, git_repo_path: Path) -> None:

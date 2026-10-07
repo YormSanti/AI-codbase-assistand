@@ -33,11 +33,23 @@ def test_open_repository_twice_reindexes_without_duplicating(
     assert second.file_count == 6
 
 
-def test_open_repository_rejects_non_git_path(
+def test_open_repository_supports_non_git_path(
+    indexing_service: IndexingService, tmp_path: Path
+) -> None:
+    folder = tmp_path / "plain_folder"
+    folder.mkdir()
+    (folder / "file.py").write_text("def hello():\n    pass\n")
+
+    info = indexing_service.open_repository(str(folder))
+    assert info.name == "plain_folder"
+    assert info.file_count == 1
+
+
+def test_open_repository_rejects_nonexistent_path(
     indexing_service: IndexingService, tmp_path: Path
 ) -> None:
     with pytest.raises(NotAGitRepositoryError):
-        indexing_service.open_repository(str(tmp_path))
+        indexing_service.open_repository(str(tmp_path / "does_not_exist"))
 
 
 def test_get_tree_reflects_indexed_files(

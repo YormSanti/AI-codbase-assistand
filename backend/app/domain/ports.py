@@ -9,7 +9,18 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from app.domain.git_models import GitDiff, GitStatus
 from app.domain.models import CodeSymbol, FileMetadata, Language, RepositoryInfo
+
+
+class GitReviewPort(ABC):
+    """Read live status and diffs without changing the working tree or index."""
+
+    @abstractmethod
+    def get_status(self, path: str) -> GitStatus: ...
+
+    @abstractmethod
+    def get_diff(self, root_path: str, path: str, staged: bool) -> GitDiff: ...
 
 
 class GitClientPort(ABC):
@@ -53,6 +64,10 @@ class FileMetadataRepositoryPort(ABC):
 
     @abstractmethod
     def get_file(self, file_id: int) -> FileMetadata | None: ...
+
+    @abstractmethod
+    def update_file(self, file: FileMetadata) -> FileMetadata:
+        """Update metadata after a save, preserving the file's id."""
 
 
 class CodeParserPort(ABC):

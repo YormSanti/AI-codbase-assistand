@@ -114,3 +114,7 @@ class FilePreview:
     content: str | None
     is_binary: bool
     truncated: bool = False
+    content_hash: str | None = None
+    size_bytes: int | None = None
+    editable: bool = False
+    editing_disabled_reason: str | None = None
