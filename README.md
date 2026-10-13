@@ -151,6 +151,17 @@ Explorer and the editor retains all open file drafts, including editor-only
 files hidden from File Explorer. Leaving the workspace, changing projects,
 or closing IFROG asks before discarding any unsaved files.
 
+Inside the editor, click the **Git Repository** rail icon or choose
+**View > Git Repository** to open Source Control. The repository overview
+shows the current branch, upstream ahead/behind counts, and recent commits.
+Changed files are grouped into staged changes, working-tree changes, and
+merge conflicts. Select a file for a split or unified diff; staged and
+working-tree versions are reviewed separately. Refresh reloads status and
+diffs after Git commands in the terminal. Open files, drafts, undo history,
+and the terminal stay available while reviewing Git. **Back to code** or
+**Ctrl/Cmd+P** returns to the file workspace. Use the terminal to stage,
+commit, and push changes.
+
 Use **Terminal** or **Ctrl/Cmd+\`** to show a resizable terminal below the
 editor. It starts in the opened project folder and keeps its session when
 hidden or when switching to File Explorer. A project switch closes the old

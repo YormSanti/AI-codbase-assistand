@@ -6,6 +6,7 @@ import { EditorApp } from "./EditorApp";
 
 const shells = vi.hoisted(() => ({ start: vi.fn(), close: vi.fn() }));
 vi.mock("../components/ThemeToggle", () => ({ ThemeToggle: () => null }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn().mockResolvedValue({ branch: "main", changes: [], commits: [], head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null }), getDiff: vi.fn() } }));
 vi.mock("../components/TerminalPage", () => ({ TerminalPage: ({ repository }: { repository: RepositoryInfo }) => {
   const [command, setCommand] = useState("");
   useEffect(() => { shells.start(repository.root_path); return () => { shells.close(repository.root_path); }; }, [repository.root_path]);
@@ -49,4 +50,25 @@ it("switches a visible terminal to the new project and defers a hidden terminal 
   expect(shells.start).toHaveBeenCalledTimes(2);
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
   expect(shells.start).toHaveBeenLastCalledWith("/third");
+});
+
+it("keeps drafts and the terminal alive while reviewing Git inside the editor", async () => {
+  const onNavigate = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "unsaved" } });
+  fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
+  fireEvent.change(screen.getByLabelText("Shell input"), { target: { value: "git status" } });
+  fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
+  expect((await screen.findAllByText("Working tree clean"))[0]).toBeVisible();
+  expect(screen.getByLabelText("File draft")).not.toBeVisible();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  expect(screen.getByLabelText("Shell input")).toHaveValue("git status");
+  expect(shells.close).not.toHaveBeenCalled();
+  expect(onNavigate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Back to code" }));
+  expect(screen.getByLabelText("File draft")).toBeVisible();
+  expect(screen.getByLabelText("File draft")).toHaveValue("unsaved");
+  expect(shells.start).toHaveBeenCalledTimes(1);
 });

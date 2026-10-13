@@ -99,6 +99,7 @@ function TerminalSession({
   const wsRef = useRef<WebSocket | undefined>(undefined);
   const sendSizeRef = useRef<(() => void) | null>(null);
   const restartRef = useRef<(() => void) | null>(null);
+  const handlePasteRef = useRef<(text: string) => void>(() => {});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const isExitedRef = useRef(false);
 
@@ -137,24 +138,29 @@ function TerminalSession({
       cursorBlink: true,
       cursorStyle: "bar",
       cursorWidth: 2,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, Consolas, monospace",
-      fontSize: 13,
-      lineHeight: 1.25,
+      cursorInactiveStyle: "outline",
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, Monaco, Consolas, monospace",
+      fontSize: 13.5,
+      lineHeight: 1.35,
+      letterSpacing: 0.25,
       scrollback: 10000,
       convertEol: true,
       allowProposedApi: true,
       macOptionIsMeta: true,
+      smoothScrollDuration: 0,
+      scrollOnUserInput: true,
+      fastScrollModifier: "alt",
       theme: {
-        background: "#09090b",
-        foreground: "#d4d4d8",
+        background: "#0c0d12",
+        foreground: "#e4e4e7",
         cursor: "#a78bfa",
-        cursorAccent: "#000000",
-        selectionBackground: "rgba(139, 92, 246, 0.35)",
+        cursorAccent: "#0c0d12",
+        selectionBackground: "rgba(167, 139, 250, 0.3)",
         selectionForeground: "#ffffff",
         black: "#18181b",
         red: "#f87171",
         green: "#4ade80",
-        yellow: "#facc15",
+        yellow: "#fbbf24",
         blue: "#60a5fa",
         magenta: "#c084fc",
         cyan: "#38bdf8",
@@ -176,6 +182,8 @@ function TerminalSession({
 
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let resizeRaf: number | null = null;
+    const lastDimensions = { cols: 0, rows: 0 };
 
     setTimeout(() => {
       if (disposed) return;
@@ -190,18 +198,26 @@ function TerminalSession({
     }, 10);
 
     const sendSize = () => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(`\0DEVPILOT_RESIZE:${term.cols}:${term.rows}`);
+      if (wsRef.current?.readyState === WebSocket.OPEN && term.cols && term.rows) {
+        if (term.cols !== lastDimensions.cols || term.rows !== lastDimensions.rows) {
+          lastDimensions.cols = term.cols;
+          lastDimensions.rows = term.rows;
+          wsRef.current.send(`\0DEVPILOT_RESIZE:${term.cols}:${term.rows}`);
+        }
       }
     };
     sendSizeRef.current = sendSize;
 
     const handleResize = () => {
       if (!disposed && terminalElement.offsetParent) {
-        try {
-          fitAddon.fit();
-          sendSize();
-        } catch {}
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(() => {
+          if (disposed || !terminalElement.offsetParent) return;
+          try {
+            fitAddon.fit();
+            sendSize();
+          } catch {}
+        });
       }
     };
     window.addEventListener("resize", handleResize);
@@ -274,24 +290,51 @@ function TerminalSession({
       }
     });
 
+    let lastPastedText = "";
+    let lastPastedTime = 0;
+
+    const handlePaste = (text: string) => {
+      if (!text) return;
+      const now = Date.now();
+      if (text === lastPastedText && now - lastPastedTime < 350) {
+        return;
+      }
+      lastPastedText = text;
+      lastPastedTime = now;
+      if (typeof term.paste === "function") {
+        term.paste(text);
+      } else if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(text);
+      }
+    };
+    handlePasteRef.current = handlePaste;
+
     term.attachCustomKeyEventHandler?.((event: KeyboardEvent) => {
       if (event.type !== "keydown") return true;
 
       const key = event.key.toLowerCase();
-      const hasSelection = Boolean(term.hasSelection?.() || term.getSelection?.());
 
       // Copy:
       // Ctrl+C with text selected -> Copy
       // Ctrl+Shift+C (Linux standard) / Cmd+C (macOS) / Ctrl+Insert
-      const isCopy =
-        (key === "c" && hasSelection && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) ||
-        (key === "c" && (isMac ? event.metaKey : event.ctrlKey && event.shiftKey)) ||
+      const isCopyKey =
+        (key === "c" && (event.ctrlKey || (isMac && event.metaKey))) ||
         (key === "insert" && event.ctrlKey && !event.shiftKey);
 
-      if (isCopy) {
-        const selection = term.getSelection?.();
-        if (selection) void writeClipboardText(selection);
-        return false; // Prevent sending SIGINT when copying
+      if (isCopyKey) {
+        const hasSelection = Boolean(term.hasSelection?.() || term.getSelection?.());
+        const isCopy =
+          (key === "c" && hasSelection && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) ||
+          (key === "c" && (isMac ? event.metaKey : event.ctrlKey && event.shiftKey)) ||
+          (key === "insert" && event.ctrlKey && !event.shiftKey);
+
+        if (isCopy) {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          const selection = term.getSelection?.();
+          if (selection) void writeClipboardText(selection);
+          return false; // Prevent sending SIGINT when copying
+        }
       }
 
       // Paste:
@@ -303,13 +346,11 @@ function TerminalSession({
         (key === "insert" && event.shiftKey && !event.ctrlKey);
 
       if (isPaste) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
         void readClipboardText().then((text) => {
           if (text) {
-            if (typeof term.paste === "function") {
-              term.paste(text);
-            } else if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(text);
-            }
+            handlePaste(text);
           }
         });
         return false;
@@ -319,6 +360,8 @@ function TerminalSession({
       // Ctrl+K (macOS & modern terminals)
       const isClear = key === "k" && (isMac ? event.metaKey : event.ctrlKey && !event.shiftKey);
       if (isClear) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
         term.clear?.();
         return false;
       }
@@ -327,6 +370,8 @@ function TerminalSession({
       // Ctrl+Shift+A or Cmd+A (macOS)
       const isSelectAll = (key === "a" && (isMac ? event.metaKey : event.ctrlKey && event.shiftKey));
       if (isSelectAll) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
         term.selectAll?.();
         return false;
       }
@@ -347,6 +392,7 @@ function TerminalSession({
 
     return () => {
       disposed = true;
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
       window.removeEventListener("resize", handleResize);
       resizeObserver?.disconnect();
       if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -381,11 +427,7 @@ function TerminalSession({
   const handlePasteMenu = () => {
     void readClipboardText().then((text) => {
       if (text) {
-        if (typeof termRef.current?.paste === "function") {
-          termRef.current.paste(text);
-        } else if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(text);
-        }
+        handlePasteRef.current(text);
       }
     });
     setContextMenu(null);
@@ -699,7 +741,22 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "6px", overflowX: "auto" }}>
-          <SquareTerminal size={17} color="#a78bfa" style={{ marginRight: "4px" }} />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "28px",
+              height: "28px",
+              borderRadius: "7px",
+              background: "rgba(167,139,250,0.14)",
+              color: "#c4b5fd",
+              marginRight: "4px",
+              flexShrink: 0,
+            }}
+          >
+            <SquareTerminal size={15} />
+          </div>
           {tabs.map((tab, idx) => (
             <div
               key={tab.id}
@@ -712,16 +769,18 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                background: activeTabId === tab.id ? "rgba(139,92,246,0.15)" : "rgba(255,255,255,0.03)",
-                border: activeTabId === tab.id ? "1px solid rgba(139,92,246,0.4)" : "1px solid rgba(255,255,255,0.06)",
-                borderRadius: "6px",
+                gap: "8px",
+                padding: "6px 13px",
+                background: activeTabId === tab.id ? "rgba(167,139,250,0.14)" : "rgba(255,255,255,0.03)",
+                border: activeTabId === tab.id ? "1px solid rgba(167,139,250,0.4)" : "1px solid rgba(255,255,255,0.06)",
+                borderRadius: "7px",
                 cursor: "pointer",
-                color: activeTabId === tab.id ? "#c4b5fd" : "var(--muted-foreground)",
+                color: activeTabId === tab.id ? "#ddd6fe" : "var(--muted-foreground)",
                 fontSize: "12px",
                 fontWeight: 600,
                 userSelect: "none",
+                transition: "all 0.15s ease",
+                boxShadow: activeTabId === tab.id ? "0 2px 8px -2px rgba(167,139,250,0.25)" : "none",
               }}
             >
               {editingTabId === tab.id ? (
@@ -737,11 +796,11 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                   }}
                   onClick={(e) => e.stopPropagation()}
                   style={{
-                    background: "rgba(0,0,0,0.5)",
+                    background: "rgba(0,0,0,0.6)",
                     border: "1px solid #a78bfa",
-                    borderRadius: "3px",
+                    borderRadius: "4px",
                     color: "#fff",
-                    padding: "1px 4px",
+                    padding: "1px 5px",
                     fontSize: "11px",
                     width: "80px",
                     outline: "none",
@@ -757,7 +816,9 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                     e.stopPropagation();
                     closeTab(tab.id);
                   }}
-                  style={{ opacity: 0.7, cursor: "pointer" }}
+                  style={{ opacity: 0.65, cursor: "pointer", transition: "opacity 0.15s" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.65")}
                 />
               )}
             </div>
@@ -772,16 +833,25 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              width: "34px",
-              height: "34px",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: "9px",
-              background: "rgba(255,255,255,0.05)",
+              width: "32px",
+              height: "32px",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: "8px",
+              background: "rgba(255,255,255,0.04)",
               color: "var(--muted-foreground)",
               cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+              e.currentTarget.style.color = "var(--foreground)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+              e.currentTarget.style.color = "var(--muted-foreground)";
             }}
           >
-            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+            {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
           </button>
           <button
             type="button"
@@ -789,20 +859,29 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "7px",
-              height: "34px",
-              padding: "0 12px",
-              border: "1px solid rgba(139,92,246,0.4)",
-              borderRadius: "9px",
-              background: "rgba(139,92,246,0.12)",
+              gap: "6px",
+              height: "32px",
+              padding: "0 13px",
+              border: "1px solid rgba(167,139,250,0.35)",
+              borderRadius: "8px",
+              background: "rgba(167,139,250,0.12)",
               color: "#c4b5fd",
               cursor: "pointer",
               flexShrink: 0,
               fontSize: "12px",
-              fontWeight: 700,
+              fontWeight: 600,
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(167,139,250,0.2)";
+              e.currentTarget.style.borderColor = "rgba(167,139,250,0.55)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(167,139,250,0.12)";
+              e.currentTarget.style.borderColor = "rgba(167,139,250,0.35)";
             }}
           >
-            <Plus size={16} />
+            <Plus size={15} />
             New terminal
           </button>
         </div>
@@ -819,7 +898,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
               visibility: activeTabId === tab.id ? "visible" : "hidden",
               zIndex: activeTabId === tab.id ? 1 : -1,
               pointerEvents: activeTabId === tab.id ? "auto" : "none",
-              gap: "7px",
+              gap: "8px",
               ...gridStyle(tab.panes.length),
             }}
           >
@@ -834,45 +913,72 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                   minHeight: 0,
                   overflow: "hidden",
                   borderRadius: "10px",
-                  background: "#09090b",
+                  background: "#0c0d12",
                   border:
                     tab.activePaneId === pane.id
-                      ? "1px solid rgba(139,92,246,0.7)"
-                      : "1px solid rgba(255,255,255,0.1)",
+                      ? "1px solid rgba(167,139,250,0.5)"
+                      : "1px solid rgba(255,255,255,0.08)",
                   boxShadow:
-                    tab.activePaneId === pane.id ? "0 0 0 1px rgba(139,92,246,0.2)" : "none",
+                    tab.activePaneId === pane.id
+                      ? "0 0 16px -4px rgba(167,139,250,0.18)"
+                      : "none",
+                  transition: "border-color 0.15s ease, box-shadow 0.15s ease",
                   ...(tab.panes.length === 3 && index === 0 ? { gridRow: "1 / span 2" } : {}),
                 }}
               >
                 <div
                   style={{
-                    height: "32px",
+                    height: "34px",
                     flexShrink: 0,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    padding: "0 8px 0 11px",
+                    padding: "0 10px 0 12px",
                     background:
                       activeTab.activePaneId === pane.id
-                        ? "rgba(139,92,246,0.12)"
-                        : "rgba(255,255,255,0.035)",
-                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                        ? "linear-gradient(90deg, rgba(167,139,250,0.12) 0%, rgba(167,139,250,0.03) 100%)"
+                        : "rgba(255,255,255,0.02)",
+                    borderBottom: "1px solid rgba(255,255,255,0.07)",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-                    <SquareTerminal
-                      size={13}
-                      color={tab.activePaneId === pane.id ? "#a78bfa" : "#71717a"}
-                    />
-                    <span
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div
                       style={{
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        color: tab.activePaneId === pane.id ? "#ddd6fe" : "#a1a1aa",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "2px 7px",
+                        borderRadius: "5px",
+                        background: tab.activePaneId === pane.id ? "rgba(167,139,250,0.15)" : "transparent",
                       }}
                     >
-                      Terminal {index + 1}
-                    </span>
+                      <SquareTerminal
+                        size={13}
+                        color={tab.activePaneId === pane.id ? "#c4b5fd" : "#71717a"}
+                      />
+                      <span
+                        style={{
+                          fontSize: "11.5px",
+                          fontWeight: 600,
+                          letterSpacing: "0.2px",
+                          color: tab.activePaneId === pane.id ? "#f5f3ff" : "#a1a1aa",
+                        }}
+                      >
+                        Terminal {index + 1}
+                      </span>
+                      {tab.activePaneId === pane.id && (
+                        <span
+                          style={{
+                            width: "5px",
+                            height: "5px",
+                            borderRadius: "50%",
+                            background: "#34d399",
+                            boxShadow: "0 0 6px #34d399",
+                            marginLeft: "3px",
+                          }}
+                        />
+                      )}
+                    </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                     <button
@@ -885,14 +991,23 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                       style={{
                         display: "grid",
                         placeItems: "center",
-                        width: "22px",
-                        height: "22px",
+                        width: "24px",
+                        height: "24px",
                         padding: 0,
-                        border: "none",
+                        border: "1px solid transparent",
                         borderRadius: "5px",
                         background: "transparent",
-                        color: "#71717a",
+                        color: "#a1a1aa",
                         cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                        e.currentTarget.style.color = "#f4f4f5";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = "#a1a1aa";
                       }}
                     >
                       <Trash2 size={13} />
@@ -907,14 +1022,23 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                       style={{
                         display: "grid",
                         placeItems: "center",
-                        width: "22px",
-                        height: "22px",
+                        width: "24px",
+                        height: "24px",
                         padding: 0,
-                        border: "none",
+                        border: "1px solid transparent",
                         borderRadius: "5px",
                         background: "transparent",
-                        color: "#71717a",
+                        color: "#a1a1aa",
                         cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                        e.currentTarget.style.color = "#f4f4f5";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = "#a1a1aa";
                       }}
                     >
                       <RotateCw size={13} />
@@ -929,14 +1053,23 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                       style={{
                         display: "grid",
                         placeItems: "center",
-                        width: "22px",
-                        height: "22px",
+                        width: "24px",
+                        height: "24px",
                         padding: 0,
-                        border: "none",
+                        border: "1px solid transparent",
                         borderRadius: "5px",
                         background: "transparent",
-                        color: "#71717a",
+                        color: "#a1a1aa",
                         cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                        e.currentTarget.style.color = "#f4f4f5";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = "#a1a1aa";
                       }}
                     >
                       <Plus size={13} />
@@ -952,14 +1085,23 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         style={{
                           display: "grid",
                           placeItems: "center",
-                          width: "22px",
-                          height: "22px",
+                          width: "24px",
+                          height: "24px",
                           padding: 0,
-                          border: "none",
+                          border: "1px solid transparent",
                           borderRadius: "5px",
                           background: "transparent",
-                          color: "#71717a",
+                          color: "#a1a1aa",
                           cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(239,68,68,0.18)";
+                          e.currentTarget.style.color = "#fca5a5";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = "#a1a1aa";
                         }}
                       >
                         <X size={13} />
@@ -968,7 +1110,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                   </div>
                 </div>
                 <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
-                  <div style={{ position: "absolute", inset: "6px 8px" }}>
+                  <div style={{ position: "absolute", inset: "8px 12px" }}>
                     <TerminalSession
                       repository={repository}
                       isActive={isActive && tab.activePaneId === pane.id && activeTabId === tab.id}

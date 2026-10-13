@@ -1,6 +1,7 @@
 import os
 import pty
 import asyncio
+import codecs
 import fcntl
 import signal
 import struct
@@ -20,17 +21,6 @@ def resize_pty(fd: int, cols: int, rows: int) -> None:
     window_size = struct.pack("HHHH", rows, cols, 0, 0)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, window_size)
 
-async def read_from_pty(fd, websocket: WebSocket):
-    loop = asyncio.get_running_loop()
-    try:
-        while True:
-            # Read from PTY file descriptor
-            data = await loop.run_in_executor(None, os.read, fd, 1024)
-            if not data:
-                break
-            await websocket.send_text(data.decode("utf-8", "replace"))
-    except Exception:
-        pass
 
 @router.websocket("/terminal")
 async def terminal_websocket(websocket: WebSocket):
@@ -111,14 +101,46 @@ async def terminal_websocket(websocket: WebSocket):
         except Exception:
             pass
 
+        loop = asyncio.get_running_loop()
+        output_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+
+        def on_pty_readable():
+            try:
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    try:
+                        loop.remove_reader(fd)
+                    except Exception:
+                        pass
+                    output_queue.put_nowait(None)
+                    return
+                text = decoder.decode(chunk)
+                if text:
+                    output_queue.put_nowait(text)
+            except Exception:
+                try:
+                    loop.remove_reader(fd)
+                except Exception:
+                    pass
+                output_queue.put_nowait(None)
+
+        loop.add_reader(fd, on_pty_readable)
+
         async def read_from_pty_loop():
-            loop = asyncio.get_running_loop()
             try:
                 while True:
-                    data = await loop.run_in_executor(None, os.read, fd, 2048)
-                    if not data:
+                    text = await output_queue.get()
+                    if text is None:
                         break
-                    await websocket.send_text(data.decode("utf-8", "replace"))
+                    chunks = [text]
+                    while not output_queue.empty():
+                        nxt = output_queue.get_nowait()
+                        if nxt is None:
+                            await websocket.send_text("".join(chunks))
+                            return
+                        chunks.append(nxt)
+                    await websocket.send_text("".join(chunks))
             except Exception:
                 pass
 
@@ -134,7 +156,10 @@ async def terminal_websocket(websocket: WebSocket):
                         except (ValueError, ProcessLookupError, OSError):
                             pass
                         continue
-                    os.write(fd, data.encode("utf-8"))
+                    payload = data.encode("utf-8")
+                    while payload:
+                        written = os.write(fd, payload)
+                        payload = payload[written:]
             except WebSocketDisconnect:
                 pass
             except Exception:
@@ -147,6 +172,11 @@ async def terminal_websocket(websocket: WebSocket):
             [read_task, ws_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
+
+        try:
+            loop.remove_reader(fd)
+        except Exception:
+            pass
 
         for task in pending:
             task.cancel()

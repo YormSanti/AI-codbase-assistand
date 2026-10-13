@@ -288,9 +288,10 @@ export default function App() {
           {/* Shared file workspace retains drafts between Explorer and Code Editor. */}
           {(activeTab === "explorer" || activeTab === "editor") && (
             <EditorApp active={activeTab === "editor"} repository={repository} isLoading={isLoading} hasSelectedFile={Boolean(selectedFile)} onNavigate={handleSelectTab} onCommand={command => editorWorkspaceRef.current?.runCommand(command)}>
-              <ExplorerPage
+              {workspaceVisible => <ExplorerPage
                 ref={editorWorkspaceRef}
                 embedded
+                isActive={workspaceVisible}
                 key={`${repository?.id ?? 'none'}:${repository?.root_path ?? ''}`}
                 mode={activeTab === "editor" ? "editor" : "explorer"}
                 repository={repository}
@@ -303,7 +304,7 @@ export default function App() {
                 onAskAI={handleAskAIAboutFile}
                 onEditorStateChange={handleEditorStateChange}
                 onFileSaved={handleFileSaved}
-              />
+              />}
             </EditorApp>
           )}
 

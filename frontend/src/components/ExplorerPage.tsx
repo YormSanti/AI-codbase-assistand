@@ -16,6 +16,7 @@ import type { EditorWorkspaceHandle } from '../editor/editorCommands';
 interface Props {
   ref?: Ref<EditorWorkspaceHandle>;
   embedded?: boolean;
+  isActive?: boolean;
   mode?: 'explorer' | 'editor';
   repository: RepositoryInfo | null;
   tree: TreeNode | null;
@@ -34,7 +35,7 @@ function collectFiles(node: TreeNode | null): TreeNode[] {
   return node.is_directory ? node.children.flatMap(collectFiles) : [node];
 }
 
-export function ExplorerPage({ ref, embedded = false, mode = 'explorer', repository, tree: indexedTree, selectedFile, isLoading, onOpen, onSelectFile, onCloseFile, onAskAI, onEditorStateChange, onFileSaved }: Props) {
+export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'explorer', repository, tree: indexedTree, selectedFile, isLoading, onOpen, onSelectFile, onCloseFile, onAskAI, onEditorStateChange, onFileSaved }: Props) {
   const isEditor = mode === 'editor';
   const [localTree, setLocalTree] = useState<{ repository: RepositoryInfo; tree: TreeNode } | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -105,7 +106,7 @@ export function ExplorerPage({ ref, embedded = false, mode = 'explorer', reposit
   };
 
   useEffect(() => {
-    if (!isEditor) return;
+    if (!isEditor || !isActive) return;
     // Capture Save All before CodeMirror can treat a shifted lowercase key as Save.
     const saveAllShortcut = (event: KeyboardEvent) => {
       if (!(event.target instanceof Node) || !workspaceRef.current?.contains(event.target)) return;
@@ -139,7 +140,7 @@ export function ExplorerPage({ ref, embedded = false, mode = 'explorer', reposit
       window.removeEventListener('keydown', saveAllShortcut, true);
       window.removeEventListener('keydown', quickOpen);
     };
-  }, [isEditor, tree, isLoading, selectedFile, openFiles, onSelectFile, closeFile, saveAll, showQuickOpen, showFolderPicker]);
+  }, [isEditor, isActive, tree, isLoading, selectedFile, openFiles, onSelectFile, closeFile, saveAll, showQuickOpen, showFolderPicker]);
 
   useEffect(() => { if (showQuickOpen) quickInputRef.current?.focus(); }, [showQuickOpen]);
 
@@ -214,7 +215,7 @@ export function ExplorerPage({ ref, embedded = false, mode = 'explorer', reposit
               <FileInspector
                 ref={documents.refFor(file.path)}
                 file={file}
-                active={file.path === selectedFile?.path}
+                active={isActive && file.path === selectedFile?.path}
                 manageCloseGuard={false}
                 onClose={() => closeFile(file, true)}
                 onAskAI={file.file_id !== null && file.file_id < 0 ? undefined : onAskAI}
