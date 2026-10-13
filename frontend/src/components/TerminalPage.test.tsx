@@ -16,6 +16,7 @@ const { state, MockTerminal } = vi.hoisted(() => {
     selection = "";
     cleared = false;
     pastedText = "";
+    pasteCallCount = 0;
 
     constructor() {
       state.lastCreatedTerminal = this;
@@ -51,6 +52,7 @@ const { state, MockTerminal } = vi.hoisted(() => {
       this.output.textContent = "";
     }
     paste(text: string) {
+      this.pasteCallCount++;
       this.pastedText = text;
       this.write(text);
     }
@@ -177,16 +179,41 @@ describe("TerminalPage", () => {
     expect(state.attachedKeyHandler!(eventWithSelection)).toBe(false);
   });
 
-  it("handles paste shortcut (Ctrl+V and Ctrl+Shift+V)", async () => {
+  it("handles paste shortcut (Ctrl+V and Ctrl+Shift+V) and prevents default browser double-paste", async () => {
+    const readTextMock = vi.fn().mockResolvedValue("pasted-command");
+    Object.defineProperty(navigator, "clipboard", {
+      value: { readText: readTextMock },
+      configurable: true,
+      writable: true,
+    });
+
     render(<TerminalPage repository={null} />);
 
     await waitFor(() => expect(state.attachedKeyHandler).not.toBeNull());
 
-    const ctrlV = new KeyboardEvent("keydown", { key: "v", ctrlKey: true });
+    const ctrlV = new KeyboardEvent("keydown", { key: "v", ctrlKey: true, cancelable: true });
     expect(state.attachedKeyHandler!(ctrlV)).toBe(false);
+    expect(ctrlV.defaultPrevented).toBe(true);
 
-    const ctrlShiftV = new KeyboardEvent("keydown", { key: "v", ctrlKey: true, shiftKey: true });
+    const ctrlShiftV = new KeyboardEvent("keydown", { key: "v", ctrlKey: true, shiftKey: true, cancelable: true });
     expect(state.attachedKeyHandler!(ctrlShiftV)).toBe(false);
+    expect(ctrlShiftV.defaultPrevented).toBe(true);
+
+    // Verify deduplication: consecutive pastes of identical text within 350ms only paste once
+    await waitFor(() => expect(state.lastCreatedTerminal!.pasteCallCount).toBe(1));
+    expect(state.lastCreatedTerminal!.pastedText).toBe("pasted-command");
+  });
+
+  it("passes normal typing keystrokes through quickly without checking selection", async () => {
+    render(<TerminalPage repository={null} />);
+
+    await waitFor(() => expect(state.attachedKeyHandler).not.toBeNull());
+
+    const keyA = new KeyboardEvent("keydown", { key: "a" });
+    const getSelectionSpy = vi.spyOn(state.lastCreatedTerminal!, "getSelection");
+
+    expect(state.attachedKeyHandler!(keyA)).toBe(true);
+    expect(getSelectionSpy).not.toHaveBeenCalled();
   });
 
   it("handles clear terminal shortcut (Ctrl+K) and toolbar button", async () => {

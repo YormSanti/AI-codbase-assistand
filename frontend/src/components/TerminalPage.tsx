@@ -99,6 +99,7 @@ function TerminalSession({
   const wsRef = useRef<WebSocket | undefined>(undefined);
   const sendSizeRef = useRef<(() => void) | null>(null);
   const restartRef = useRef<(() => void) | null>(null);
+  const handlePasteRef = useRef<(text: string) => void>(() => {});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const isExitedRef = useRef(false);
 
@@ -144,6 +145,9 @@ function TerminalSession({
       convertEol: true,
       allowProposedApi: true,
       macOptionIsMeta: true,
+      smoothScrollDuration: 0,
+      scrollOnUserInput: true,
+      fastScrollModifier: "alt",
       theme: {
         background: "#09090b",
         foreground: "#d4d4d8",
@@ -176,6 +180,8 @@ function TerminalSession({
 
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let resizeRaf: number | null = null;
+    const lastDimensions = { cols: 0, rows: 0 };
 
     setTimeout(() => {
       if (disposed) return;
@@ -190,18 +196,26 @@ function TerminalSession({
     }, 10);
 
     const sendSize = () => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(`\0DEVPILOT_RESIZE:${term.cols}:${term.rows}`);
+      if (wsRef.current?.readyState === WebSocket.OPEN && term.cols && term.rows) {
+        if (term.cols !== lastDimensions.cols || term.rows !== lastDimensions.rows) {
+          lastDimensions.cols = term.cols;
+          lastDimensions.rows = term.rows;
+          wsRef.current.send(`\0DEVPILOT_RESIZE:${term.cols}:${term.rows}`);
+        }
       }
     };
     sendSizeRef.current = sendSize;
 
     const handleResize = () => {
       if (!disposed && terminalElement.offsetParent) {
-        try {
-          fitAddon.fit();
-          sendSize();
-        } catch {}
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(() => {
+          if (disposed || !terminalElement.offsetParent) return;
+          try {
+            fitAddon.fit();
+            sendSize();
+          } catch {}
+        });
       }
     };
     window.addEventListener("resize", handleResize);
@@ -274,24 +288,51 @@ function TerminalSession({
       }
     });
 
+    let lastPastedText = "";
+    let lastPastedTime = 0;
+
+    const handlePaste = (text: string) => {
+      if (!text) return;
+      const now = Date.now();
+      if (text === lastPastedText && now - lastPastedTime < 350) {
+        return;
+      }
+      lastPastedText = text;
+      lastPastedTime = now;
+      if (typeof term.paste === "function") {
+        term.paste(text);
+      } else if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(text);
+      }
+    };
+    handlePasteRef.current = handlePaste;
+
     term.attachCustomKeyEventHandler?.((event: KeyboardEvent) => {
       if (event.type !== "keydown") return true;
 
       const key = event.key.toLowerCase();
-      const hasSelection = Boolean(term.hasSelection?.() || term.getSelection?.());
 
       // Copy:
       // Ctrl+C with text selected -> Copy
       // Ctrl+Shift+C (Linux standard) / Cmd+C (macOS) / Ctrl+Insert
-      const isCopy =
-        (key === "c" && hasSelection && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) ||
-        (key === "c" && (isMac ? event.metaKey : event.ctrlKey && event.shiftKey)) ||
+      const isCopyKey =
+        (key === "c" && (event.ctrlKey || (isMac && event.metaKey))) ||
         (key === "insert" && event.ctrlKey && !event.shiftKey);
 
-      if (isCopy) {
-        const selection = term.getSelection?.();
-        if (selection) void writeClipboardText(selection);
-        return false; // Prevent sending SIGINT when copying
+      if (isCopyKey) {
+        const hasSelection = Boolean(term.hasSelection?.() || term.getSelection?.());
+        const isCopy =
+          (key === "c" && hasSelection && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) ||
+          (key === "c" && (isMac ? event.metaKey : event.ctrlKey && event.shiftKey)) ||
+          (key === "insert" && event.ctrlKey && !event.shiftKey);
+
+        if (isCopy) {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          const selection = term.getSelection?.();
+          if (selection) void writeClipboardText(selection);
+          return false; // Prevent sending SIGINT when copying
+        }
       }
 
       // Paste:
@@ -303,13 +344,11 @@ function TerminalSession({
         (key === "insert" && event.shiftKey && !event.ctrlKey);
 
       if (isPaste) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
         void readClipboardText().then((text) => {
           if (text) {
-            if (typeof term.paste === "function") {
-              term.paste(text);
-            } else if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(text);
-            }
+            handlePaste(text);
           }
         });
         return false;
@@ -319,6 +358,8 @@ function TerminalSession({
       // Ctrl+K (macOS & modern terminals)
       const isClear = key === "k" && (isMac ? event.metaKey : event.ctrlKey && !event.shiftKey);
       if (isClear) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
         term.clear?.();
         return false;
       }
@@ -327,6 +368,8 @@ function TerminalSession({
       // Ctrl+Shift+A or Cmd+A (macOS)
       const isSelectAll = (key === "a" && (isMac ? event.metaKey : event.ctrlKey && event.shiftKey));
       if (isSelectAll) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
         term.selectAll?.();
         return false;
       }
@@ -347,6 +390,7 @@ function TerminalSession({
 
     return () => {
       disposed = true;
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
       window.removeEventListener("resize", handleResize);
       resizeObserver?.disconnect();
       if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -381,11 +425,7 @@ function TerminalSession({
   const handlePasteMenu = () => {
     void readClipboardText().then((text) => {
       if (text) {
-        if (typeof termRef.current?.paste === "function") {
-          termRef.current.paste(text);
-        } else if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(text);
-        }
+        handlePasteRef.current(text);
       }
     });
     setContextMenu(null);
