@@ -33,6 +33,7 @@ export default function App() {
   const [terminalRepositories, setTerminalRepositories] = useState<(RepositoryInfo | null)[]>([]);
   const [hasVisitedAi, setHasVisitedAi] = useState(false);
   const [aiDraft, setAiDraft] = useState<string | null>(null);
+  const [editorAiPrompt, setEditorAiPrompt] = useState<string | null>(null);
   const [activeThread, setActiveThread] = useState("default");
   const [visitedThreads, setVisitedThreads] = useState<string[]>(["default"]);
 
@@ -230,8 +231,13 @@ export default function App() {
   }
 
   function handleAskAIAboutFile(node: TreeNode) {
+    const prompt = `Review @${node.path}. Explain its responsibility, identify likely issues, and suggest focused improvements.`;
+    if (activeTab === "editor") {
+      setEditorAiPrompt(prompt);
+      return;
+    }
     if (!canLeaveEditor()) return;
-    setAiDraft(`Review @${node.path}. Explain its responsibility, identify likely issues, and suggest focused improvements.`);
+    setAiDraft(prompt);
     setActiveTab("ai");
   }
 
@@ -287,7 +293,16 @@ export default function App() {
 
           {/* Shared file workspace retains drafts between Explorer and Code Editor. */}
           {(activeTab === "explorer" || activeTab === "editor") && (
-            <EditorApp active={activeTab === "editor"} repository={repository} isLoading={isLoading} hasSelectedFile={Boolean(selectedFile)} onNavigate={handleSelectTab} onCommand={command => editorWorkspaceRef.current?.runCommand(command)}>
+            <EditorApp
+              active={activeTab === "editor"}
+              repository={repository}
+              isLoading={isLoading}
+              hasSelectedFile={Boolean(selectedFile)}
+              aiPrompt={editorAiPrompt}
+              onAiPromptConsumed={() => setEditorAiPrompt(null)}
+              onNavigate={handleSelectTab}
+              onCommand={command => editorWorkspaceRef.current?.runCommand(command)}
+            >
               {workspaceVisible => <ExplorerPage
                 ref={editorWorkspaceRef}
                 embedded
