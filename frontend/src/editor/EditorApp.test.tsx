@@ -94,3 +94,25 @@ it("opens AI assistant inside the editor without navigating away from code", asy
   expect(screen.getByLabelText("File draft")).toHaveValue("my code draft");
 });
 
+it("opens extensions inside the editor without navigating away from code", async () => {
+  const onNavigate = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "extensions test draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Extensions" }));
+
+  // Does not navigate back to IFROG
+  expect(onNavigate).not.toHaveBeenCalled();
+
+  // The draft is hidden while extensions view is visible
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  expect(screen.getByText("Install from VSIX…")).toBeVisible();
+  expect(screen.getByText("Python")).toBeVisible();
+
+  // Clicking "Back to code" returns to code
+  fireEvent.click(screen.getByRole("button", { name: "Back to code" }));
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+  expect(screen.getByLabelText("File draft")).toHaveValue("extensions test draft");
+});
+

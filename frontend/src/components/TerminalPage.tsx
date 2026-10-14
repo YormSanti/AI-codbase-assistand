@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import {
-  ChevronDown,
   ClipboardPaste,
   Copy,
   GitBranch,
@@ -645,8 +644,6 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
       document.exitFullscreen();
     }
   };
-
-  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
   const addTab = () => {
     const tId = nextTabId.current++;
