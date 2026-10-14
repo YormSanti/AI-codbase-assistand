@@ -20,3 +20,19 @@ def test_terminal_websocket_interactive_session(api_client: TestClient) -> None:
                 break
         assert "DEVPILOT_TEST_OK" in received
         ws.send_text("exit\n")
+
+
+def test_terminal_websocket_environment_and_resize(api_client: TestClient) -> None:
+    with api_client.websocket_connect("/ws/terminal?cols=80&rows=24") as ws:
+        # Test resize command
+        ws.send_text("\0DEVPILOT_RESIZE:120:40")
+        # Test environment
+        ws.send_text("echo PROG=$TERM_PROGRAM\n")
+        received = ""
+        for _ in range(15):
+            chunk = ws.receive_text()
+            received += chunk
+            if "PROG=DevPilot" in received:
+                break
+        assert "PROG=DevPilot" in received
+        ws.send_text("exit\n")

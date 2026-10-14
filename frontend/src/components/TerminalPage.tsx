@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import {
+  ChevronDown,
   ClipboardPaste,
   Copy,
+  GitBranch,
   Maximize,
   Minimize,
+  PanelsLeftRight,
   Plus,
   RotateCw,
   SquareTerminal,
@@ -136,15 +139,14 @@ function TerminalSession({
 
     const term = new XTerm({
       cursorBlink: true,
-      cursorStyle: "bar",
-      cursorWidth: 2,
+      cursorStyle: "block",
       cursorInactiveStyle: "outline",
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, Monaco, Consolas, monospace",
       fontSize: 13.5,
-      lineHeight: 1.35,
-      letterSpacing: 0.25,
+      lineHeight: 1.15,
+      letterSpacing: 0,
       scrollback: 10000,
-      convertEol: true,
+      convertEol: false,
       allowProposedApi: true,
       macOptionIsMeta: true,
       smoothScrollDuration: 0,
@@ -333,7 +335,8 @@ function TerminalSession({
           event.stopPropagation?.();
           const selection = term.getSelection?.();
           if (selection) void writeClipboardText(selection);
-          return false; // Prevent sending SIGINT when copying
+          term.clearSelection?.();
+          return false; // Prevent sending SIGINT on first copy
         }
       }
 
@@ -935,7 +938,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                     justifyContent: "space-between",
                     padding: "0 10px 0 12px",
                     background:
-                      activeTab.activePaneId === pane.id
+                      tab.activePaneId === pane.id
                         ? "linear-gradient(90deg, rgba(167,139,250,0.12) 0%, rgba(167,139,250,0.03) 100%)"
                         : "rgba(255,255,255,0.02)",
                     borderBottom: "1px solid rgba(255,255,255,0.07)",
@@ -979,6 +982,23 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         />
                       )}
                     </div>
+                    {/* Repository context: name + branch */}
+                    {repository && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "5px", opacity: 0.65 }}>
+                        <span style={{ fontSize: "10.5px", color: "#a1a1aa" }}>
+                          {repository.name}
+                        </span>
+                        {repository.current_branch && (
+                          <>
+                            <span style={{ color: "#52525b", fontSize: "10px" }}>›</span>
+                            <GitBranch size={10} color="#a78bfa" />
+                            <span style={{ fontSize: "10.5px", color: "#c4b5fd", fontWeight: 600 }}>
+                              {repository.current_branch}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                     <button
@@ -1049,7 +1069,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         e.stopPropagation();
                         addSplit(tab.id);
                       }}
-                      title="Split terminal"
+                      title="Split terminal (add side-by-side pane)"
                       style={{
                         display: "grid",
                         placeItems: "center",
@@ -1072,7 +1092,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         e.currentTarget.style.color = "#a1a1aa";
                       }}
                     >
-                      <Plus size={13} />
+                      <PanelsLeftRight size={13} />
                     </button>
                     {tab.panes.length > 1 && (
                       <button
