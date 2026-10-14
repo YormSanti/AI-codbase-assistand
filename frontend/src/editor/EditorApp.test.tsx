@@ -116,3 +116,32 @@ it("opens extensions inside the editor without navigating away from code", async
   expect(screen.getByLabelText("File draft")).toHaveValue("extensions test draft");
 });
 
+it("keeps the open file code visible and active when closing or toggling the explorer sidebar", () => {
+  const onCommand = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onCommand={onCommand}>
+    {visible => <input aria-label="File draft" defaultValue="active file code" data-active={visible} />}
+  </EditorApp>);
+
+  const explorerBtn = screen.getByRole("button", { name: "Explorer" });
+  expect(explorerBtn).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByLabelText("File draft")).toBeVisible();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+
+  // Click to close/toggle the explorer sidebar
+  fireEvent.click(explorerBtn);
+  expect(onCommand).toHaveBeenCalledWith("toggleExplorer");
+  expect(explorerBtn).toHaveAttribute("aria-pressed", "false");
+
+  // The open code file remains fully visible and active!
+  expect(screen.getByLabelText("File draft")).toBeVisible();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+  expect(screen.getByLabelText("File draft")).toHaveValue("active file code");
+
+  // Click to reopen explorer sidebar
+  fireEvent.click(explorerBtn);
+  expect(onCommand).toHaveBeenLastCalledWith("toggleExplorer");
+  expect(explorerBtn).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByLabelText("File draft")).toBeVisible();
+});
+
+

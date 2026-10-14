@@ -40,6 +40,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   const aiVisible = active && showAi && aiRoot === (repository?.root_path ?? "");
   const [showExtensions, setShowExtensions] = useState(false);
   const extensionsVisible = active && showExtensions;
+  const [explorerVisible, setExplorerVisible] = useState(true);
   const canOpenTerminal = Boolean(repository) && !isLoading;
   const terminalVisible = active && showTerminal && canOpenTerminal;
   const fileActionsDisabled = !hasSelectedFile || isLoading;
@@ -100,7 +101,26 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   const openAi = () => { setShowGit(false); setShowExtensions(false); setAiRoot(repository?.root_path ?? ""); setShowAi(true); };
   const openExtensions = () => { setShowGit(false); setShowAi(false); setShowExtensions(true); };
   const returnToCode = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); };
+  const toggleExplorerPanel = () => {
+    if (gitVisible || aiVisible || extensionsVisible) {
+      returnToCode();
+      if (!explorerVisible) {
+        setExplorerVisible(true);
+        onCommand?.("showExplorer");
+      }
+    } else {
+      setExplorerVisible(value => !value);
+      onCommand?.("toggleExplorer");
+    }
+  };
   const runCommand = (command: EditorCommand) => {
+    if (command === "toggleExplorer") {
+      setExplorerVisible(value => !value);
+    } else if (command === "showExplorer") {
+      setExplorerVisible(true);
+    } else if (command === "hideExplorer") {
+      setExplorerVisible(false);
+    }
     if ((gitVisible || aiVisible || extensionsVisible) && command !== "save" && command !== "saveAll") {
       returnToCode();
       requestAnimationFrame(() => onCommand?.(command));
@@ -158,7 +178,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
         <div className="ifrog-editor-topbar-actions">
           <button type="button" className="ifrog-editor-back" aria-label="Back to IFROG" title="Back to IFROG" onClick={() => onNavigate("dashboard")}><ArrowLeft size={16} /></button>
           <button type="button" aria-label="Save all files" title="Save all files (Ctrl/Cmd+Shift+S)" disabled={!repository || isLoading} onClick={() => onCommand?.("saveAll")}><SaveAll size={16} /></button>
-          <button type="button" aria-label="Toggle file explorer" title="Toggle Explorer" onClick={() => (gitVisible || aiVisible || extensionsVisible) ? returnToCode() : onCommand?.("toggleExplorer")}><PanelLeft size={16} /></button>
+          <button type="button" aria-label="Toggle file explorer" aria-pressed={explorerVisible} title="Toggle Explorer" onClick={toggleExplorerPanel}><PanelLeft size={16} /></button>
           <button type="button" aria-label="Toggle symbol outline" title="Toggle Symbol Outline" onClick={() => runCommand("toggleOutline")}><PanelRight size={16} /></button>
           <button type="button" className="ifrog-editor-terminal-toggle" aria-label="Toggle integrated terminal" aria-pressed={terminalVisible} aria-controls="ifrog-editor-terminal" disabled={!canOpenTerminal} onClick={toggleTerminal} title="Toggle terminal (Ctrl/Cmd+`)">
             <SquareTerminal size={16} />
@@ -170,7 +190,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
       <div className={active ? "ifrog-editor-body" : "ifrog-file-workspace-body"}>
         {active && <nav className="ifrog-editor-rail" aria-label="Editor tools">
           <div className="ifrog-editor-rail-top">
-            <button type="button" className={!gitVisible && !aiVisible && !extensionsVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Explorer" title="Toggle Explorer" onClick={() => (gitVisible || aiVisible || extensionsVisible) ? returnToCode() : onCommand?.("toggleExplorer")}><Files size={23} /></button>
+            <button type="button" className={explorerVisible && !gitVisible && !aiVisible && !extensionsVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Explorer" aria-pressed={explorerVisible} title="Toggle Explorer" onClick={toggleExplorerPanel}><Files size={23} /></button>
             <button type="button" aria-label="Search files" title="Go to file (Ctrl/Cmd+P)" onClick={() => runCommand("openFile")}><Search size={23} /></button>
             <button type="button" className={gitVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Git Repository" aria-pressed={gitVisible} title="Git Repository" onClick={openGit}><GitBranch size={20} /></button>
             <button type="button" className={aiVisible ? "ifrog-editor-rail-active" : undefined} aria-label="AI Assistant" aria-pressed={aiVisible} title="AI Assistant" onClick={aiVisible ? returnToCode : openAi}><Sparkles size={20} /></button>
