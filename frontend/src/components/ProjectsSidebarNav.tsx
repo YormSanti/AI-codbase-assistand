@@ -1,18 +1,15 @@
 import React, { useState, useEffect } from "react";
 import type { RepositoryInfo } from "@/types/domain";
 import { repositoryApi } from "@/api/repositoryApi";
-import { Trash2 } from "lucide-react";
+import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 
-export interface ProjectThread {
-  id: string;
-  projectId: string | number;
-  title: string;
-  createdAt: string;
-}
+import { useProjectSessions, type ProjectThread } from "../hooks/useProjectSessions";
+export type { ProjectThread } from "../hooks/useProjectSessions";
 
 interface ProjectsSidebarNavProps {
   currentRepository?: RepositoryInfo | null;
   onOpenRepository?: (path: string) => Promise<void> | void;
+  onOpenTerminal?: (path: string) => Promise<void> | void;
   onSelectTab?: (tab: string) => void;
   onSelectThread?: (threadId: string) => void;
   onDeleteRepository?: (repositoryId: number) => Promise<void> | void;
@@ -165,75 +162,37 @@ export function SparklePlusIcon({ className = "w-3.5 h-3.5 text-zinc-300" }: { c
 export function ProjectsSidebarNav({
   currentRepository,
   onOpenRepository,
+  onOpenTerminal,
   onSelectTab,
   onSelectThread,
   onDeleteRepository,
 }: ProjectsSidebarNavProps) {
   const [projectsList, setProjectsList] = useState<RepositoryInfo[]>([]);
-  const [threads, setThreads] = useState<ProjectThread[]>([]);
+  const { threads, save } = useProjectSessions(currentRepository?.id);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newProjectPath, setNewProjectPath] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [openingTerminalPath, setOpeningTerminalPath] = useState<string | null>(null);
+
+  const [refreshCount, setRefreshCount] = useState(0);
 
   // Load projects
   useEffect(() => {
     let isMounted = true;
     const load = async () => {
+      setDeleteError(null);
       try {
         const list = await repositoryApi.list();
         if (isMounted) {
-          if (list.length === 0 && !currentRepository) {
-            // Provide default showcase project items if database is empty
-            setProjectsList([
-              {
-                id: 1,
-                name: "pharmacy-mobile-v2",
-                root_path: "/home/ksk/pharmacy-mobile-v2",
-                current_branch: "main",
-                head_commit: "9c3f1a2e4b",
-                opened_at: new Date().toISOString(),
-                file_count: 84,
-              },
-              {
-                id: 2,
-                name: "pharmkulen-web",
-                root_path: "/home/ksk/pharmkulen-web",
-                current_branch: "main",
-                head_commit: "4e7b8c1a9d",
-                opened_at: new Date().toISOString(),
-                file_count: 52,
-              },
-            ]);
-          } else {
-            setProjectsList(list);
-          }
+          setProjectsList(list);
         }
       } catch {
         if (isMounted) {
-          // Fallback showcase items
-          setProjectsList([
-            {
-              id: 1,
-              name: currentRepository ? currentRepository.name : "pharmacy-mobile-v2",
-              root_path: currentRepository ? currentRepository.root_path : "/home/ksk/pharmacy-mobile-v2",
-              current_branch: currentRepository?.current_branch || "main",
-              head_commit: currentRepository?.head_commit || "9c3f1a2e4b",
-              opened_at: currentRepository?.opened_at || new Date().toISOString(),
-              file_count: currentRepository?.file_count || 84,
-            },
-            {
-              id: 2,
-              name: "pharmkulen-web",
-              root_path: "/home/ksk/pharmkulen-web",
-              current_branch: "main",
-              head_commit: "4e7b8c1a9d",
-              opened_at: new Date().toISOString(),
-              file_count: 52,
-            },
-          ]);
+          setProjectsList([]);
+          setDeleteError("Could not load projects. Use Refresh projects to retry.");
         }
       }
     };
@@ -242,40 +201,25 @@ export function ProjectsSidebarNav({
     return () => {
       isMounted = false;
     };
-  }, [currentRepository]);
-
-  // Load threads for active project from localStorage
-  useEffect(() => {
-    const projKey = currentRepository ? `threads_${currentRepository.id}` : "threads_default";
-    const saved = localStorage.getItem(projKey);
-    if (saved) {
-      try {
-        setThreads(JSON.parse(saved));
-      } catch {
-        setThreads([]);
-      }
-    } else {
-      setThreads([]);
-    }
-  }, [currentRepository]);
+  }, [currentRepository, refreshCount]);
 
   const handleCreateNewThread = () => {
-    const projId = currentRepository?.id || "default";
+    if (!currentRepository) { setShowAddModal(true); return; }
+    const projId = currentRepository.id;
     const newThread: ProjectThread = {
       id: crypto.randomUUID(),
       projectId: projId,
-      title: `Thread ${threads.length + 1}`,
-      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      title: `Session · ${new Date().toLocaleString()}`,
+      createdAt: new Date().toISOString(),
     };
     const updated = [newThread, ...threads];
-    setThreads(updated);
+    save(updated);
     setActiveThreadId(newThread.id);
-    localStorage.setItem(currentRepository ? `threads_${currentRepository.id}` : "threads_default", JSON.stringify(updated));
+
 
     if (onSelectThread) {
       onSelectThread(newThread.id);
-    }
-    if (onSelectTab) {
+    } else if (onSelectTab) {
       onSelectTab("ai");
     }
   };
@@ -285,10 +229,9 @@ export function ProjectsSidebarNav({
     if (!window.confirm(`Delete “${thread.title}”?`)) return;
 
     const updated = threads.filter((item) => item.id !== thread.id);
-    setThreads(updated);
+    save(updated);
     if (activeThreadId === thread.id) setActiveThreadId(null);
-    const storageKey = currentRepository ? `threads_${currentRepository.id}` : "threads_default";
-    localStorage.setItem(storageKey, JSON.stringify(updated));
+
   };
 
   const handleDeleteProject = async (event: React.MouseEvent, project: RepositoryInfo) => {
@@ -306,6 +249,20 @@ export function ProjectsSidebarNav({
       setProjectsList((current) => current.filter((item) => item.id !== project.id));
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Could not remove this project.");
+    }
+  };
+
+  const handleOpenProjectTerminal = async (event: React.MouseEvent, project: RepositoryInfo) => {
+    event.stopPropagation();
+    if (!onOpenTerminal) return;
+    setDeleteError(null);
+    setOpeningTerminalPath(project.root_path);
+    try {
+      await onOpenTerminal(project.root_path);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Could not open this project's terminal.");
+    } finally {
+      setOpeningTerminalPath(current => current === project.root_path ? null : current);
     }
   };
 
@@ -339,20 +296,12 @@ export function ProjectsSidebarNav({
         setNewProjectPath(selected);
       }
     } catch (err) {
-      console.error(err);
+      setAddError(err instanceof Error ? err.message : "Could not open the folder picker.");
     }
   };
 
-  // Determine active project display name
-  const activeProj = currentRepository || (projectsList.length > 0 ? projectsList[0] : {
-    id: 1,
-    name: "pharmacy-mobile-v2",
-    root_path: "/home/ksk/pharmacy-mobile-v2",
-  });
-
-  const otherProjects = projectsList.filter(
-    (p) => p.name !== activeProj.name && p.root_path !== activeProj.root_path
-  );
+  const activeProj = currentRepository;
+  const otherProjects = projectsList.filter(p => p.id !== currentRepository?.id);
 
   return (
     <div className="w-full select-none text-zinc-300 font-sans">
@@ -373,14 +322,14 @@ export function ProjectsSidebarNav({
             <SparkleIcon className="w-4 h-4" />
           </button>
 
-          {/* List View Toggle */}
+          {/* Refresh saved projects */}
           <button
             type="button"
-            onClick={() => onSelectTab?.("projects")}
+            onClick={() => setRefreshCount(count => count + 1)}
             className="p-1 rounded hover:bg-white/10 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="Projects Catalog"
+            title="Refresh projects"
           >
-            <ListLinesIcon className="w-4 h-4" />
+            <RefreshCw className="w-4 h-4" />
           </button>
 
           {/* Plus Add Project Button */}
@@ -405,6 +354,7 @@ export function ProjectsSidebarNav({
             {deleteError}
           </div>
         )}
+        {activeProj && <>
         {/* ── Active Project Card ─────────────────────────────────────────── */}
         <div
           className="group relative flex items-center justify-between rounded-xl px-2.5 py-2 bg-[#121927] border border-[#1e293b]/90 shadow-sm cursor-pointer hover:border-blue-500/30 transition-all"
@@ -432,6 +382,7 @@ export function ProjectsSidebarNav({
               }}
               className="flex items-center justify-center w-6 h-6 rounded-md bg-white/[0.04] hover:bg-white/15 text-zinc-400 hover:text-zinc-100 transition-colors"
               title="Open Terminal"
+              aria-label={`Open terminal for ${activeProj.name}`}
             >
               <TerminalBadgeIcon className="w-3.5 h-3.5" />
             </button>
@@ -469,15 +420,15 @@ export function ProjectsSidebarNav({
           <div className="absolute left-[13px] top-0 bottom-0 w-[2px] bg-indigo-500/70 rounded-full" />
 
           {/* "New thread" clickable row */}
-          <div
+          <button type="button"
             className="flex items-center gap-2.5 pl-6 py-1.5 rounded-lg w-full text-zinc-400 hover:text-slate-100 hover:bg-white/[0.04] cursor-pointer transition-colors"
             onClick={handleCreateNewThread}
           >
             <StarburstIcon className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200 flex-shrink-0" />
             <span className="text-[13px] font-normal tracking-tight">
-              New thread
+              Start new session
             </span>
-          </div>
+          </button>
         </div>
 
         {/* List of active threads if any */}
@@ -492,8 +443,8 @@ export function ProjectsSidebarNav({
               }`}
               onClick={() => {
                 setActiveThreadId(thread.id);
-                onSelectThread?.(thread.id);
-                onSelectTab?.("ai");
+                if (onSelectThread) onSelectThread(thread.id);
+                else onSelectTab?.("ai");
               }}
             >
               <div className="flex items-center gap-2 min-w-0">
@@ -501,7 +452,7 @@ export function ProjectsSidebarNav({
                 <span className="truncate text-[12.5px]">{thread.title}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-zinc-500 font-mono">{thread.createdAt}</span>
+                <span className="text-[10px] text-zinc-500 font-mono">{Number.isNaN(Date.parse(thread.createdAt)) ? thread.createdAt : new Date(thread.createdAt).toLocaleDateString()}</span>
                 <button
                   type="button"
                   onClick={(event) => handleDeleteThread(event, thread)}
@@ -516,6 +467,8 @@ export function ProjectsSidebarNav({
           </div>
         ))}
 
+        </>}
+
         {/* ── Other Projects (e.g. pharmkulen-web) ─────────────────────────── */}
         {otherProjects.length > 0 ? (
           otherProjects.map((p) => (
@@ -524,7 +477,7 @@ export function ProjectsSidebarNav({
               className="flex items-center justify-between rounded-lg px-2.5 py-2 hover:bg-white/[0.05] cursor-pointer transition-colors group"
               onClick={() => {
                 if (onOpenRepository) {
-                  void onOpenRepository(p.root_path);
+                  void Promise.resolve().then(() => onOpenRepository(p.root_path)).catch(error => setDeleteError(error instanceof Error ? error.message : "Could not open project."));
                 }
               }}
             >
@@ -541,6 +494,19 @@ export function ProjectsSidebarNav({
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={(event) => void handleOpenProjectTerminal(event, p)}
+                  disabled={!onOpenTerminal || openingTerminalPath === p.root_path}
+                  className="flex h-6 w-6 items-center justify-center rounded-md bg-white/[0.04] text-zinc-400 transition-colors hover:bg-white/15 hover:text-zinc-100 disabled:opacity-50"
+                  title={openingTerminalPath === p.root_path ? "Opening terminal..." : "Open Terminal"}
+                  aria-label={`Open terminal for ${p.name}`}
+                  aria-busy={openingTerminalPath === p.root_path}
+                >
+                  {openingTerminalPath === p.root_path
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <TerminalBadgeIcon className="w-3.5 h-3.5" />}
+                </button>
                 <span
                   className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
                   title="Indexed & Ready"
@@ -558,22 +524,9 @@ export function ProjectsSidebarNav({
             </div>
           ))
         ) : (
-          <div
-            className="flex items-center justify-between rounded-lg px-2.5 py-2 hover:bg-white/[0.05] cursor-pointer transition-colors group"
-            onClick={() => setShowAddModal(true)}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex-shrink-0 text-zinc-400 group-hover:text-zinc-300">
-                <FolderOutlineIcon className="w-4 h-4" />
-              </div>
-              <span className="truncate text-[13.5px] font-normal text-zinc-300 group-hover:text-white tracking-tight">
-                pharmkulen-web
-              </span>
-            </div>
-            <div className="flex-shrink-0 flex items-center pr-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
-            </div>
-          </div>
+          <button type="button" className="w-full rounded-lg px-3 py-3 text-left text-sm text-zinc-400 hover:bg-white/5" onClick={() => setShowAddModal(true)}>
+            {currentRepository ? "Open another project" : "Open your first project"}
+          </button>
         )}
       </div>
 
@@ -584,7 +537,7 @@ export function ProjectsSidebarNav({
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <CodeFolderIcon className="w-5 h-5 text-indigo-400" />
-                <span>Open Project Repository</span>
+                <span>Open project</span>
               </h3>
               <button
                 type="button"
@@ -596,7 +549,7 @@ export function ProjectsSidebarNav({
             </div>
 
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Enter the local filesystem path to a Git repository to index AST symbols and begin AI pair-programming.
+              Choose any local project folder or Git repository to start working with the AI assistant.
             </p>
 
             <form onSubmit={handleOpenNewProject} className="flex flex-col gap-3">

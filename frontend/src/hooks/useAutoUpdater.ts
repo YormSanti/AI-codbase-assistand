@@ -2,15 +2,18 @@ import { useEffect } from 'react';
 import { check } from '@tauri-apps/plugin-updater';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { useAppSettings } from './useAppSettings';
 
 export function useAutoUpdater() {
+  const { settings } = useAppSettings();
   useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window) || !settings.checkUpdatesOnStartup) return;
     async function checkForUpdates() {
       try {
         const update = await check();
         if (update) {
           const yes = await ask(
-            `Update to ${update.version} is available!\\n\\nRelease notes: ${update.body}\\n\\nDo you want to install it now?`,
+            `Update to ${update.version} is available!\n\nRelease notes: ${update.body}\n\nDo you want to install it now?`,
             { title: 'Update Available', kind: 'info', okLabel: 'Update', cancelLabel: 'Later' }
           );
           if (yes) {
@@ -41,6 +44,7 @@ export function useAutoUpdater() {
     }
     
     // Slight delay so it doesn't block initial render
-    setTimeout(checkForUpdates, 2000);
-  }, []);
+    const timer = setTimeout(checkForUpdates, 2000);
+    return () => clearTimeout(timer);
+  }, [settings.checkUpdatesOnStartup]);
 }

@@ -3,8 +3,8 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 
 const VIEW_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
-  projects: "Projects",
   explorer: "File Explorer",
+  editor: "Code Editor",
   terminal: "Terminal",
   git: "Git Repository",
   ai: "AI Agent Studio",
@@ -30,8 +30,9 @@ export function SiteHeader({
       flexShrink: 0,
       alignItems: "center",
       justifyContent: "space-between",
-      borderBottom: "1px solid rgba(255,255,255,0.08)",
-      background: "rgba(10,10,14,0.85)",
+      gap: "12px",
+      borderBottom: "1px solid var(--border)",
+      background: "var(--background)",
       backdropFilter: "blur(12px)",
       padding: "0 20px",
       position: "sticky",
@@ -39,10 +40,10 @@ export function SiteHeader({
       zIndex: 40,
     }}>
       {/* Left: sidebar trigger + view label */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
         <SidebarTrigger style={{ color: "var(--muted-foreground)" }} />
-        <div style={{ width: "1px", height: "18px", background: "rgba(255,255,255,0.12)" }} />
-        <h1 style={{
+        <div style={{ width: "1px", height: "18px", flexShrink: 0, background: "var(--border)" }} />
+        <h1 className="truncate" title={label} style={{
           margin: 0,
           fontSize: "13px",
           fontWeight: "700",
@@ -54,10 +55,9 @@ export function SiteHeader({
       </div>
 
       {/* Right: status badge + theme toggle */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
         {/* Repo status pill */}
-        <div style={{
-          display: "flex",
+        <div className="hidden sm:flex" style={{
           alignItems: "center",
           gap: "7px",
           padding: "6px 14px",

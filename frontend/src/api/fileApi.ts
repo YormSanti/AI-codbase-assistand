@@ -9,4 +9,11 @@ export const fileApi = {
   getSymbols(fileId: number): Promise<CodeSymbol[]> {
     return apiRequest<CodeSymbol[]>(`/api/files/${fileId}/symbols`);
   },
+
+  saveContent(fileId: number, content: string, expectedHash: string): Promise<FilePreview> {
+    return apiRequest<FilePreview>(`/api/files/${fileId}/content`, {
+      method: "PUT",
+      body: JSON.stringify({ content, expected_hash: expectedHash }),
+    });
+  },
 };

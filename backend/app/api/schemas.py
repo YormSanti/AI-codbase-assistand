@@ -89,6 +89,10 @@ class FilePreviewResponse(BaseModel):
     content: str | None
     is_binary: bool
     truncated: bool
+    content_hash: str | None = None
+    size_bytes: int | None = None
+    editable: bool = False
+    editing_disabled_reason: str | None = None
 
     @classmethod
     def from_domain(cls, preview: FilePreview) -> "FilePreviewResponse":
@@ -98,7 +102,16 @@ class FilePreviewResponse(BaseModel):
             content=preview.content,
             is_binary=preview.is_binary,
             truncated=preview.truncated,
+            content_hash=preview.content_hash,
+            size_bytes=preview.size_bytes,
+            editable=preview.editable,
+            editing_disabled_reason=preview.editing_disabled_reason,
         )
+
+
+class SaveFileRequest(BaseModel):
+    content: str = Field(..., max_length=512_000)
+    expected_hash: str = Field(..., pattern=r"^[0-9a-f]{64}$")
 
 
 class ErrorResponse(BaseModel):

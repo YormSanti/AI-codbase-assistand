@@ -38,6 +38,10 @@ function TreeNodeItem({
 }) {
   const [expanded, setExpanded] = useState(depth < 1);
 
+  useEffect(() => {
+    if (node.is_directory && selectedFilePath?.startsWith(`${node.path}/`)) setExpanded(true);
+  }, [node.is_directory, node.path, selectedFilePath]);
+
   const isSearching = searchQuery.trim().length > 0;
   const isExpandedEffective = isSearching ? true : expanded;
 
@@ -48,6 +52,11 @@ function TreeNodeItem({
         className={`tree-row tree-row--file ${isSelected ? "tree-row--selected" : ""}`}
         style={{ paddingLeft: depth * 16 + 8 }}
         onClick={() => onSelectFile?.(node)}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isSelected}
+        aria-label={node.path}
+        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectFile?.(node); } }}
       >
         {getFileIcon(node.name, node.language)}
         <span className="tree-name font-mono">{node.name}</span>
@@ -125,16 +134,20 @@ export function RepositoryTree({
   root,
   onSelectFile,
   selectedFilePath,
+  showFilter = true,
 }: {
   root: TreeNode;
   onSelectFile?: (node: TreeNode) => void;
   selectedFilePath?: string;
+  showFilter?: boolean;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!showFilter) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"], [role="textbox"]')) return;
       if (e.key === "/" && document.activeElement !== inputRef.current) {
         e.preventDefault();
         inputRef.current?.focus();
@@ -142,15 +155,16 @@ export function RepositoryTree({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [showFilter]);
 
+  const activeQuery = showFilter ? searchQuery : "";
   const filteredRoot = useMemo(() => {
-    return filterTree(root, searchQuery) ?? { ...root, children: [] };
-  }, [root, searchQuery]);
+    return filterTree(root, activeQuery) ?? { ...root, children: [] };
+  }, [root, activeQuery]);
 
   return (
     <div className="tree-container">
-      <div className="tree-toolbar">
+      {showFilter && <div className="tree-toolbar">
         <div className="tree-search-wrapper">
           <Search className="search-icon h-3.5 w-3.5 text-muted-foreground" />
           <Input
@@ -176,13 +190,13 @@ export function RepositoryTree({
             </kbd>
           )}
         </div>
-      </div>
+      </div>}
 
       <ul className="tree-list tree-root border border-border/50 rounded-lg p-2 bg-secondary/20" data-testid="repository-tree">
         <TreeNodeItem
           node={filteredRoot}
           depth={0}
-          searchQuery={searchQuery}
+          searchQuery={activeQuery}
           onSelectFile={onSelectFile}
           selectedFilePath={selectedFilePath}
         />

@@ -50,7 +50,10 @@ setup when this phase starts.*
 - [ ] Module dependency graph (Graphviz) from Tree-sitter import data
 - [ ] Call graph
 - [ ] Folder structure visualization (React Flow)
-- [ ] Git history, branch status, commit summaries
+- [x] Live Git history and branch status, staged/unstaged file diffs,
+  untracked previews, conflicts, local upstream ahead/behind counts, and
+  selected-repository remote links
+- [x] Selected-diff handoff to desktop AI for review and commit-message suggestions
 
 ## Phase 4 — Health & security
 

@@ -112,6 +112,16 @@ class SqlAlchemyFileMetadataRepository(FileMetadataRepositoryPort):
         record = self._session.get(FileRecord, file_id)
         return _to_file_metadata(record) if record is not None else None
 
+    def update_file(self, file: FileMetadata) -> FileMetadata:
+        record = self._session.get(FileRecord, file.id)
+        if record is None:
+            raise ValueError(f"No file with id={file.id}")
+        record.size_bytes = file.size_bytes
+        record.content_hash = file.content_hash
+        record.is_binary = file.is_binary
+        self._session.flush()
+        return _to_file_metadata(record)
+
     def _count_files(self, repository_id: int) -> int:
         return self._session.scalar(
             select(func.count()).select_from(FileRecord).where(FileRecord.repository_id == repository_id)

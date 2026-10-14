@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AIThreadStartHero } from "./AIThreadStartHero";
+import { useAppSettings } from "../hooks/useAppSettings";
 
 interface AgentLog {
   id: string;
@@ -87,8 +88,9 @@ export function AIAgentPage({
   initialPrompt?: string | null;
   onInitialPromptConsumed?: () => void;
 }) {
+  const { settings } = useAppSettings();
   const [prompt, setPrompt] = useState("");
-  const [provider, setProvider] = useState<Provider>("gemini");
+  const [provider, setProvider] = useState<Provider>(settings.defaultProvider);
   const [isRunning, setIsRunning] = useState(false);
   const [viewMode, setViewMode] = useState<"start" | "chat">("start");
   const [providerStatuses, setProviderStatuses] = useState<Record<Provider, ConnectionState>>({
@@ -250,7 +252,7 @@ export function AIAgentPage({
       const unlisten = await listen<{ streamId: string; chunk: string }>(
         "agent-stream",
         event => {
-          if (event.payload.streamId !== streamId) return;
+          if (event.payload.streamId !== streamId || !settings.streamOutput) return;
           setLogs(prev =>
             prev.map(log =>
               log.id === logId
