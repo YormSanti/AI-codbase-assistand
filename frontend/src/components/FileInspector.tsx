@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { lazy, Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
   AlertCircle,
   Binary,
@@ -33,6 +33,8 @@ export interface FileInspectorHandle {
   save: () => Promise<boolean>;
   focus: () => void;
   runCommand: (command: EditorCommand) => void;
+  /** Move to `line`, waiting for the file (and editor surface) to load if needed. */
+  goToLine: (line: number) => void;
 }
 
 function formatBytes(bytes: number | null): string {
@@ -111,6 +113,16 @@ export function FileInspector({
   const gutterRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<HTMLDivElement>(null);
   const codeEditorRef = useRef<CodeEditorHandle>(null);
+  const pendingLine = useRef<number | null>(null);
+  const attachCodeEditor = useCallback((handle: CodeEditorHandle | null) => {
+    codeEditorRef.current = handle;
+    if (handle && pendingLine.current !== null) {
+      const line = pendingLine.current;
+      pendingLine.current = null;
+      handle.goToLine(line);
+      setActiveLine(line);
+    }
+  }, []);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const baseline = preview?.content?.replace(/\r\n/g, "\n") ?? "";
   const isDirty = isEditing && draft !== baseline;
@@ -219,6 +231,23 @@ export function FileInspector({
     window.setTimeout(() => setCopied(false), 2000);
   };
 
+  const revealLine = (line: number) => {
+    const editorPending = autoEdit && canEdit && (!isEditing || !codeEditorRef.current);
+    if (isLoading || !preview || editorPending) {
+      pendingLine.current = line; // flushed below, or by attachCodeEditor when the surface mounts
+      return;
+    }
+    jumpToLine(line);
+  };
+
+  useEffect(() => {
+    if (pendingLine.current === null || isLoading || !preview) return;
+    if (autoEdit && canEdit && (!isEditing || !codeEditorRef.current)) return;
+    const line = pendingLine.current;
+    pendingLine.current = null;
+    jumpToLine(line);
+  });
+
   const jumpToLine = (line: number) => {
     setActiveLine(line);
     if (autoEdit && isEditing) {
@@ -289,6 +318,7 @@ export function FileInspector({
 
   useImperativeHandle(ref, () => ({
     save: handleSave,
+    goToLine: revealLine,
     focus: () => { codeEditorRef.current?.focus(); editorRef.current?.focus(); },
     runCommand: command => {
       if (command === "save") { void handleSave(); return; }
@@ -406,7 +436,7 @@ export function FileInspector({
       ) : (
         <div id={autoEdit ? `code-editor-content-${file.file_id}` : undefined} role={autoEdit ? "tabpanel" : undefined} aria-label={autoEdit ? file.name : undefined} className={`file-inspector-grid min-h-0 flex-1 ${autoEdit ? "vscode-editor-grid" : ""}`} style={autoEdit && !outlineVisible ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
           {isEditing && autoEdit ? <Suspense fallback={<div className="flex items-center justify-center text-xs text-muted-foreground">Loading editor…</div>}><CodeEditorSurface
-            ref={codeEditorRef}
+            ref={attachCodeEditor}
             value={draft}
             label={`Edit ${file.name}`}
             language={file.language}

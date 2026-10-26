@@ -67,3 +67,17 @@ export interface FilePreview {
   editable?: boolean;
   editing_disabled_reason?: string | null;
 }
+
+export interface SearchMatch {
+  path: string;
+  line: number;
+  column: number;
+  text: string;
+}
+
+export interface SearchResults {
+  query: string;
+  matches: SearchMatch[];
+  files_scanned: number;
+  truncated: boolean;
+}

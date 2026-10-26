@@ -59,7 +59,25 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
   const files = useMemo(() => collectFiles(tree), [tree]);
   const matches = useMemo(() => files.filter(file => file.path.toLowerCase().includes(fileQuery.toLowerCase())).slice(0, 30), [files, fileQuery]);
 
-  useImperativeHandle(ref, () => ({ runCommand: command => {
+  // Search results open a file and move to a line; the inspector may still be loading,
+  // so the line is handed over once the file is the selected one.
+  const pendingReveal = useRef<{ path: string; line: number } | null>(null);
+  const revealLine = (path: string, line: number) => {
+    const node = files.find(file => file.path === path);
+    if (!node) return;
+    if (selectedFile?.path === path) { documents.revealLine(path, line); return; }
+    pendingReveal.current = { path, line };
+    onSelectFile(node);
+  };
+  useEffect(() => {
+    const pending = pendingReveal.current;
+    if (pending && selectedFile?.path === pending.path) {
+      pendingReveal.current = null;
+      documents.revealLine(pending.path, pending.line);
+    }
+  });
+
+  useImperativeHandle(ref, () => ({ revealLine, runCommand: command => {
     if (command !== 'openFile' && command !== 'openFolder') documents.focusSelected();
     switch (command) {
       case 'openFolder': if (!isLoading) setShowFolderPicker(true); break;

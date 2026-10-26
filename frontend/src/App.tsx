@@ -396,6 +396,7 @@ export default function App() {
               onAiPromptConsumed={() => setEditorAiPrompt(null)}
               onNavigate={handleSelectTab}
               onCommand={command => editorWorkspaceRef.current?.runCommand(command)}
+              onRevealLine={(path, line) => editorWorkspaceRef.current?.revealLine(path, line)}
             >
               {workspaceVisible => <ExplorerPage
                 ref={editorWorkspaceRef}

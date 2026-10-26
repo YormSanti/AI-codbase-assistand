@@ -156,6 +156,15 @@ Explorer and the editor retains all open file drafts, including editor-only
 files hidden from File Explorer. Leaving the workspace, changing projects,
 or closing IFROG asks before discarding any unsaved files.
 
+**Search in files** (**Ctrl/Cmd+Shift+F**, the rail's magnifier-with-text
+icon, or **Edit > Search in Files…**) runs a plain-text search across every
+text file in the project, with a match-case toggle. Results group by file;
+click a line to open that file in the editor with the cursor on the match.
+Dependency and build folders such as `node_modules`, `.venv`, `dist`, and
+`target` are skipped, files over 500 KB and binary files are ignored, and the
+scan stops after 500 matches or a few seconds and says so. API:
+`GET /api/repositories/{id}/editor/search?q=text&case_sensitive=false&limit=200`.
+
 Inside the editor, click the **Git Repository** rail icon or choose
 **View > Git Repository** to open Source Control. The repository overview
 shows the current branch, upstream ahead/behind counts, and recent commits.

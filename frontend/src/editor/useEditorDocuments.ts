@@ -97,5 +97,6 @@ export function useEditorDocuments({ selectedFile, onSelectFile, onCloseFile, on
 
   const focusSelected = () => { if (selectedFile) handles.current.get(selectedFile.path)?.focus(); };
   const runSelectedCommand = (command: EditorCommand) => { if (selectedFile) handles.current.get(selectedFile.path)?.runCommand(command); };
-  return { openFiles, states, dirtyCount, saving, notice, reporterFor, refFor, closeFile, saveAll, focusSelected, runSelectedCommand };
+  const revealLine = (path: string, line: number) => { handles.current.get(path)?.goToLine(line); };
+  return { openFiles, states, dirtyCount, saving, notice, reporterFor, refFor, closeFile, saveAll, focusSelected, runSelectedCommand, revealLine };
 }

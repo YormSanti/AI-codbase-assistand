@@ -6,6 +6,7 @@ import { EditorApp } from "./EditorApp";
 
 const shells = vi.hoisted(() => ({ start: vi.fn(), close: vi.fn() }));
 vi.mock("../components/ThemeToggle", () => ({ ThemeToggle: () => null }));
+vi.mock("../api/editorApi", () => ({ editorApi: { search: vi.fn().mockResolvedValue({ query: "draft", matches: [{ path: "src/a.ts", line: 3, column: 1, text: "draft line" }], files_scanned: 1, truncated: false }) } }));
 vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn().mockResolvedValue({ branch: "main", changes: [], commits: [], head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null }), getDiff: vi.fn() } }));
 vi.mock("../components/TerminalPage", () => ({ TerminalPage: ({ repository }: { repository: RepositoryInfo }) => {
   const [command, setCommand] = useState("");
@@ -188,5 +189,24 @@ it("toggles editor settings with Ctrl+, shortcut without navigating away", async
 
   // Press Ctrl+, again to toggle back
   fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+});
+
+it("searches project files from the rail and jumps to a match in the code view", async () => {
+  const onRevealLine = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onRevealLine={onRevealLine}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  fireEvent.click(screen.getByRole("button", { name: "Search in files" }));
+  const input = await screen.findByRole("searchbox", { name: "Search in files" }, { timeout: 5000 });
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  fireEvent.change(input, { target: { value: "draft" } });
+  fireEvent.click(await screen.findByRole("button", { name: "src/a.ts line 3" }));
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+  await waitFor(() => expect(onRevealLine).toHaveBeenCalledWith("src/a.ts", 3));
+  fireEvent.keyDown(window, { key: "F", ctrlKey: true, shiftKey: true });
+  expect(screen.getByRole("searchbox", { name: "Search in files" })).toBeVisible();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  fireEvent.keyDown(window, { key: "F", ctrlKey: true, shiftKey: true });
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
 });

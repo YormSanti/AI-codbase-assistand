@@ -1,5 +1,7 @@
 import { useImperativeHandle, useState, type Ref } from "react";
+import { createRef } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { EditorWorkspaceHandle } from "./editorCommands";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ExplorerPage } from "../components/ExplorerPage";
 import type { CodeEditorHandle } from "../components/CodeEditorSurface";
@@ -12,10 +14,11 @@ const nativeWindow = vi.hoisted(() => ({ onCloseRequested: vi.fn() }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => nativeWindow }));
 vi.mock("../api/editorApi", () => ({ editorApi: { getTree: vi.fn(), getContent: vi.fn(), getSymbols: vi.fn(), saveContent: vi.fn() } }));
 vi.mock("../api/fileApi", () => ({ fileApi: { getContent: vi.fn(), getSymbols: vi.fn(), saveContent: vi.fn() } }));
+const surface = vi.hoisted(() => ({ goToLine: vi.fn() }));
 vi.mock("../components/CodeEditorSurface", () => ({ CodeEditorSurface: ({ ref, value, label, onChange, onSave, readOnly, active }: {
   ref: Ref<CodeEditorHandle>; value: string; label: string; onChange: (value: string) => void; onSave: () => void; readOnly: boolean; active: boolean;
 }) => {
-  useImperativeHandle(ref, () => ({ focus() {}, goToLine() {}, find() {}, showGoToLine() {}, undo() {}, redo() {}, selectAll() {} }));
+  useImperativeHandle(ref, () => ({ focus() {}, goToLine(line: number) { surface.goToLine(label, line); }, find() {}, showGoToLine() {}, undo() {}, redo() {}, selectAll() {} }));
   return <textarea aria-label={label} autoFocus={active} value={value} readOnly={readOnly} onChange={event => onChange(event.target.value)} onKeyDown={event => {
     if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "s") { event.preventDefault(); onSave(); }
   }} />;
@@ -139,4 +142,20 @@ it("registers one native close guard for the whole workspace and protects hidden
   expect(event.preventDefault).toHaveBeenCalledTimes(1);
   view.unmount();
   expect(unlisten).toHaveBeenCalledTimes(1);
+});
+
+it("reveals a search result by opening the file and moving to the line once it loads", async () => {
+  const ref = createRef<EditorWorkspaceHandle>();
+  function RevealWorkspace() {
+    const [selected, setSelected] = useState<TreeNode | null>(source);
+    return <ExplorerPage ref={ref} mode="editor" repository={repository} tree={tree} selectedFile={selected} isLoading={false} onOpen={vi.fn()} onSelectFile={setSelected} onCloseFile={() => setSelected(null)} onAskAI={vi.fn()} />;
+  }
+  render(<RevealWorkspace />);
+  await screen.findByRole("textbox", { name: "Edit app.ts" });
+  await screen.findByRole("treeitem", { name: ".env" });
+  act(() => ref.current!.revealLine(".env", 1));
+  await screen.findByRole("textbox", { name: "Edit .env" });
+  await waitFor(() => expect(surface.goToLine).toHaveBeenCalledWith("Edit .env", 1));
+  act(() => ref.current!.revealLine("app.ts", 1));
+  await waitFor(() => expect(surface.goToLine).toHaveBeenCalledWith("Edit app.ts", 1));
 });

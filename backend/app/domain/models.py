@@ -118,6 +118,25 @@ class TreeNode:
 
 
 @dataclass(frozen=True, slots=True)
+class SearchMatch:
+    """One matching line from a project-wide text search."""
+
+    path: str
+    line: int
+    column: int
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResults:
+    query: str
+    matches: list[SearchMatch]
+    files_scanned: int
+    truncated: bool = False
+    """True when the match limit, file limit, or time budget stopped the scan early."""
+
+
+@dataclass(frozen=True, slots=True)
 class FilePreview:
     """A bounded, display-safe preview of an indexed file."""
 

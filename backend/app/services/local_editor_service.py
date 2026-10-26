@@ -6,11 +6,26 @@ from collections.abc import Callable
 import hashlib
 import os
 from pathlib import Path
+import time
 
 from app.domain.exceptions import IndexedFileNotFoundError, RepositoryNotFoundError
-from app.domain.models import CodeSymbol, FileMetadata, FilePreview, Language, TreeNode
+from app.domain.models import CodeSymbol, FileMetadata, FilePreview, Language, SearchMatch, SearchResults, TreeNode
 from app.domain.ports import CodeParserPort, FileMetadataRepositoryPort
 from app.services.file_content_service import FILE_EDIT_LOCK, preview_file, save_file
+
+
+# Dependency and build output folders are skipped by project-wide search; they
+# dominate scan time and almost never hold what the user is looking for.
+SEARCH_SKIPPED_DIRECTORIES = frozenset({
+    ".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache",
+    ".pytest_cache", ".ruff_cache", "dist", "build", "target", ".next", ".nuxt", ".cache",
+    ".turbo", ".parcel-cache", "coverage", ".idea", ".vscode",
+})
+SEARCH_MAX_FILE_BYTES = 512_000
+SEARCH_MAX_FILES = 20_000
+SEARCH_TIME_BUDGET_SECONDS = 6.0
+SEARCH_MAX_MATCHES = 500
+SEARCH_SNIPPET_CHARS = 200
 
 
 def local_file_id(path: str) -> int:
@@ -87,6 +102,50 @@ class LocalEditorService:
             raise IndexedFileNotFoundError("This local file could not be opened.") from exc
         return file, root, absolute
 
+    def search(self, repository_id: int, query: str, *, limit: int = 200, case_sensitive: bool = False) -> SearchResults:
+        """Plain-text search across the project's text files, bounded in matches, files, and time."""
+        root = self._root(repository_id)
+        needle = query if case_sensitive else query.lower()
+        if not needle.strip():
+            return SearchResults(query, [], 0)
+        limit = max(1, min(limit, SEARCH_MAX_MATCHES))
+        matches: list[SearchMatch] = []
+        scanned = 0
+        truncated = False
+        deadline = time.monotonic() + SEARCH_TIME_BUDGET_SECONDS
+        for current, dirs, files in os.walk(root, followlinks=False):
+            dirs[:] = sorted(name for name in dirs if name not in SEARCH_SKIPPED_DIRECTORIES)
+            relative = Path(current).relative_to(root).as_posix()
+            relative = "" if relative == "." else relative
+            for name in sorted(files):
+                if scanned >= SEARCH_MAX_FILES or time.monotonic() > deadline:
+                    return SearchResults(query, matches, scanned, truncated=True)
+                path = f"{relative}/{name}" if relative else name
+                if self._is_binary_extension(path):
+                    continue
+                target = root / path
+                try:
+                    if target.is_symlink() or not target.is_file() or target.stat().st_size > SEARCH_MAX_FILE_BYTES:
+                        continue
+                    raw = target.read_bytes()
+                except OSError:
+                    continue
+                scanned += 1
+                if b"\0" in raw[:8192]:
+                    continue
+                text = raw.decode("utf-8", errors="replace")
+                haystack = text if case_sensitive else text.lower()
+                if needle not in haystack:
+                    continue
+                for number, (line, folded) in enumerate(zip(text.splitlines(), haystack.splitlines()), start=1):
+                    column = folded.find(needle)
+                    if column == -1:
+                        continue
+                    matches.append(SearchMatch(path, number, column + 1, _snippet(line, column, len(needle))))
+                    if len(matches) >= limit:
+                        return SearchResults(query, matches, scanned, truncated=True)
+        return SearchResults(query, matches, scanned, truncated)
+
     def get_content(self, repository_id: int, path: str) -> FilePreview:
         with FILE_EDIT_LOCK:
             return preview_file(*self._resolve(repository_id, path))
@@ -102,3 +161,14 @@ class LocalEditorService:
             return []
         symbols = self._parser.parse(preview.content.encode("utf-8"), file.language)
         return [replace(symbol, id=index + 1) for index, symbol in enumerate(symbols)]
+
+
+def _snippet(line: str, column: int, length: int) -> str:
+    """Keep the match visible inside a bounded excerpt of a long line."""
+    if len(line) <= SEARCH_SNIPPET_CHARS:
+        return line
+    start = max(0, column - SEARCH_SNIPPET_CHARS // 3)
+    end = min(len(line), max(start + SEARCH_SNIPPET_CHARS, column + length))
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(line) else ""
+    return f"{prefix}{line[start:end]}{suffix}"

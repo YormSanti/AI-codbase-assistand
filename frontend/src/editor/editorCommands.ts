@@ -6,4 +6,6 @@ export type EditorCommand =
 
 export interface EditorWorkspaceHandle {
   runCommand: (command: EditorCommand) => void;
+  /** Open `path` in the workspace and place the cursor on `line` once it has loaded. */
+  revealLine: (path: string, line: number) => void;
 }
