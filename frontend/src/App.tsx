@@ -376,9 +376,9 @@ export default function App() {
 
           {/* AI Agent */}
           {hasVisitedAi && (
-            <div style={{ display: (activeTab === "ai" || activeTab === "ai-agent") ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "#000000" }}>
+            <div style={{ display: (activeTab === "ai" || activeTab === "ai-agent") ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "var(--background)" }}>
               {visitedThreads.map(threadId => (
-              <div key={`${repository?.id ?? "none"}:${threadId}`} style={{ display: threadId === activeThread ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "#000000" }}>
+              <div key={`${repository?.id ?? "none"}:${threadId}`} style={{ display: threadId === activeThread ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "var(--background)" }}>
               <Suspense fallback={<PageFallback />}>
                 <AIAgentPage
                   repository={repository}

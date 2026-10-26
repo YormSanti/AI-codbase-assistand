@@ -6,95 +6,72 @@ import type { RepositoryInfo } from "../types/domain";
 
 const mockRepo: RepositoryInfo = {
   id: 1,
-  name: "pharmacy-mobile-v2",
-  root_path: "/home/ksk/pharmacy-mobile-v2",
-  current_branch: "santi",
+  name: "sample-project",
+  root_path: "/home/dev/sample-project",
+  current_branch: "main",
   head_commit: "9c3f1a2e4b",
   opened_at: "2026-08-26T10:00:00Z",
   file_count: 84,
 };
 
 describe("AIThreadStartHero", () => {
-  it("renders agenda title, ask anything input, think button, and quick actions", () => {
-    render(
-      <AIThreadStartHero
-        repository={mockRepo}
-        onSubmitPrompt={vi.fn()}
-      />
-    );
+  it("renders the composer, model picker, and quick prompts", () => {
+    render(<AIThreadStartHero repository={mockRepo} onSubmitPrompt={vi.fn()} />);
 
     expect(screen.getByText("What’s on the agenda today?")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Ask anything")).toBeInTheDocument();
-    expect(screen.getByText("Think")).toBeInTheDocument();
-    expect(screen.getByTitle("Voice input")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Gemini" })).toBeInTheDocument();
     expect(screen.getByTitle("Send instruction")).toBeInTheDocument();
-    expect(screen.getByText("Write or edit")).toBeInTheDocument();
-    expect(screen.getByText("Search the web")).toBeInTheDocument();
+    expect(screen.getByText("Explain this project")).toBeInTheDocument();
+    expect(screen.getByText("Review for bugs")).toBeInTheDocument();
+    // Voice input is hidden when the engine has no speech recognition.
+    expect(screen.queryByTitle("Voice input")).not.toBeInTheDocument();
   });
 
-  it("submits prompt when clicking send button", async () => {
+  it("submits the prompt with the selected model", async () => {
     const user = userEvent.setup();
     const onSubmitPrompt = vi.fn();
+    render(<AIThreadStartHero repository={mockRepo} onSubmitPrompt={onSubmitPrompt} />);
 
-    render(
-      <AIThreadStartHero
-        repository={mockRepo}
-        onSubmitPrompt={onSubmitPrompt}
-      />
-    );
+    await user.type(screen.getByPlaceholderText("Ask anything"), "Refactor auth controller");
+    await user.click(screen.getByTitle("Send instruction"));
 
-    const input = screen.getByPlaceholderText("Ask anything");
-    await user.type(input, "Refactor auth controller");
-
-    const sendBtn = screen.getByTitle("Send instruction");
-    await user.click(sendBtn);
-
-    expect(onSubmitPrompt).toHaveBeenCalledWith(
-      "Refactor auth controller",
-      "Gemini",
-      "High"
-    );
+    expect(onSubmitPrompt).toHaveBeenCalledWith("Refactor auth controller", "Gemini");
   });
 
-  it("submits prompt when pressing Enter", async () => {
+  it("submits on Enter", async () => {
     const user = userEvent.setup();
     const onSubmitPrompt = vi.fn();
+    render(<AIThreadStartHero repository={mockRepo} onSubmitPrompt={onSubmitPrompt} />);
 
-    render(
-      <AIThreadStartHero
-        repository={mockRepo}
-        onSubmitPrompt={onSubmitPrompt}
-      />
-    );
+    await user.type(screen.getByPlaceholderText("Ask anything"), "Explain main logic{Enter}");
 
-    const input = screen.getByPlaceholderText("Ask anything");
-    await user.type(input, "Explain main logic{Enter}");
-
-    expect(onSubmitPrompt).toHaveBeenCalledWith(
-      "Explain main logic",
-      "Gemini",
-      "High"
-    );
+    expect(onSubmitPrompt).toHaveBeenCalledWith("Explain main logic", "Gemini");
   });
 
-  it("populates prompt when clicking quick action suggestions", async () => {
+  it("switches provider from the model picker and reports the change", async () => {
     const user = userEvent.setup();
-    render(
-      <AIThreadStartHero
-        repository={mockRepo}
-        onSubmitPrompt={vi.fn()}
-      />
-    );
+    const onSubmitPrompt = vi.fn();
+    const onModelChange = vi.fn();
+    render(<AIThreadStartHero repository={mockRepo} onSubmitPrompt={onSubmitPrompt} onModelChange={onModelChange} />);
 
-    const input = screen.getByPlaceholderText("Ask anything");
-    const writeOrEdit = screen.getByText("Write or edit");
-    await user.click(writeOrEdit);
+    await user.click(screen.getByRole("button", { name: "Gemini" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Codex" }));
+    expect(onModelChange).toHaveBeenCalledWith("Codex");
+    expect(screen.getByRole("button", { name: "Codex" })).toBeInTheDocument();
 
-    expect(input).toHaveValue("Write or edit: ");
+    await user.type(screen.getByPlaceholderText("Ask anything"), "Hello{Enter}");
+    expect(onSubmitPrompt).toHaveBeenCalledWith("Hello", "Codex");
+  });
 
-    const searchWeb = screen.getByText("Search the web");
-    await user.click(searchWeb);
+  it("fills the composer from a quick prompt without sending", async () => {
+    const user = userEvent.setup();
+    const onSubmitPrompt = vi.fn();
+    render(<AIThreadStartHero repository={mockRepo} onSubmitPrompt={onSubmitPrompt} />);
 
-    expect(input).toHaveValue("Search the web for: ");
+    await user.click(screen.getByText("Explain this project"));
+
+    expect(screen.getByPlaceholderText("Ask anything")).toHaveValue("Explain the architecture of this project and how its main parts fit together.");
+    expect(onSubmitPrompt).not.toHaveBeenCalled();
   });
 });
