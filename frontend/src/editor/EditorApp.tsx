@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Code2, Files, GitBranch, PanelLeft, PanelRight, SaveAll, Search, Settings, Sparkles, SquareTerminal, X } from "lucide-react";
+import { ArrowLeft, Blocks, Code2, Files, GitBranch, PanelLeft, PanelRight, SaveAll, Search, Settings, Sparkles, SquareTerminal, X } from "lucide-react";
 import { Dialog, Menubar } from "radix-ui";
 import type { RepositoryInfo } from "../types/domain";
+import { AIAgentPage } from "../components/AIAgentPage";
 import { TerminalPage } from "../components/TerminalPage";
 import { ThemeToggle } from "../components/ThemeToggle";
 import type { EditorCommand } from "./editorCommands";
+import { EditorExtensionsPage } from "./EditorExtensionsPage";
 import { EditorGitPage } from "./EditorGitPage";
+import { EditorSettingsPage } from "./EditorSettingsPage";
 import "./EditorApp.css";
 
 interface Props {
@@ -15,12 +18,14 @@ interface Props {
   onNavigate: (view: string) => void;
   onCommand?: (command: EditorCommand) => void;
   hasSelectedFile?: boolean;
+  aiPrompt?: string | null;
+  onAiPromptConsumed?: () => void;
   children: ReactNode | ((visible: boolean) => ReactNode);
 }
 
 // Keep the shared file workspace at the same position in the tree so entering
 // the editor from File Explorer does not remount the current unsaved draft.
-export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, hasSelectedFile = false, children }: Props) {
+export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalRoot, setTerminalRoot] = useState<string | null>(null);
   const [terminalHeight, setTerminalHeight] = useState(260);
@@ -31,6 +36,14 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   const [gitRoot, setGitRoot] = useState<string | null>(null);
   const [showGit, setShowGit] = useState(false);
   const gitVisible = active && showGit && gitRoot === (repository?.root_path ?? "");
+  const [aiRoot, setAiRoot] = useState<string | null>(null);
+  const [showAi, setShowAi] = useState(false);
+  const aiVisible = active && showAi && aiRoot === (repository?.root_path ?? "");
+  const [showExtensions, setShowExtensions] = useState(false);
+  const extensionsVisible = active && showExtensions;
+  const [showSettings, setShowSettings] = useState(false);
+  const settingsVisible = active && showSettings;
+  const [explorerVisible, setExplorerVisible] = useState(true);
   const canOpenTerminal = Boolean(repository) && !isLoading;
   const terminalVisible = active && showTerminal && canOpenTerminal;
   const fileActionsDisabled = !hasSelectedFile || isLoading;
@@ -45,32 +58,87 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   }, [terminalVisible, repository]);
 
   useEffect(() => {
+    if (aiPrompt && repository) {
+      setShowGit(false);
+      setShowExtensions(false);
+      setShowSettings(false);
+      setAiRoot(repository.root_path);
+      setShowAi(true);
+    }
+  }, [aiPrompt, repository]);
+
+  useEffect(() => {
     if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.code === "Backquote") {
         event.preventDefault();
         toggleTerminal();
-      } else if (gitVisible && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
+      } else if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "x") {
+        event.preventDefault();
+        if (extensionsVisible) {
+          setShowExtensions(false);
+        } else {
+          setShowGit(false);
+          setShowAi(false);
+          setShowSettings(false);
+          setShowExtensions(true);
+        }
+      } else if ((event.ctrlKey || event.metaKey) && event.key === ",") {
+        event.preventDefault();
+        if (settingsVisible) {
+          setShowSettings(false);
+        } else {
+          setShowGit(false);
+          setShowAi(false);
+          setShowExtensions(false);
+          setShowSettings(true);
+        }
+      } else if ((gitVisible || aiVisible || extensionsVisible || settingsVisible) && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
         event.preventDefault();
         setShowGit(false);
+        setShowAi(false);
+        setShowExtensions(false);
+        setShowSettings(false);
         requestAnimationFrame(() => onCommand?.("openFile"));
-      } else if (gitVisible && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      } else if ((gitVisible || aiVisible || extensionsVisible || settingsVisible) && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         onCommand?.(event.shiftKey ? "saveAll" : "save");
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, toggleTerminal, gitVisible, onCommand]);
+  }, [active, toggleTerminal, gitVisible, aiVisible, extensionsVisible, settingsVisible, onCommand]);
 
   const resizeTerminal = (height: number) => {
     const available = contentRef.current?.clientHeight || 600;
     setTerminalHeight(Math.max(160, Math.min(Math.max(160, available - 180), height)));
   };
-  const openGit = () => { setGitRoot(repository?.root_path ?? ""); setShowGit(true); };
-  const returnToCode = () => setShowGit(false);
+  const openGit = () => { setShowAi(false); setShowExtensions(false); setShowSettings(false); setGitRoot(repository?.root_path ?? ""); setShowGit(true); };
+  const openAi = () => { setShowGit(false); setShowExtensions(false); setShowSettings(false); setAiRoot(repository?.root_path ?? ""); setShowAi(true); };
+  const openExtensions = () => { setShowGit(false); setShowAi(false); setShowSettings(false); setShowExtensions(true); };
+  const openSettings = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(true); };
+  const returnToCode = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(false); };
+  const toggleExplorerPanel = () => {
+    if (gitVisible || aiVisible || extensionsVisible || settingsVisible) {
+      returnToCode();
+      if (!explorerVisible) {
+        setExplorerVisible(true);
+        onCommand?.("showExplorer");
+      }
+    } else {
+      setExplorerVisible(value => !value);
+      onCommand?.("toggleExplorer");
+    }
+  };
   const runCommand = (command: EditorCommand) => {
-    if (gitVisible && command !== "save" && command !== "saveAll") {
+    if (command === "toggleExplorer") {
+      setExplorerVisible(value => !value);
+    } else if (command === "showExplorer") {
+      setExplorerVisible(true);
+    } else if (command === "hideExplorer") {
+      setExplorerVisible(false);
+    }
+    if ((gitVisible || aiVisible || extensionsVisible || settingsVisible) && command !== "save" && command !== "saveAll") {
       returnToCode();
       requestAnimationFrame(() => onCommand?.(command));
     } else onCommand?.(command);
@@ -98,9 +166,11 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
     { label: "Selection", items: commandItem("Select All", "selectAll", "Ctrl/Cmd A", true) },
     { label: "View", items: <>
       <Menubar.Item className="ifrog-editor-menu-item" onSelect={openGit}>Git Repository</Menubar.Item>
+      <Menubar.Item className="ifrog-editor-menu-item" onSelect={openAi}>AI Assistant</Menubar.Item>
+      <Menubar.Item className="ifrog-editor-menu-item" onSelect={openExtensions}>Extensions<kbd>Ctrl/Cmd Shift X</kbd></Menubar.Item>
       {commandItem("Toggle Explorer", "toggleExplorer")}{commandItem("Toggle Symbol Outline", "toggleOutline")}{commandItem("Toggle Minimap", "toggleMinimap")}{commandItem("Toggle Word Wrap", "toggleWordWrap")}{commandItem("Refresh Local Files", "refreshFiles")}
       <Menubar.Separator className="ifrog-editor-menu-separator" />
-      <Menubar.Item className="ifrog-editor-menu-item" onSelect={() => onNavigate("settings")}>Editor Settings</Menubar.Item>
+      <Menubar.Item className="ifrog-editor-menu-item" onSelect={openSettings}>Editor Settings<kbd>Ctrl/Cmd ,</kbd></Menubar.Item>
     </> },
     { label: "Go", items: <>
       {commandItem("Go to File…", "openFile", "Ctrl/Cmd P")}{commandItem("Go to Line…", "goToLine", "Ctrl/Cmd G", true)}
@@ -125,7 +195,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
         <div className="ifrog-editor-topbar-actions">
           <button type="button" className="ifrog-editor-back" aria-label="Back to IFROG" title="Back to IFROG" onClick={() => onNavigate("dashboard")}><ArrowLeft size={16} /></button>
           <button type="button" aria-label="Save all files" title="Save all files (Ctrl/Cmd+Shift+S)" disabled={!repository || isLoading} onClick={() => onCommand?.("saveAll")}><SaveAll size={16} /></button>
-          <button type="button" aria-label="Toggle file explorer" title="Toggle Explorer" onClick={() => gitVisible ? returnToCode() : onCommand?.("toggleExplorer")}><PanelLeft size={16} /></button>
+          <button type="button" aria-label="Toggle file explorer" aria-pressed={explorerVisible} title="Toggle Explorer" onClick={toggleExplorerPanel}><PanelLeft size={16} /></button>
           <button type="button" aria-label="Toggle symbol outline" title="Toggle Symbol Outline" onClick={() => runCommand("toggleOutline")}><PanelRight size={16} /></button>
           <button type="button" className="ifrog-editor-terminal-toggle" aria-label="Toggle integrated terminal" aria-pressed={terminalVisible} aria-controls="ifrog-editor-terminal" disabled={!canOpenTerminal} onClick={toggleTerminal} title="Toggle terminal (Ctrl/Cmd+`)">
             <SquareTerminal size={16} />
@@ -137,21 +207,50 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
       <div className={active ? "ifrog-editor-body" : "ifrog-file-workspace-body"}>
         {active && <nav className="ifrog-editor-rail" aria-label="Editor tools">
           <div className="ifrog-editor-rail-top">
-            <button type="button" className={!gitVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Explorer" title="Toggle Explorer" onClick={() => gitVisible ? returnToCode() : onCommand?.("toggleExplorer")}><Files size={23} /></button>
+            <button type="button" className={explorerVisible && !gitVisible && !aiVisible && !extensionsVisible && !settingsVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Explorer" aria-pressed={explorerVisible} title="Toggle Explorer" onClick={toggleExplorerPanel}><Files size={23} /></button>
             <button type="button" aria-label="Search files" title="Go to file (Ctrl/Cmd+P)" onClick={() => runCommand("openFile")}><Search size={23} /></button>
             <button type="button" className={gitVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Git Repository" aria-pressed={gitVisible} title="Git Repository" onClick={openGit}><GitBranch size={20} /></button>
-            <button type="button" aria-label="AI Assistant" title="AI Assistant" onClick={() => onNavigate("ai")}><Sparkles size={20} /></button>
+            <button type="button" className={aiVisible ? "ifrog-editor-rail-active" : undefined} aria-label="AI Assistant" aria-pressed={aiVisible} title="AI Assistant" onClick={aiVisible ? returnToCode : openAi}><Sparkles size={20} /></button>
+            <button type="button" className={extensionsVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Extensions" aria-pressed={extensionsVisible} title="Extensions (Ctrl/Cmd+Shift+X)" onClick={extensionsVisible ? returnToCode : openExtensions}><Blocks size={20} /></button>
             <button type="button" aria-label="Editor terminal" title="Toggle integrated terminal" aria-pressed={terminalVisible} disabled={!canOpenTerminal} onClick={toggleTerminal}><SquareTerminal size={20} /></button>
           </div>
-          <button type="button" aria-label="Editor settings" title="Editor settings" onClick={() => onNavigate("settings")}><Settings size={20} /></button>
+          <button type="button" className={settingsVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Editor settings" aria-pressed={settingsVisible} title="Editor settings (Ctrl/Cmd+,)" onClick={settingsVisible ? returnToCode : openSettings}><Settings size={20} /></button>
         </nav>}
 
         <div ref={contentRef} className={active ? "ifrog-editor-content" : "ifrog-file-workspace-content"}>
-          <div className={active ? "ifrog-editor-workspace" : "ifrog-file-workspace-page"} hidden={gitVisible}>
-            {typeof children === "function" ? children(!gitVisible) : children}
+          <div className={active ? "ifrog-editor-workspace" : "ifrog-file-workspace-page"} hidden={gitVisible || aiVisible || extensionsVisible || settingsVisible}>
+            {typeof children === "function" ? children(!gitVisible && !aiVisible && !extensionsVisible && !settingsVisible) : children}
           </div>
 
           {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} /></div>}
+
+          {aiRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-ai-view" hidden={!aiVisible}>
+            <header className="editor-git-header">
+              <div className="editor-git-tab"><Sparkles size={15} /><span>AI Assistant</span></div>
+              <div className="editor-git-header-actions">
+                <button type="button" onClick={returnToCode} aria-label="Back to code"><ArrowLeft size={14} /><span>Back to code</span></button>
+              </div>
+            </header>
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <AIAgentPage
+                repository={repository}
+                initialPrompt={aiPrompt}
+                onInitialPromptConsumed={onAiPromptConsumed}
+              />
+            </div>
+          </div>}
+
+          <div className="ifrog-editor-extensions-view" hidden={!extensionsVisible}>
+            <EditorExtensionsPage active={extensionsVisible} onReturn={returnToCode} />
+          </div>
+
+          <div className="ifrog-editor-settings-view" hidden={!settingsVisible}>
+            <EditorSettingsPage
+              active={settingsVisible}
+              onReturn={returnToCode}
+              onNavigateToGlobalSettings={() => onNavigate("settings")}
+            />
+          </div>
 
           {repository && terminalRoot === repository.root_path && <section id="ifrog-editor-terminal" className="ifrog-editor-terminal" aria-label="Integrated terminal" hidden={!terminalVisible} style={{ height: terminalHeight }}>
             <div className="ifrog-editor-terminal-resizer" role="separator" aria-label="Resize integrated terminal" aria-orientation="horizontal" aria-valuenow={terminalHeight} aria-valuemin={160} tabIndex={0}
@@ -172,7 +271,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
           <Dialog.Content className="ifrog-editor-help">
             <Dialog.Title>Keyboard Shortcuts</Dialog.Title>
             <Dialog.Description>Use Ctrl on Linux and Windows, or Cmd on macOS.</Dialog.Description>
-            <dl>{[["Go to File", "Ctrl/Cmd P"], ["Save", "Ctrl/Cmd S"], ["Save All", "Ctrl/Cmd Shift S"], ["Close Editor", "Ctrl/Cmd W"], ["Find / Replace", "Ctrl/Cmd F"], ["Go to Line", "Ctrl/Cmd G"], ["Undo", "Ctrl/Cmd Z"], ["Redo", "Ctrl/Cmd Shift Z"], ["Toggle Terminal", "Ctrl/Cmd `"]].map(([label, shortcut]) => <div key={label}><dt>{label}</dt><dd><kbd>{shortcut}</kbd></dd></div>)}</dl>
+            <dl>{[["Go to File", "Ctrl/Cmd P"], ["Save", "Ctrl/Cmd S"], ["Save All", "Ctrl/Cmd Shift S"], ["Close Editor", "Ctrl/Cmd W"], ["Find / Replace", "Ctrl/Cmd F"], ["Go to Line", "Ctrl/Cmd G"], ["Undo", "Ctrl/Cmd Z"], ["Redo", "Ctrl/Cmd Shift Z"], ["Extensions", "Ctrl/Cmd Shift X"], ["Editor Settings", "Ctrl/Cmd ,"], ["Toggle Terminal", "Ctrl/Cmd `"]].map(([label, shortcut]) => <div key={label}><dt>{label}</dt><dd><kbd>{shortcut}</kbd></dd></div>)}</dl>
             <Dialog.Close className="ifrog-editor-help-close" aria-label="Close keyboard shortcuts"><X size={17} /></Dialog.Close>
           </Dialog.Content>
         </Dialog.Portal>

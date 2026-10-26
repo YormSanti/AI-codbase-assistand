@@ -67,6 +67,8 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
       case 'saveAll': if (!isLoading) void saveAll(); break;
       case 'closeFile': if (selectedFile) closeFile(selectedFile); break;
       case 'toggleExplorer': setShowExplorer(value => !value); break;
+      case 'showExplorer': setShowExplorer(true); break;
+      case 'hideExplorer': setShowExplorer(false); break;
       case 'toggleOutline': setShowOutline(value => !value); break;
       case 'toggleMinimap': setShowMinimap(value => !value); break;
       case 'toggleWordWrap': updateSettings({ wordWrap: !settings.wordWrap }); break;
@@ -181,17 +183,23 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
           {isEditor && <div className="vscode-welcome-shortcuts"><span>Save file <kbd>Ctrl/Cmd S</kbd></span><span>Find in file <kbd>Ctrl/Cmd F</kbd></span></div>}
         </div>
       ) : (
-        <div className={isEditor ? 'vscode-workspace-body' : 'explorer-workspace-grid'} style={isEditor ? { '--editor-sidebar-width': showExplorer ? sidebarWidth + 'px' : '0px', '--editor-resizer-width': showExplorer ? '4px' : '0px' } as CSSProperties : { gap: 20, minHeight: 620, height: 'calc(100vh - 310px)' }}>
-          <aside className={isEditor ? 'vscode-explorer' : undefined} style={isEditor ? { display: showExplorer ? 'flex' : 'none' } : { ...cardStyle, minWidth: 0, display: 'flex', flexDirection: 'column', padding: 18 }} aria-label="Project files">
+        <div className={isEditor ? 'vscode-workspace-body' : 'explorer-workspace-grid'} style={isEditor ? { '--editor-sidebar-width': `${sidebarWidth}px` } as CSSProperties : { gap: 20, minHeight: 620, height: 'calc(100vh - 310px)' }}>
+          <aside
+            className={isEditor ? 'vscode-explorer' : undefined}
+            style={isEditor ? { display: showExplorer ? 'flex' : 'none', width: showExplorer ? sidebarWidth : 0 } : { ...cardStyle, minWidth: 0, display: 'flex', flexDirection: 'column', padding: 18 }}
+            aria-label="Project files"
+            hidden={isEditor && !showExplorer}
+          >
             <div className={isEditor ? 'vscode-explorer-heading' : undefined}>
               <h2>{isEditor ? 'EXPLORER' : 'Project Files'}</h2>
               {isEditor && <button type="button" aria-label="Refresh local files" title="Refresh local files" disabled={filesLoading} onClick={() => setRefreshVersion(value => value + 1)}><RefreshCw size={15} /></button>}
               {isEditor && <button type="button" aria-label="Open project folder" title="Open project folder" disabled={isLoading} onClick={() => setShowFolderPicker(true)}><FolderOpen size={15} /></button>}
+              {isEditor && <button type="button" aria-label="Collapse file explorer" title="Collapse Explorer" onClick={() => setShowExplorer(false)}><PanelLeft size={15} /></button>}
             </div>
             <div className="vscode-project-tree" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}><RepositoryTree root={tree} onSelectFile={onSelectFile} selectedFilePath={selectedFile?.path} showFilter={!isEditor} /></div>
           </aside>
 
-          {isEditor && <div className="vscode-sidebar-resizer" role="separator" aria-label="Resize file explorer" aria-orientation="vertical" aria-valuenow={sidebarWidth} aria-valuemin={180} aria-valuemax={400} tabIndex={showExplorer ? 0 : -1}
+          {isEditor && showExplorer && <div className="vscode-sidebar-resizer" role="separator" aria-label="Resize file explorer" aria-orientation="vertical" aria-valuenow={sidebarWidth} aria-valuemin={180} aria-valuemax={400} tabIndex={0}
             onPointerDown={event => { dragStart.current = { x: event.clientX, width: sidebarWidth }; event.currentTarget.setPointerCapture(event.pointerId); }}
             onPointerMove={event => { if (dragStart.current) setSidebarWidth(Math.max(180, Math.min(400, dragStart.current.width + event.clientX - dragStart.current.x))); }}
             onPointerUp={event => { dragStart.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }}
@@ -199,7 +207,7 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
             onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setSidebarWidth(width => Math.max(180, Math.min(400, width + (event.key === 'ArrowLeft' ? -20 : 20)))); } }}
           />}
 
-          <div className={isEditor ? 'vscode-editor-pane' : undefined} style={isEditor ? undefined : { minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <div className={isEditor ? 'vscode-editor-pane' : undefined} style={isEditor ? { flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' } : { minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {!selectedFile ? (
               <div className={isEditor ? 'vscode-welcome' : undefined} style={isEditor ? undefined : { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 20 }}>
                 <FileCode2 size={86} strokeWidth={0.8} className="vscode-welcome-mark" />

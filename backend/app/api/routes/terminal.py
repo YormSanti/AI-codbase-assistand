@@ -1,4 +1,5 @@
 import os
+import sys
 import pty
 import asyncio
 import codecs
@@ -45,6 +46,18 @@ async def terminal_websocket(websocket: WebSocket):
         # Child process
         os.environ["TERM"] = "xterm-256color"
         os.environ["COLORTERM"] = "truecolor"
+        os.environ["TERM_PROGRAM"] = "DevPilot"
+        os.environ["TERM_PROGRAM_VERSION"] = "1.0"
+
+        # Prevent system shell-integration scripts (/etc/profile.d/vte-2.91.sh,
+        # 80-systemd-osc-context.sh) from injecting OSC 7 / OSC 666 / OSC 3008
+        # escape sequences into the terminal stream. These are designed for VTE
+        # (GNOME Terminal) and confuse xterm.js, appearing as garbled characters.
+        os.environ.pop("VTE_VERSION", None)
+        os.environ.pop("GNOME_TERMINAL_SCREEN", None)
+        os.environ.pop("GNOME_TERMINAL_SERVICE", None)
+        # Disable systemd OSC 3008 context signaling
+        os.environ["SYSTEMD_OSC_CONTEXT"] = "0"
 
         # Ensure UTF-8 locale for CLI scripts and modern prompts
         if not os.environ.get("LANG") or os.environ.get("LANG") in ("C", "POSIX"):
@@ -52,29 +65,47 @@ async def terminal_websocket(websocket: WebSocket):
         if not os.environ.get("LC_ALL") or os.environ.get("LC_ALL") in ("C", "POSIX"):
             os.environ["LC_ALL"] = "en_US.UTF-8"
 
-        # PyInstaller overrides LD_LIBRARY_PATH, which breaks external 
+        # PyInstaller overrides LD_LIBRARY_PATH, which breaks external
         # commands (like node). Restore the original library path.
         if "LD_LIBRARY_PATH_ORIG" in os.environ:
             os.environ["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH_ORIG"]
         else:
             os.environ.pop("LD_LIBRARY_PATH", None)
 
-        # Prepend standard user bin directories to PATH if missing
+        # Prepend project venv and standard user bin directories to PATH if missing
         home = Path.home()
         extra_bins = [
+            str(cwd / ".venv" / "bin"),
+            str(cwd / "venv" / "bin"),
+            str(cwd / "node_modules" / ".bin"),
             str(home / ".local" / "bin"),
             str(home / ".cargo" / "bin"),
             str(home / ".bun" / "bin"),
+            str(home / ".deno" / "bin"),
+            str(home / ".local" / "share" / "pnpm"),
+            str(home / ".yarn" / "bin"),
+            str(home / ".pyenv" / "shims"),
+            str(home / ".pyenv" / "bin"),
+            str(home / ".rbenv" / "shims"),
             str(home / "go" / "bin"),
             "/usr/local/bin",
             "/usr/bin",
             "/bin",
+            "/snap/bin",
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
         ]
         current_path_list = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
         for extra_bin in reversed(extra_bins):
             if os.path.isdir(extra_bin) and extra_bin not in current_path_list:
                 current_path_list.insert(0, extra_bin)
         os.environ["PATH"] = os.pathsep.join(current_path_list)
+
+        # Automatically export VIRTUAL_ENV if virtual environment exists in cwd
+        if (cwd / ".venv" / "bin" / "python").exists():
+            os.environ["VIRTUAL_ENV"] = str(cwd / ".venv")
+        elif (cwd / "venv" / "bin" / "python").exists():
+            os.environ["VIRTUAL_ENV"] = str(cwd / "venv")
 
         # Detect user's preferred shell
         user_shell = os.environ.get("SHELL")
@@ -89,9 +120,16 @@ async def terminal_websocket(websocket: WebSocket):
         shell_name = os.path.basename(user_shell)
         os.chdir(cwd)
 
-        # Launch login interactive shell (e.g. bash -l -i)
+        # Set initial dimensions on slave pty before launching shell
         try:
-            os.execv(user_shell, [shell_name, "-l", "-i"])
+            resize_pty(0, cols, rows)
+        except Exception:
+            pass
+
+        # Launch interactive shell matching standard OS terminal behavior (-l on macOS, -i on Linux)
+        shell_args = [shell_name, "-l"] if sys.platform == "darwin" else [shell_name, "-i"]
+        try:
+            os.execv(user_shell, shell_args)
         except Exception:
             os.execv("/bin/sh", ["sh", "-i"])
     else:
@@ -107,7 +145,7 @@ async def terminal_websocket(websocket: WebSocket):
 
         def on_pty_readable():
             try:
-                chunk = os.read(fd, 4096)
+                chunk = os.read(fd, 65536)
                 if not chunk:
                     try:
                         loop.remove_reader(fd)

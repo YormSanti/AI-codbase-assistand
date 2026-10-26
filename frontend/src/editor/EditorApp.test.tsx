@@ -72,3 +72,121 @@ it("keeps drafts and the terminal alive while reviewing Git inside the editor", 
   expect(screen.getByLabelText("File draft")).toHaveValue("unsaved");
   expect(shells.start).toHaveBeenCalledTimes(1);
 });
+
+it("opens AI assistant inside the editor without navigating away from code", async () => {
+  const onNavigate = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "my code draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "AI Assistant" }));
+
+  // Does not navigate back to IFROG
+  expect(onNavigate).not.toHaveBeenCalled();
+
+  // The draft is hidden while AI assistant is visible
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  expect(screen.getAllByText("AI Assistant").length).toBeGreaterThan(0);
+
+  // Clicking "Back to code" returns to code
+  fireEvent.click(screen.getByRole("button", { name: "Back to code" }));
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+  expect(screen.getByLabelText("File draft")).toHaveValue("my code draft");
+});
+
+it("opens extensions inside the editor without navigating away from code", async () => {
+  const onNavigate = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "extensions test draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Extensions" }));
+
+  // Does not navigate back to IFROG
+  expect(onNavigate).not.toHaveBeenCalled();
+
+  // The draft is hidden while extensions view is visible
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  expect(screen.getByText("Install from VSIX…")).toBeVisible();
+  expect(screen.getByText("Python")).toBeVisible();
+
+  // Clicking "Back to code" returns to code
+  fireEvent.click(screen.getByRole("button", { name: "Back to code" }));
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+  expect(screen.getByLabelText("File draft")).toHaveValue("extensions test draft");
+});
+
+it("keeps the open file code visible and active when closing or toggling the explorer sidebar", () => {
+  const onCommand = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onCommand={onCommand}>
+    {visible => <input aria-label="File draft" defaultValue="active file code" data-active={visible} />}
+  </EditorApp>);
+
+  const explorerBtn = screen.getByRole("button", { name: "Explorer" });
+  expect(explorerBtn).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByLabelText("File draft")).toBeVisible();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+
+  // Click to close/toggle the explorer sidebar
+  fireEvent.click(explorerBtn);
+  expect(onCommand).toHaveBeenCalledWith("toggleExplorer");
+  expect(explorerBtn).toHaveAttribute("aria-pressed", "false");
+
+  // The open code file remains fully visible and active!
+  expect(screen.getByLabelText("File draft")).toBeVisible();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+  expect(screen.getByLabelText("File draft")).toHaveValue("active file code");
+
+  // Click to reopen explorer sidebar
+  fireEvent.click(explorerBtn);
+  expect(onCommand).toHaveBeenLastCalledWith("toggleExplorer");
+  expect(explorerBtn).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByLabelText("File draft")).toBeVisible();
+});
+
+it("opens dedicated editor settings inside the editor workspace without kicking user to global app settings", () => {
+  const onNavigate = vi.fn();
+  render(
+    <EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
+      {visible => <input aria-label="File draft" defaultValue="in-flight code edits" data-active={visible} />}
+    </EditorApp>
+  );
+
+  fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "modified code buffer" } });
+
+  // Click rail settings button
+  const settingsBtn = screen.getByRole("button", { name: "Editor settings" });
+  fireEvent.click(settingsBtn);
+
+  // Crucial requirement: Must NOT kick out to global app settings page!
+  expect(onNavigate).not.toHaveBeenCalled();
+
+  // The draft is safely hidden in the background while settings is visible
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  expect(screen.getByText("Editor Settings")).toBeVisible();
+  expect(screen.getByText("Editor: Font Size")).toBeVisible();
+  expect(screen.getByText("Live Preview")).toBeVisible();
+
+  // Clicking "Back to code" returns to code with the active buffer preserved
+  fireEvent.click(screen.getByRole("button", { name: "Back to code" }));
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+  expect(screen.getByLabelText("File draft")).toHaveValue("modified code buffer");
+});
+
+it("toggles editor settings with Ctrl+, shortcut without navigating away", () => {
+  const onNavigate = vi.fn();
+  render(
+    <EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
+      {visible => <input aria-label="File draft" defaultValue="active code" data-active={visible} />}
+    </EditorApp>
+  );
+
+  // Press Ctrl+,
+  fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+  expect(onNavigate).not.toHaveBeenCalled();
+  expect(screen.getByText("Editor Settings")).toBeVisible();
+
+  // Press Ctrl+, again to toggle back
+  fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+});
