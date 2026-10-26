@@ -23,7 +23,7 @@ const AnalyticsPage = lazy(() => import("@/components/AnalyticsPage").then(m => 
 const SettingsPage = lazy(() => import("@/components/SettingsPage").then(m => ({ default: m.SettingsPage })));
 
 import type { FilePreview, RepositoryInfo, TreeNode } from "./types/domain";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import { useAutoUpdater } from "./hooks/useAutoUpdater";
 import { useAppearance } from "./hooks/useAppearance";
 
@@ -65,6 +65,7 @@ export default function App() {
     const editorOnlyFile = selectedFile?.file_id !== null && selectedFile?.file_id !== undefined && selectedFile.file_id < 0;
     if (!staysInWorkspace && !canLeaveEditor()) return;
     if (editorOnlyFile && tab !== "editor") setSelectedFile(null);
+    setError(null); // a stale error from another view should not follow the user around
     setActiveTab(tab);
   }
 
@@ -307,6 +308,9 @@ export default function App() {
             <div className="error-banner" role="alert" style={{ margin: "16px 20px 0" }}>
               <AlertCircle className="error-icon" />
               <span className="font-medium">{error}</span>
+              <button type="button" className="error-dismiss" aria-label="Dismiss error" title="Dismiss" onClick={() => setError(null)}>
+                <X size={15} />
+              </button>
             </div>
           )}
 

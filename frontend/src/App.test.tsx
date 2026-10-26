@@ -250,6 +250,8 @@ describe("repository switching", () => {
     expect(localStorage.getItem("ifrog_active_tab")).toBe("explorer");
     fireEvent.click(screen.getByText("Open /b"));
     expect(repositoryApi.open).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss error" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("keeps a dirty project and its saved sessions when removal is canceled", async () => {

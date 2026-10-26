@@ -438,6 +438,26 @@
   font-size: 0.88rem;
 }
 
+.error-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.error-dismiss:hover {
+  background: var(--overlay-2);
+  color: var(--foreground);
+}
+
 .error-icon {
   width: 20px;
   height: 20px;
