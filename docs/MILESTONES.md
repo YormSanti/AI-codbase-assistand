@@ -30,9 +30,13 @@ be independently functional and tested before the next one starts.
     functions and `const foo = () => {}` are not extracted yet
   - 14 new backend tests (parser, extraction service, indexing integration,
     API) — 36 backend tests total, all passing
-- [ ] **Milestone 1.3 — Tree UI polish**
+- [x] **Milestone 1.3 — Incremental indexing** (done, 2026-10-26)
+  - Reopening a known repository hashes files but only re-parses the ones
+    whose content changed; unchanged files keep their ids and symbols
+  - `POST /api/repositories/{id}/reindex` forces a full re-parse (Dashboard
+    **Re-index** button, command palette)
+- [ ] **Milestone 1.4 — Tree UI polish**
   - Show per-file symbol counts / icons in the tree
-  - Loading and empty states, basic file preview pane
 
 ## Phase 2 — Semantic search & RAG chat
 
@@ -54,11 +58,33 @@ setup when this phase starts.*
   untracked previews, conflicts, local upstream ahead/behind counts, and
   selected-repository remote links
 - [x] Selected-diff handoff to desktop AI for review and commit-message suggestions
+- [x] Stage, unstage, mark-resolved, and commit from the editor's Source
+  Control view (`POST .../git/stage`, `.../git/unstage`, `.../git/commit`)
+- [x] Live Git data on the Dashboard and Git Repository page (branch,
+  upstream ahead/behind, working tree summary, recent commits), honoring the
+  Git refresh interval setting
 
 ## Phase 4 — Health & security
 
 - [ ] Duplicate code, large files, TODOs, cyclomatic complexity
 - [ ] Hardcoded secrets, weak crypto, risky pattern scanning
+
+## Shell and performance (2026-10-26)
+
+- [x] Dead shadcn leftovers and ten unused npm packages removed; toaster
+  mounted so toasts actually show
+- [x] On-demand pages (terminal, analytics, Git, AI, settings) and editor tool
+  views load as separate chunks; main JS chunk 1.3 MB -> ~0.5 MB
+- [x] Local font stacks instead of a Google Fonts request
+- [x] Desktop build waits for the sidecar `/health` before the first request
+- [x] Light theme readable everywhere (theme tokens + overlay variables)
+- [x] Command palette (Ctrl/Cmd+K, Ctrl/Cmd+Shift+P) for pages, projects,
+  re-index, and theme
+- [x] Dismissible global error; hidden terminal pages and AI threads capped
+  to the most recently used
+- [ ] Ship the sidecar as a PyInstaller `--onedir` bundle (no per-launch
+  extraction of the 31 MB executable)
+- [ ] Replace native `window.confirm` prompts with in-app dialogs
 
 ## Environment notes
 

@@ -10,10 +10,15 @@ for the clean-architecture layout.
 
 ## Status
 
-Phase 1, Milestones 1.1 and 1.2 complete: open a Git repository, index its
-files (path/size/language/hash respecting `.gitignore`), parse Python/JS/TS
-source with Tree-sitter to extract classes/functions/methods/imports, and
-browse the tree from a web UI.
+Working today: open a local project and index it (incrementally on reopen),
+parse Python/JS/TS symbols with Tree-sitter, browse and edit files in a
+CodeMirror editor with tabs and search, run shells in an integrated
+terminal, review diffs and stage/unstage/commit from Source Control, see
+live branch, upstream, and commit data on the dashboard and Git page, open a
+command palette (Ctrl/Cmd+K) to jump anywhere, and chat with the Codex or
+Gemini CLI from the desktop app. Semantic search and RAG chat (Phase 2) and
+the health/security scans (Phase 4) are not built yet; see
+[`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 The Git Repository page shows live data from the opened repository: branch,
 HEAD commit, upstream ahead/behind counts, working tree summary, and recent
