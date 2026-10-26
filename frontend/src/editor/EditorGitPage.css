@@ -136,3 +136,18 @@
 .editor-git .editor-git-generate { position: absolute; right: 5px; top: 5px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 4px; color: #23a9f2; }
 .editor-git .editor-git-generate:hover:not(:disabled) { background: var(--git-hover); }
 .editor-git .editor-git-generate:disabled { color: var(--git-muted); opacity: .5; cursor: not-allowed; }
+
+/* Commit details */
+.editor-git-commit-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.editor-git-commit-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 15px; border-bottom: 1px solid var(--git-border); color: var(--git-muted); font-size: 11px; flex-shrink: 0; }
+.editor-git-commit-body { margin: 0; padding: 10px 15px; border-bottom: 1px solid var(--git-border); max-height: 140px; overflow: auto; white-space: pre-wrap; font: 12px/1.5 var(--font-code, monospace); flex-shrink: 0; }
+.editor-git-commit-files { list-style: none; margin: 0; padding: 4px 0; max-height: 32%; overflow: auto; border-bottom: 1px solid var(--git-border); flex-shrink: 0; }
+.editor-git-commit-files button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 4px 15px; text-align: left; font-size: 12px; }
+.editor-git-commit-files button:hover, .editor-git-commit-files button.is-selected { background: var(--git-hover); }
+.editor-git-commit-file-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-git-commit-file-path small { color: var(--git-muted); }
+.editor-git-commit-diff-bar { display: flex; align-items: center; gap: 10px; padding: 6px 15px; border-bottom: 1px solid var(--git-border); font-size: 12px; flex-shrink: 0; }
+.editor-git-commit-diff-bar > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-git .editor-git-history-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; text-align: left; padding: 2px 4px; border-radius: 4px; }
+.editor-git .editor-git-history-open:hover { background: var(--git-hover); }
+.editor-git-history-open > span { display: flex; align-items: center; gap: 7px; color: var(--git-muted); font-size: 11px; }

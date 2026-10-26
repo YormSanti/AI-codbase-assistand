@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.deps import GitReviewServiceDep
 from app.api.schemas import GitCommitRequest, GitPathsRequest
 from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError, RepositoryNotFoundError
-from app.domain.git_models import GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import CommitDetails, GitDiff, GitStatus, StagedDiff
 
 router = APIRouter(prefix="/api/repositories", tags=["git"])
 
@@ -49,6 +49,23 @@ def _run_action(action):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (GitReviewError, GitCommandError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{repository_id}/git/commits/{sha}", response_model=CommitDetails)
+def get_commit(repository_id: int, sha: str, service: GitReviewServiceDep) -> CommitDetails:
+    """Message, author, parents, and changed files (with line counts) of one commit."""
+    return _run_action(lambda: service.get_commit(repository_id, sha))
+
+
+@router.get("/{repository_id}/git/commits/{sha}/diff", response_model=GitDiff)
+def get_commit_diff(
+    repository_id: int,
+    sha: str,
+    service: GitReviewServiceDep,
+    path: Annotated[str, Query(min_length=1)],
+) -> GitDiff:
+    """One changed file's patch within a commit, compared with its first parent."""
+    return _run_action(lambda: service.get_commit_diff(repository_id, sha, path))
 
 
 @router.get("/{repository_id}/git/staged-diff", response_model=StagedDiff)

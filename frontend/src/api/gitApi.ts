@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { GitDiff, GitStatus, StagedDiff } from "../types/git";
+import type { CommitDetails, GitDiff, GitStatus, StagedDiff } from "../types/git";
 
 export const gitApi = {
   getStatus(repositoryId: number): Promise<GitStatus> {
@@ -8,6 +8,15 @@ export const gitApi = {
   getDiff(repositoryId: number, path: string, staged: boolean): Promise<GitDiff> {
     const params = new URLSearchParams({ path, staged: String(staged) });
     return apiRequest<GitDiff>(`/api/repositories/${repositoryId}/git/diff?${params}`);
+  },
+  /** Message, author, parents, and changed files of one commit. */
+  getCommit(repositoryId: number, sha: string): Promise<CommitDetails> {
+    return apiRequest<CommitDetails>(`/api/repositories/${repositoryId}/git/commits/${encodeURIComponent(sha)}`);
+  },
+  /** One changed file's patch within a commit, compared with its first parent. */
+  getCommitDiff(repositoryId: number, sha: string, path: string): Promise<GitDiff> {
+    const params = new URLSearchParams({ path });
+    return apiRequest<GitDiff>(`/api/repositories/${repositoryId}/git/commits/${encodeURIComponent(sha)}/diff?${params}`);
   },
   /** Combined patch, stat, and file count of everything staged. */
   getStagedDiff(repositoryId: number): Promise<StagedDiff> {

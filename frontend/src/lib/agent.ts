@@ -54,7 +54,7 @@ export function fenced(text: string, language = ""): string {
   return `${fence}${language}\n${text.replace(/\s+$/, "")}\n${fence}`;
 }
 
-export type DiffScope = "staged" | "working tree" | "merge conflict";
+export type DiffScope = "staged" | "working tree" | "merge conflict" | `commit ${string}`;
 
 /** Draft prompt asking the assistant to review one file's diff. */
 export function diffReviewPrompt(path: string, scope: DiffScope, patch: string): string {

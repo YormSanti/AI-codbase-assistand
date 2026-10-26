@@ -326,3 +326,80 @@ def test_staged_diff_on_an_unborn_branch(tmp_path: Path) -> None:
     staged = GitReviewClient().get_staged_diff(str(empty))
     assert staged.files == 1
     assert "+first" in staged.content
+
+
+def _commit_all(repo: Repo, message: str) -> str:
+    actor = Actor("Test User", "test@example.com")
+    repo.git.add("-A")
+    return repo.index.commit(message, author=actor, committer=actor).hexsha
+
+
+def test_commit_details_list_files_with_status_and_counts(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    (git_repo_path / "main.py").write_text("def main():\n    return 42\n\n\ndef extra():\n    pass\n")
+    (git_repo_path / "src" / "new file.ts").write_text("export const created = true;\n")
+    repo.git.mv("README.md", "GUIDE.md")
+    repo.index.remove([".gitignore"], working_tree=True)
+    (git_repo_path / "logo.bin").write_bytes(b"\x00\x01binary")
+    sha = _commit_all(repo, "feat: second commit\n\nLonger body text.")
+
+    response = api_client.get(f"{base}/commits/{sha[:10]}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sha"] == sha
+    assert body["message"] == "feat: second commit\n\nLonger body text."
+    assert body["author"] == "Test User" and body["author_email"] == "test@example.com"
+    assert len(body["parents"]) == 1
+    files = {file["path"]: file for file in body["files"]}
+    assert files["main.py"]["status"] == "M"
+    assert (files["main.py"]["additions"], files["main.py"]["deletions"]) == (4, 0)
+    assert files["src/new file.ts"]["status"] == "A"
+    assert files["GUIDE.md"]["status"] == "R" and files["GUIDE.md"]["original_path"] == "README.md"
+    assert files[".gitignore"]["status"] == "D"
+    assert files["logo.bin"]["additions"] is None  # binary
+
+    diff = api_client.get(f"{base}/commits/{sha}/diff", params={"path": "main.py"}).json()
+    assert "+def extra():" in diff["content"] and "+    return 42" in diff["content"]
+    renamed = api_client.get(f"{base}/commits/{sha}/diff", params={"path": "GUIDE.md"}).json()
+    assert "rename from README.md" in renamed["content"]
+    binary = api_client.get(f"{base}/commits/{sha}/diff", params={"path": "logo.bin"}).json()
+    assert binary["is_binary"] is True
+
+
+def test_root_and_merge_commits_compare_with_nothing_and_the_first_parent(git_repo_path: Path) -> None:
+    repo = Repo(git_repo_path)
+    client = GitReviewClient()
+    root_sha = repo.head.commit.hexsha
+    root = client.get_commit(str(git_repo_path), root_sha)
+    assert root.parents == []
+    assert {file.path for file in root.files} == {"main.py", "README.md", "src/app.ts", ".gitignore"}
+    assert all(file.status == "A" for file in root.files)
+    assert "+def main():" in client.get_commit_diff(str(git_repo_path), root_sha, "main.py").content
+
+    original = repo.active_branch.name
+    repo.git.checkout("-b", "feature")
+    (git_repo_path / "feature.txt").write_text("feature work\n")
+    _commit_all(repo, "feature work")
+    repo.git.checkout(original)
+    (git_repo_path / "main.txt").write_text("mainline work\n")
+    _commit_all(repo, "mainline work")
+    repo.git.config("user.name", "Test User")
+    repo.git.config("user.email", "test@example.com")
+    repo.git.merge("feature", "--no-ff", "-m", "merge feature")
+    merge = client.get_commit(str(git_repo_path), repo.head.commit.hexsha)
+    assert len(merge.parents) == 2
+    # Relative to the first parent the merge brings in the feature branch's files
+    # (the fixture's untracked.py was committed there by `git add -A`), not mainline work.
+    assert {file.path for file in merge.files} == {"feature.txt", "untracked.py"}
+
+
+def test_commit_requests_are_validated(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    sha = Repo(git_repo_path).head.commit.hexsha
+    for bad in ["HEAD", "main", "not-a-sha", "0123456789abcdef0123456789abcdef01234567"]:
+        assert api_client.get(f"{base}/commits/{bad}").status_code == 409, bad
+    missing_file = api_client.get(f"{base}/commits/{sha}/diff", params={"path": "untracked.py"})
+    assert missing_file.status_code == 409
+    assert "not changed in that commit" in missing_file.json()["detail"]
+    assert api_client.get(f"/api/repositories/999/git/commits/{sha}").status_code == 404

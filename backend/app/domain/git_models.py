@@ -32,6 +32,28 @@ class GitStatus:
 
 
 @dataclass
+class CommitFile:
+    path: str
+    status: str
+    """A (added), M (modified), D (deleted), R (renamed), C (copied), or T (type change)."""
+    original_path: str | None = None
+    additions: int | None = None
+    """None for binary files."""
+    deletions: int | None = None
+
+
+@dataclass
+class CommitDetails:
+    sha: str
+    message: str
+    author: str
+    author_email: str
+    committed_at: datetime
+    parents: list[str]
+    files: list[CommitFile]
+
+
+@dataclass
 class StagedDiff:
     """Everything staged for the next commit, for review or commit-message drafting."""
 

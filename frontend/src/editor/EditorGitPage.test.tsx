@@ -5,7 +5,7 @@ import type { GitDiff, GitStatus } from "../types/git";
 import { EditorGitPage } from "./EditorGitPage";
 import { parseGitDiff, splitGitDiff } from "./gitDiff";
 
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), commit: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), commit: vi.fn() } }));
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 const repository = { id: 1, name: "project", root_path: "/project", current_branch: "santi", head_commit: "abc1234", opened_at: null, file_count: 4 };
@@ -222,4 +222,52 @@ it("drafts an AI review of everything staged", async () => {
   await waitFor(() => expect(onAskAI).toHaveBeenCalledTimes(1));
   expect(onAskAI.mock.calls[0][0]).toContain("Review the staged changes below before I commit them.");
   expect(onAskAI.mock.calls[0][0]).toContain(" src/main.ts | 2 +-");
+});
+
+const commitDetails = {
+  sha: "abc1234", message: "Preserve folder scope\n\nKeep the opened folder as the root.", author: "KSK", author_email: "ksk@example.com",
+  committed_at: "2026-10-07T01:00:00Z", parents: ["0f0f0f0f0f"],
+  files: [
+    { path: "src/main.ts", status: "M", original_path: null, additions: 1, deletions: 1 },
+    { path: "docs/new.md", status: "R", original_path: "docs/old.md", additions: 0, deletions: 0 },
+    { path: "logo.png", status: "A", original_path: null, additions: null, deletions: null },
+  ],
+};
+
+it("opens a commit from history with its message, files, and per-file diffs", async () => {
+  vi.mocked(gitApi.getCommit).mockResolvedValue(commitDetails);
+  vi.mocked(gitApi.getCommitDiff).mockImplementation(async (_id, _sha, path) => path === "logo.png"
+    ? { path, staged: false, is_binary: true, truncated: false, content: "Binary files /dev/null and b/logo.png differ\n" }
+    : { ...patch("committed change"), path });
+  const onAskAI = vi.fn();
+  render(<EditorGitPage {...props} onAskAI={onAskAI} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Open commit abc1234: Preserve folder scope" }));
+  expect(gitApi.getCommit).toHaveBeenCalledWith(1, "abc1234");
+  expect(await screen.findByText("Keep the opened folder as the root.")).toBeVisible();
+  expect(screen.getByText("Parent 0f0f0f0")).toBeVisible();
+  expect(screen.getByText("3 files changed")).toBeVisible();
+  expect(await screen.findByText("committed change")).toBeVisible();
+  expect(gitApi.getCommitDiff).toHaveBeenLastCalledWith(1, "abc1234", "src/main.ts");
+  expect(screen.getByRole("button", { name: "Modified: src/main.ts" })).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(screen.getByRole("button", { name: "Review with AI" }));
+  expect(onAskAI.mock.calls[0][0]).toContain("Review the commit abc1234 changes to `src/main.ts`");
+
+  fireEvent.click(screen.getByRole("button", { name: "Added: logo.png" }));
+  expect(await screen.findByText("Binary file")).toBeVisible();
+  expect(gitApi.getCommitDiff).toHaveBeenLastCalledWith(1, "abc1234", "logo.png");
+
+  fireEvent.click(screen.getByRole("button", { name: "Repository overview" }));
+  expect(await screen.findByText("3 changed files")).toBeVisible();
+  expect(screen.queryByRole("list", { name: "Files changed in this commit" })).toBeNull();
+});
+
+it("leaves the commit view when a working-tree change is selected and reports commit errors", async () => {
+  vi.mocked(gitApi.getCommit).mockRejectedValueOnce(new Error("That commit is not in this repository."));
+  render(<EditorGitPage {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Open commit abc1234: Preserve folder scope" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("That commit is not in this repository.");
+  fireEvent.click(screen.getByRole("button", { name: "Changes: src/main.ts" }));
+  expect(await screen.findByRole("region", { name: "File diff" })).toBeVisible();
+  expect(screen.queryByRole("alert")).toBeNull();
 });

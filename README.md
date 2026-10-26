@@ -179,6 +179,13 @@ diffs after Git commands in the terminal. Open files, drafts, undo history,
 and the terminal stay available while reviewing Git. **Back to code** or
 **Ctrl/Cmd+P** returns to the file workspace.
 
+Click a commit in the overview's history to open it: the message and body,
+author, date, parent (merges are compared with their first parent), and the
+changed files with their status and added/removed line counts. Select a
+file to see its diff in split or unified view, or draft an AI review of it.
+API: `GET /api/repositories/{id}/git/commits/{sha}` and
+`GET /api/repositories/{id}/git/commits/{sha}/diff?path=...`.
+
 **Review with AI** in a diff's toolbar drafts a review request for that file
 (staged, working tree, or merge conflict) and opens the editor's AI
 Assistant with the draft in the composer, ready to edit and send. Diffs are

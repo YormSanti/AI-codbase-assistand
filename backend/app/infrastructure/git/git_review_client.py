@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
@@ -11,11 +12,12 @@ from urllib.parse import urlsplit
 from git import GitError, Repo
 
 from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError
-from app.domain.git_models import GitChange, GitCommit, GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import CommitDetails, CommitFile, GitChange, GitCommit, GitDiff, GitStatus, StagedDiff
 from app.domain.ports import GitReviewPort
 
 MAX_DIFF_BYTES = 256_000
 MAX_COMMIT_MESSAGE_CHARS = 10_000
+_SHA = re.compile(r"[0-9a-fA-F]{4,64}")
 
 
 def remote_web_url(remote: str) -> str | None:
@@ -141,6 +143,87 @@ class GitReviewClient(GitReviewPort):
         content = raw.decode("utf-8", errors="replace")
         binary = any(line.startswith("Binary files ") for line in content.splitlines())
         return GitDiff(path, staged, content, is_binary=binary, truncated=truncated)
+
+    # ── Commit history ──────────────────────────────────────────────────
+
+    def _resolve_commit(self, repo: Repo, root: str, sha: str) -> tuple[str, list[str]]:
+        """Return the full id and parent ids, or raise if `sha` is not a commit here."""
+        if not _SHA.fullmatch(sha or ""):
+            raise GitReviewError("Choose a commit from the history.")
+        try:
+            raw, _ = self._run(root, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", limit=200)
+        except GitReviewError as exc:
+            raise GitReviewError("That commit is not in this repository.") from exc
+        full = raw.decode().strip()
+        return full, [parent.hexsha for parent in repo.commit(full).parents]
+
+    @staticmethod
+    def _range(full: str, parents: list[str]) -> list[str]:
+        # Compare with the first parent (merges show what they brought in); a root commit with nothing.
+        return [parents[0], full] if parents else ["--root", full]
+
+    def get_commit(self, root_path: str, sha: str) -> CommitDetails:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        full, parents = self._resolve_commit(repo, root, sha)
+        compare = self._range(full, parents)
+        common = ("diff-tree", "-r", "-M", "-z", "--no-commit-id")
+        names, _ = self._run(root, *common, "--name-status", *compare, limit=4_000_000)
+        counts, _ = self._run(root, *common, "--numstat", *compare, limit=4_000_000)
+
+        files: list[CommitFile] = []
+        tokens = iter(names.split(b"\0"))
+        for token in tokens:
+            if not token:
+                continue
+            status = chr(token[0])
+            if status in "RC":
+                original, path = os.fsdecode(next(tokens)), os.fsdecode(next(tokens))
+                files.append(CommitFile(path, status, original_path=original))
+            else:
+                files.append(CommitFile(os.fsdecode(next(tokens)), status))
+
+        stats: dict[str, tuple[int | None, int | None]] = {}
+        entries = iter(counts.split(b"\0"))
+        for entry in entries:
+            if not entry:
+                continue
+            added, deleted, rest = entry.split(b"\t", 2)
+            if rest:
+                path = os.fsdecode(rest)
+            else:  # rename/copy: the old and new paths follow as separate fields
+                next(entries)
+                path = os.fsdecode(next(entries))
+            stats[path] = (None, None) if added == b"-" else (int(added), int(deleted))
+        for file in files:
+            file.additions, file.deletions = stats.get(file.path, (None, None))
+
+        commit = repo.commit(full)
+        return CommitDetails(
+            sha=full,
+            message=str(commit.message).strip() or "(No commit message)",
+            author=commit.author.name or "Unknown",
+            author_email=commit.author.email or "",
+            committed_at=commit.committed_datetime,
+            parents=parents,
+            files=files,
+        )
+
+    def get_commit_diff(self, root_path: str, sha: str, path: str) -> GitDiff:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        details = self.get_commit(root, sha)
+        change = next((file for file in details.files if file.path == path), None)
+        if change is None:
+            raise GitReviewError("This file was not changed in that commit.")
+        paths = [path] + ([change.original_path] if change.original_path else [])
+        raw, truncated = self._run(
+            root, "diff-tree", "-r", "-M", "-p", "--no-commit-id", "--no-ext-diff", "--no-textconv",
+            "--no-color", *self._range(details.sha, details.parents), "--", *paths,
+        )
+        content = raw.decode("utf-8", errors="replace")
+        binary = any(line.startswith("Binary files ") for line in content.splitlines())
+        return GitDiff(path, False, content, is_binary=binary, truncated=truncated)
 
     def get_staged_diff(self, root_path: str) -> StagedDiff:
         repo = self._repository(root_path)

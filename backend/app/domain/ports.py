@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.domain.git_models import GitCommit, GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import CommitDetails, GitCommit, GitDiff, GitStatus, StagedDiff
 from app.domain.models import CodeSymbol, FileMetadata, FileSyncResult, Language, RepositoryInfo
 
 
@@ -26,6 +26,14 @@ class GitReviewPort(ABC):
 
     @abstractmethod
     def get_diff(self, root_path: str, path: str, staged: bool) -> GitDiff: ...
+
+    @abstractmethod
+    def get_commit(self, root_path: str, sha: str) -> CommitDetails:
+        """Metadata and changed files of one commit, compared with its first parent."""
+
+    @abstractmethod
+    def get_commit_diff(self, root_path: str, sha: str, path: str) -> GitDiff:
+        """One file's patch within a commit."""
 
     @abstractmethod
     def get_staged_diff(self, root_path: str) -> StagedDiff:

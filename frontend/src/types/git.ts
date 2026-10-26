@@ -37,3 +37,23 @@ export interface StagedDiff {
   files: number;
   truncated: boolean;
 }
+
+export interface CommitFile {
+  path: string;
+  /** A, M, D, R (renamed), C (copied), or T (type change). */
+  status: string;
+  original_path: string | null;
+  /** Null for binary files. */
+  additions: number | null;
+  deletions: number | null;
+}
+
+export interface CommitDetails {
+  sha: string;
+  message: string;
+  author: string;
+  author_email: string;
+  committed_at: string;
+  parents: string[];
+  files: CommitFile[];
+}
