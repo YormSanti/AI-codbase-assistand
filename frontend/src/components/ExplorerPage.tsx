@@ -29,6 +29,9 @@ interface Props {
   onAskAI: (file: TreeNode) => void;
   onEditorStateChange?: (state: { dirty: boolean; saving: boolean }) => void;
   onFileSaved?: (preview: FilePreview) => void;
+  /** Show this file and line once it is in the tree (used when another page opens the editor). */
+  revealRequest?: { path: string; line: number; id: number } | null;
+  onRevealHandled?: () => void;
 }
 
 function collectFiles(node: TreeNode | null): TreeNode[] {
@@ -36,7 +39,7 @@ function collectFiles(node: TreeNode | null): TreeNode[] {
   return node.is_directory ? node.children.flatMap(collectFiles) : [node];
 }
 
-export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'explorer', repository, tree: indexedTree, selectedFile, isLoading, onOpen, onSelectFile, onCloseFile, onAskAI, onEditorStateChange, onFileSaved }: Props) {
+export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'explorer', repository, tree: indexedTree, selectedFile, isLoading, onOpen, onSelectFile, onCloseFile, onAskAI, onEditorStateChange, onFileSaved, revealRequest, onRevealHandled }: Props) {
   const isEditor = mode === 'editor';
   const [localTree, setLocalTree] = useState<{ repository: RepositoryInfo; tree: TreeNode } | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -95,6 +98,18 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
       documents.revealLine(pending.path, pending.line);
     }
   });
+
+  useEffect(() => {
+    if (!revealRequest || !isEditor) return;
+    if (files.some(file => file.path === revealRequest.path)) {
+      onRevealHandled?.();
+      revealLine(revealRequest.path, revealRequest.line);
+    } else if (!filesLoading && localTree?.repository === repository) {
+      onRevealHandled?.(); // the complete local listing is loaded and the file is gone
+    }
+    // revealLine reads the latest render's state; re-running on its identity would repeat the reveal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealRequest, isEditor, files, filesLoading, localTree, repository]);
 
   useImperativeHandle(ref, () => ({ revealLine, runCommand: command => {
     if (command !== 'openFile' && command !== 'openFolder' && command !== 'openSymbol') documents.focusSelected();

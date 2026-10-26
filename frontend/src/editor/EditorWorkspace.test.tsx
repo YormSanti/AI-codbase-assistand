@@ -192,3 +192,16 @@ it("explains when no symbols match", async () => {
   fireEvent.change(await screen.findByRole("textbox", { name: "Search project files" }), { target: { value: "#nothing" } });
   expect(await screen.findByText(/No matching symbols/)).toBeInTheDocument();
 });
+
+it("reveals a file and line requested by another page once the file is in the tree", async () => {
+  const onRevealHandled = vi.fn();
+  function Requested() {
+    const [selected, setSelected] = useState<TreeNode | null>(null);
+    return <ExplorerPage mode="editor" repository={repository} tree={tree} selectedFile={selected} isLoading={false} onOpen={vi.fn()} onSelectFile={setSelected} onCloseFile={() => setSelected(null)} onAskAI={vi.fn()}
+      revealRequest={{ path: "app.ts", line: 7, id: 1 }} onRevealHandled={onRevealHandled} />;
+  }
+  render(<Requested />);
+  await screen.findByRole("textbox", { name: "Edit app.ts" });
+  await waitFor(() => expect(surface.goToLine).toHaveBeenCalledWith("Edit app.ts", 7));
+  expect(onRevealHandled).toHaveBeenCalled();
+});

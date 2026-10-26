@@ -690,6 +690,11 @@ export function AnalyticsPage({ repository, tree, isLoading = false, onNavigate 
               Codebase Insights & Health
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">Automated architectural observations</p>
+            {onNavigate && (
+              <button type="button" onClick={() => onNavigate('health')} className="mt-2 text-xs font-medium text-primary hover:underline">
+                Scan for secrets, risky code, and TODOs in Code Health →
+              </button>
+            )}
           </div>
 
           <div className="pt-4 space-y-4">

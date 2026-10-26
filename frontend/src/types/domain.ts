@@ -90,3 +90,25 @@ export interface SymbolMatch {
   end_line: number;
   parent_name: string | null;
 }
+
+export type HealthCategory = "secret" | "risk" | "marker";
+export type HealthSeverity = "high" | "medium" | "low" | "info";
+
+export interface HealthFinding {
+  category: HealthCategory;
+  rule: string;
+  severity: HealthSeverity;
+  title: string;
+  path: string;
+  line: number;
+  /** The source line; detected secrets are redacted by the backend. */
+  snippet: string;
+}
+
+export interface HealthReport {
+  files_scanned: number;
+  findings: HealthFinding[];
+  large_files: { path: string; size_bytes: number }[];
+  counts: Record<HealthCategory, number>;
+  truncated: boolean;
+}

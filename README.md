@@ -248,6 +248,28 @@ with that view already open),
 **Re-index project**, and a theme switch. Entries that need a project are
 hidden until one is open.
 
+## Code Health
+
+**Code Health** in the sidebar (also in the command palette, and linked from
+Analytics) scans the project's indexed text files and groups what it finds:
+
+- **Possible secrets**: private keys; AWS, GitHub, Slack, Google, Stripe,
+  OpenAI, and Anthropic key formats; and string literals assigned to names
+  like `password` or `api_key`. Values are redacted before they leave the
+  backend, and placeholders such as `changeme` or `${TOKEN}` are ignored.
+- **Risky patterns**: `eval`, Python `exec`, `shell=True`, `os.system`,
+  `pickle`, `yaml.load` without a safe loader, disabled TLS verification,
+  MD5/SHA-1, `dangerouslySetInnerHTML`, `innerHTML =`, `new Function`, and
+  `curl | sh`.
+- **TODO and FIXME**: `TODO`, `FIXME`, `HACK`, `XXX`, and `BUG` in comments.
+- **Large files**: indexed files of 512 KB or more.
+
+Click **Open** on a finding to jump to that line in the editor. The checks
+are heuristics; add `ifrog-ignore` to a line, or `ifrog-ignore-file` in a
+file's first ten lines, to silence them. Files ignored by Git, lock files,
+minified bundles, binaries, and files over 1 MB are not scanned. API:
+`GET /api/repositories/{id}/health`.
+
 ## Dashboard
 
 The Dashboard shows live state only: indexed file count and when the index

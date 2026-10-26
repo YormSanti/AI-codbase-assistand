@@ -70,8 +70,10 @@ setup when this phase starts.*
 
 ## Phase 4 — Health & security
 
-- [ ] Duplicate code, large files, TODOs, cyclomatic complexity
-- [ ] Hardcoded secrets, weak crypto, risky pattern scanning
+- [x] Large files and TODO/FIXME/HACK markers (Code Health page)
+- [x] Hardcoded secrets, weak crypto, and risky pattern scanning, with
+  redacted output and `ifrog-ignore` / `ifrog-ignore-file` suppression
+- [ ] Duplicate code and cyclomatic complexity
 
 ## Shell and performance (2026-10-26)
 

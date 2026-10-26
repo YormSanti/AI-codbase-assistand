@@ -21,9 +21,10 @@ const GitPage = lazy(() => import("@/components/GitPage").then(m => ({ default: 
 const TerminalPage = lazy(() => import("@/components/TerminalPage").then(m => ({ default: m.TerminalPage })));
 const AnalyticsPage = lazy(() => import("@/components/AnalyticsPage").then(m => ({ default: m.AnalyticsPage })));
 const SettingsPage = lazy(() => import("@/components/SettingsPage").then(m => ({ default: m.SettingsPage })));
+const CodeHealthPage = lazy(() => import("@/components/CodeHealthPage").then(m => ({ default: m.CodeHealthPage })));
 
 import type { FilePreview, RepositoryInfo, TreeNode } from "./types/domain";
-import { AlertCircle, BarChart3, Bot, Braces, Code2, Folder, FolderOpen, GitBranch, LayoutDashboard, RefreshCw, Settings, SquareTerminal, SunMoon, TextSearch, X } from "lucide-react";
+import { AlertCircle, BarChart3, Bot, Braces, Code2, Folder, FolderOpen, GitBranch, LayoutDashboard, RefreshCw, Settings, ShieldCheck, SquareTerminal, SunMoon, TextSearch, X } from "lucide-react";
 import { CommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useAutoUpdater } from "./hooks/useAutoUpdater";
 import { useAppearance } from "./hooks/useAppearance";
@@ -60,6 +61,8 @@ export default function App() {
   const [isSessionRestored, setIsSessionRestored] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [editorView, setEditorView] = useState<EditorToolView | null>(null);
+  // A file and line to show once the editor workspace has the file in its tree.
+  const [revealRequest, setRevealRequest] = useState<{ path: string; line: number; id: number } | null>(null);
   const [knownRepositories, setKnownRepositories] = useState<RepositoryInfo[]>([]);
   const repositoryRequest = useRef(0);
   const editorState = useRef({ dirty: false, saving: false });
@@ -85,6 +88,11 @@ export default function App() {
     setError(null); // a stale error from another view should not follow the user around
     setActiveTab(tab);
     return true;
+  }
+
+  /** Open `path` in the code editor with the cursor on `line`, from any page. */
+  function openInEditor(path: string, line: number) {
+    if (handleSelectTab("editor")) setRevealRequest({ path, line, id: Date.now() });
   }
 
   /** Enter the code editor with one of its tool views (Source Control, Search, AI) already open. */
@@ -339,6 +347,7 @@ export default function App() {
     { tab: "git", label: "Git Repository", icon: GitBranch, needsRepository: true },
     { tab: "ai", label: "AI Assistant", icon: Bot },
     { tab: "analytics", label: "Analytics", icon: BarChart3, needsRepository: true },
+    { tab: "health", label: "Code Health", icon: ShieldCheck, needsRepository: true },
     { tab: "settings", label: "Settings", icon: Settings },
   ];
   const paletteCommands: PaletteCommand[] = [
@@ -426,6 +435,8 @@ export default function App() {
                 onAskAI={handleAskAIAboutFile}
                 onEditorStateChange={handleEditorStateChange}
                 onFileSaved={handleFileSaved}
+                revealRequest={revealRequest}
+                onRevealHandled={() => setRevealRequest(null)}
               />}
             </EditorApp>
           )}
@@ -479,6 +490,13 @@ export default function App() {
                 onNavigate={handleSelectTab}
                 onOpen={handleOpen}
               />
+            </Suspense>
+          )}
+
+          {/* Code Health */}
+          {activeTab === "health" && (
+            <Suspense fallback={<PageFallback />}>
+              <CodeHealthPage repository={repository} onNavigate={handleSelectTab} onOpenInEditor={openInEditor} />
             </Suspense>
           )}
 

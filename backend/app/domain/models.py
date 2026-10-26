@@ -94,6 +94,36 @@ class CodeSymbol:
 
 
 @dataclass(frozen=True, slots=True)
+class HealthFinding:
+    category: str
+    """secret, risk, or marker."""
+    rule: str
+    severity: str
+    """high, medium, low, or info."""
+    title: str
+    path: str
+    line: int
+    snippet: str
+    """The source line, with any detected secret redacted."""
+
+
+@dataclass(frozen=True, slots=True)
+class LargeFile:
+    path: str
+    size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class HealthReport:
+    files_scanned: int
+    findings: list[HealthFinding]
+    large_files: list[LargeFile]
+    counts: dict[str, int]
+    truncated: bool = False
+    """True when a time, file, or per-category finding limit stopped the scan early."""
+
+
+@dataclass(frozen=True, slots=True)
 class SymbolMatch:
     """A workspace symbol search hit: the symbol and where it is defined."""
 

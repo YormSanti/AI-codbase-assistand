@@ -6,6 +6,7 @@ import {
   GitBranch,
   LayoutDashboard,
   Settings,
+  ShieldCheck,
   SquareTerminal,
 } from "lucide-react";
 
@@ -46,6 +47,7 @@ export function AppSidebar({
     { title: "Git Repository", id: "git", icon: GitBranch },
     { title: "AI Assistant", id: "ai", icon: Bot },
     { title: "Analytics", id: "analytics", icon: BarChart3 },
+    { title: "Code Health", id: "health", icon: ShieldCheck },
   ];
 
   return (
