@@ -34,9 +34,11 @@
     --sidebar-ring: #3b82f6;
     --radius: 0.75rem;
 
-    --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    --font-code: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace;
+    /* Local font stacks: no network fetch, consistent offline and in the
+       desktop build (whose CSP never allowed remote fonts anyway). */
+    --font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+    --font-heading: var(--font-body);
+    --font-code: ui-monospace, 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
   }
 
   .light, [data-theme="light"] {
