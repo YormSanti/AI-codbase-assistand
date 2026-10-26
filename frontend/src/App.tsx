@@ -23,12 +23,13 @@ const AnalyticsPage = lazy(() => import("@/components/AnalyticsPage").then(m => 
 const SettingsPage = lazy(() => import("@/components/SettingsPage").then(m => ({ default: m.SettingsPage })));
 
 import type { FilePreview, RepositoryInfo, TreeNode } from "./types/domain";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, BarChart3, Bot, Code2, Folder, FolderOpen, GitBranch, LayoutDashboard, RefreshCw, Settings, SquareTerminal, SunMoon, X } from "lucide-react";
+import { CommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useAutoUpdater } from "./hooks/useAutoUpdater";
 import { useAppearance } from "./hooks/useAppearance";
 
 export default function App() {
-  const { settings, resolvedTheme } = useAppearance();
+  const { settings, resolvedTheme, updateSettings } = useAppearance();
   useAutoUpdater();
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
@@ -44,6 +45,8 @@ export default function App() {
   const [visitedThreads, setVisitedThreads] = useState<string[]>(["default"]);
 
   const [isSessionRestored, setIsSessionRestored] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [knownRepositories, setKnownRepositories] = useState<RepositoryInfo[]>([]);
   const repositoryRequest = useRef(0);
   const editorState = useRef({ dirty: false, saving: false });
   const editorWorkspaceRef = useRef<EditorWorkspaceHandle>(null);
@@ -98,6 +101,28 @@ export default function App() {
       setHasVisitedAi(true);
     }
   }, [activeTab, hasVisitedAi]);
+
+  // Command palette: Ctrl/Cmd+Shift+P everywhere, Ctrl/Cmd+K outside views that own that key.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      const ownsK = activeTab === "editor" || activeTab === "terminal";
+      if ((event.shiftKey && key === "p") || (!event.shiftKey && key === "k" && !ownsK)) {
+        event.preventDefault();
+        setPaletteOpen(open => !open);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    let active = true;
+    repositoryApi.list().then(list => { if (active) setKnownRepositories(list); }).catch(() => { /* the palette still offers navigation */ });
+    return () => { active = false; };
+  }, [paletteOpen]);
 
   // Restore session
   useEffect(() => {
@@ -287,6 +312,29 @@ export default function App() {
     }
   }
 
+  const navigationCommands: { tab: string; label: string; icon: PaletteCommand["icon"]; needsRepository?: boolean }[] = [
+    { tab: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { tab: "explorer", label: "File Explorer", icon: Folder },
+    { tab: "editor", label: "Code Editor", icon: Code2 },
+    { tab: "terminal", label: "Terminal", icon: SquareTerminal, needsRepository: true },
+    { tab: "git", label: "Git Repository", icon: GitBranch, needsRepository: true },
+    { tab: "ai", label: "AI Assistant", icon: Bot },
+    { tab: "analytics", label: "Analytics", icon: BarChart3, needsRepository: true },
+    { tab: "settings", label: "Settings", icon: Settings },
+  ];
+  const paletteCommands: PaletteCommand[] = [
+    ...navigationCommands.map(item => ({
+      id: `go-${item.tab}`, label: `Go to ${item.label}`, group: "Navigate", icon: item.icon,
+      disabled: Boolean(item.needsRepository) && !repository, run: () => handleSelectTab(item.tab),
+    })),
+    ...knownRepositories.filter(item => item.root_path !== repository?.root_path).map(item => ({
+      id: `open-${item.id}`, label: `Open ${item.name}`, hint: item.root_path, group: "Projects", icon: FolderOpen,
+      keywords: "project repository switch", run: () => { void handleOpen(item.root_path).catch(() => { /* shown in the error banner */ }); },
+    })),
+    { id: "reindex", label: "Re-index project", group: "Actions", icon: RefreshCw, disabled: !repository || isLoading, keywords: "rescan symbols refresh", run: () => void handleReindex() },
+    { id: "theme", label: resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme", group: "Actions", icon: SunMoon, keywords: "appearance", run: () => updateSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" }) },
+  ];
+
   return (
     <SidebarProvider className={settings.sidebarPosition === "right" ? "flex-row-reverse" : undefined}>
       {activeTab !== "editor" && <AppSidebar
@@ -301,7 +349,7 @@ export default function App() {
       />}
 
       <SidebarInset className="min-w-0" style={activeTab === "editor" ? { height: "100dvh", overflow: "hidden" } : undefined}>
-        {activeTab !== "editor" && <SiteHeader hasRepository={Boolean(repository)} currentView={activeTab} />}
+        {activeTab !== "editor" && <SiteHeader hasRepository={Boolean(repository)} currentView={activeTab} onOpenCommands={() => setPaletteOpen(true)} />}
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, overflowY: ["editor", "ai", "ai-agent"].includes(activeTab) ? "hidden" : "auto", backgroundColor: "var(--background)" }}>
           {error && (
@@ -417,6 +465,7 @@ export default function App() {
         </div>
       </SidebarInset>
       <Toaster theme={resolvedTheme} position="bottom-right" closeButton />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={paletteCommands} />
     </SidebarProvider>
   );
 }

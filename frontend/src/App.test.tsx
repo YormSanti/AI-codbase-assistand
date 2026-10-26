@@ -116,6 +116,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("command palette", () => {
+  it("opens with the keyboard, lists known projects, and navigates on Enter", async () => {
+    vi.mocked(repositoryApi.open).mockResolvedValue(repo(2));
+    render(<App />);
+    fireEvent.keyDown(window, { key: "P", ctrlKey: true, shiftKey: true });
+    const input = await screen.findByRole("combobox", { name: "Command palette" });
+    expect(await screen.findByRole("option", { name: /Open 2/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Go to Terminal/ })).toBeNull(); // needs a project
+    fireEvent.change(input, { target: { value: "settings" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(localStorage.getItem("ifrog_active_tab")).toBe("settings"));
+    expect(screen.queryByRole("combobox", { name: "Command palette" })).toBeNull();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const reopened = await screen.findByRole("combobox", { name: "Command palette" });
+    fireEvent.change(reopened, { target: { value: "open 2" } });
+    fireEvent.keyDown(reopened, { key: "Enter" });
+    await waitFor(() => expect(repositoryApi.open).toHaveBeenCalledWith("/b"));
+    await waitFor(() => expect(localStorage.getItem("ifrog_repo_path")).toBe("/b"));
+  });
+});
+
 describe("repository switching", () => {
   it("opens a dedicated editor without a project and returns to the dashboard", async () => {
     render(<App />);

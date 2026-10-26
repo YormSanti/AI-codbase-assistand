@@ -186,6 +186,15 @@ The dedicated editor app lives in `frontend/src/editor/EditorApp.tsx` and
 `EditorApp.css`. It shares the file workspace, CodeMirror engine, file APIs,
 and save/conflict handling with the existing File Explorer.
 
+## Command palette
+
+Press **Ctrl/Cmd+K** (or **Ctrl/Cmd+Shift+P** anywhere, including the code
+editor and terminal where Ctrl+K has its own meaning) or click **Commands**
+in the header to open the command palette. Type to filter, use the arrow
+keys, and press Enter. It lists every page, each project IFROG has opened
+before (switching projects without the sidebar), **Re-index project**, and a
+theme switch. Pages that need a project are hidden until one is open.
+
 ## Dashboard
 
 The Dashboard shows live state only: indexed file count and when the index

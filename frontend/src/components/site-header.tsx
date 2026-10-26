@@ -1,5 +1,8 @@
+import { Command } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ThemeToggle } from "@/components/ThemeToggle"
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 const VIEW_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
@@ -17,9 +20,11 @@ const VIEW_LABELS: Record<string, string> = {
 export function SiteHeader({
   hasRepository = false,
   currentView = "dashboard",
+  onOpenCommands,
 }: {
   hasRepository?: boolean;
   currentView?: string;
+  onOpenCommands?: () => void;
 }) {
   const label = VIEW_LABELS[currentView] ?? currentView;
 
@@ -54,8 +59,20 @@ export function SiteHeader({
         </h1>
       </div>
 
-      {/* Right: status badge + theme toggle */}
+      {/* Right: command palette + status badge + theme toggle */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+        {onOpenCommands && (
+          <button
+            type="button"
+            onClick={onOpenCommands}
+            title={`Command palette (${isMac ? "⌘K" : "Ctrl+K"})`}
+            className="hidden items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:inline-flex"
+          >
+            <Command size={13} />
+            <span>Commands</span>
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">{isMac ? "⌘K" : "Ctrl K"}</kbd>
+          </button>
+        )}
         {/* Repo status pill */}
         <div className="hidden sm:flex" style={{
           alignItems: "center",
