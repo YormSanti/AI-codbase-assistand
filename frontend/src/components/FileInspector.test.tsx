@@ -5,6 +5,7 @@ import { editorApi } from "../api/editorApi";
 import { ApiError } from "../api/client";
 import type { TreeNode } from "../types/domain";
 import { FileInspector } from "./FileInspector";
+import { announceFilesChanged } from "../lib/fileEvents";
 
 const nativeWindow = vi.hoisted(() => ({ onCloseRequested: vi.fn() }));
 vi.mock("../api/editorApi", () => ({ editorApi: { getContent: vi.fn(), getSymbols: vi.fn(), saveContent: vi.fn() } }));
@@ -57,6 +58,30 @@ describe("FileInspector", () => {
 
   async function editFile() {
     await screen.findByText("def main():");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    return screen.getByRole("textbox", { name: "Edit main.py" });
+  }
+
+  it("reloads from disk when IFROG rewrites the file, unless there are unsaved edits", async () => {
+    render(<FileInspector file={file} onClose={vi.fn()} />);
+    await screen.findByText("def main():");
+    expect(fileApi.getContent).toHaveBeenCalledTimes(1);
+    act(() => announceFilesChanged(["other.py"]));
+    expect(fileApi.getContent).toHaveBeenCalledTimes(1);
+    vi.mocked(fileApi.getContent).mockResolvedValueOnce({ file_id: 7, path: "src/main.py", content: "def restored():\n    pass", is_binary: false, truncated: false, content_hash: "c".repeat(64), editable: true });
+    act(() => announceFilesChanged(["backend/src/main.py"])); // Git path in a parent repository
+    expect(await screen.findByText("def restored():")).toBeInTheDocument();
+    expect(fileApi.getContent).toHaveBeenCalledTimes(2);
+
+    const editor = await editFile2();
+    fireEvent.change(editor, { target: { value: "unsaved draft" } });
+    act(() => announceFilesChanged(["src/main.py"]));
+    expect(fileApi.getContent).toHaveBeenCalledTimes(2);
+    expect(editor).toHaveValue("unsaved draft");
+  });
+
+  async function editFile2() {
+    await screen.findByText("def restored():");
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     return screen.getByRole("textbox", { name: "Edit main.py" });
   }

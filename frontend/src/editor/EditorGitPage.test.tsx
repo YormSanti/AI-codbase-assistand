@@ -3,9 +3,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { gitApi } from "../api/gitApi";
 import type { GitDiff, GitStatus } from "../types/git";
 import { EditorGitPage } from "./EditorGitPage";
+import { ConfirmProvider } from "../components/ConfirmDialog";
+import { FILES_CHANGED_EVENT } from "../lib/fileEvents";
 import { parseGitDiff, splitGitDiff } from "./gitDiff";
 
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), commit: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), commit: vi.fn() } }));
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 const repository = { id: 1, name: "project", root_path: "/project", current_branch: "santi", head_commit: "abc1234", opened_at: null, file_count: 4 };
@@ -270,4 +272,39 @@ it("leaves the commit view when a working-tree change is selected and reports co
   fireEvent.click(screen.getByRole("button", { name: "Changes: src/main.ts" }));
   expect(await screen.findByRole("region", { name: "File diff" })).toBeVisible();
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("discards a file only after confirming in the app dialog and announces the rewritten file", async () => {
+  vi.mocked(gitApi.discard).mockResolvedValue({ ...status, changes: status.changes.filter(change => change.path !== "README.md") });
+  const announced = vi.fn();
+  window.addEventListener(FILES_CHANGED_EVENT, announced);
+  render(<ConfirmProvider><EditorGitPage {...props} /></ConfirmProvider>);
+  await screen.findByText("3 changed files");
+
+  fireEvent.click(screen.getByRole("button", { name: "Discard README.md" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Delete README.md?" });
+  expect(dialog).toHaveTextContent("README.md is untracked, so it will be deleted from disk.");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(gitApi.discard).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Discard src/main.ts" }));
+  await screen.findByRole("alertdialog", { name: "Discard changes in main.ts?" });
+  fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+  await waitFor(() => expect(gitApi.discard).toHaveBeenCalledWith(1, ["src/main.ts"]));
+  await waitFor(() => expect(announced).toHaveBeenCalledTimes(1));
+  expect((announced.mock.calls[0][0] as CustomEvent).detail).toEqual({ paths: ["src/main.ts"] });
+  window.removeEventListener(FILES_CHANGED_EVENT, announced);
+});
+
+it("discards a whole group with one confirmation that counts untracked files", async () => {
+  vi.mocked(gitApi.discard).mockResolvedValue({ ...status, changes: [status.changes[2]] });
+  render(<ConfirmProvider><EditorGitPage {...props} /></ConfirmProvider>);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Discard all changes" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Discard 2 changes?" });
+  expect(dialog).toHaveTextContent("1 untracked file will be deleted");
+  fireEvent.click(screen.getByRole("button", { name: "Discard all" }));
+  await waitFor(() => expect(gitApi.discard).toHaveBeenCalledWith(1, ["src/main.ts", "README.md"]));
+  expect(screen.queryByRole("button", { name: "Discard merge.ts" })).toBeNull(); // conflicts are never discarded
 });

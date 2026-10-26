@@ -403,3 +403,65 @@ def test_commit_requests_are_validated(api_client: TestClient, git_repo_path: Pa
     assert missing_file.status_code == 409
     assert "not changed in that commit" in missing_file.json()["detail"]
     assert api_client.get(f"/api/repositories/999/git/commits/{sha}").status_code == 404
+
+
+def test_discard_restores_tracked_files_and_deletes_untracked_ones(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    (git_repo_path / "main.py").write_text("broken edit\n")
+    (git_repo_path / "README.md").unlink()
+    (git_repo_path / "scratch.txt").write_text("temporary\n")
+    (git_repo_path / "src" / "app.ts").write_text("export const staged = 2;\n")
+    repo.index.add(["src/app.ts"])
+    (git_repo_path / "src" / "app.ts").write_text("export const staged = 3;\n")
+
+    response = api_client.post(f"{base}/discard", json={"paths": ["main.py", "README.md", "scratch.txt", "src/app.ts"]})
+    assert response.status_code == 200
+    assert (git_repo_path / "main.py").read_text() == "def main():\n    pass\n"
+    assert (git_repo_path / "README.md").read_text() == "# Sample\n"
+    assert not (git_repo_path / "scratch.txt").exists()
+    assert (git_repo_path / "src" / "app.ts").read_text() == "export const staged = 2;\n"  # back to the staged version
+    changes = {change["path"]: change for change in response.json()["changes"]}
+    assert set(changes) == {"src/app.ts", "untracked.py"}
+    assert changes["src/app.ts"]["index_status"] == "M" and changes["src/app.ts"]["worktree_status"] == " "
+
+
+def test_discard_is_validated(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    (git_repo_path / "main.py").write_text("staged only\n")
+    repo.index.add(["main.py"])
+    staged_only = api_client.post(f"{base}/discard", json={"paths": ["main.py"]})
+    assert staged_only.status_code == 409
+    assert "no unstaged changes" in staged_only.json()["detail"]
+    assert (git_repo_path / "main.py").read_text() == "staged only\n"
+    for path in ["../outside.txt", "/etc/passwd", ".git/config", "README.md"]:
+        assert api_client.post(f"{base}/discard", json={"paths": [path]}).status_code == 409, path
+    assert api_client.post(f"{base}/discard", json={"paths": []}).status_code == 422
+    assert api_client.post("/api/repositories/999/git/discard", json={"paths": ["main.py"]}).status_code == 404
+
+    outside = tmp_path / "keep.txt"
+    outside.write_text("must survive\n")
+    (git_repo_path / "link.txt").symlink_to(outside)
+    assert api_client.post(f"{base}/discard", json={"paths": ["link.txt"]}).status_code == 200
+    assert not (git_repo_path / "link.txt").exists() and outside.read_text() == "must survive\n"
+
+
+def test_discard_refuses_conflicted_files(git_repo_path: Path) -> None:
+    repo = Repo(git_repo_path)
+    original = repo.active_branch.name
+    actor = Actor("Test", "test@example.com")
+    repo.git.checkout("-b", "other")
+    (git_repo_path / "main.py").write_text("other\n")
+    repo.index.add(["main.py"])
+    repo.index.commit("other", author=actor, committer=actor)
+    repo.git.checkout(original)
+    (git_repo_path / "main.py").write_text("current\n")
+    repo.index.add(["main.py"])
+    repo.index.commit("current", author=actor, committer=actor)
+    repo.git.config("user.name", "Test")
+    repo.git.config("user.email", "test@example.com")
+    repo.git.merge("other", with_exceptions=False)
+    with pytest.raises(GitCommandError) as conflict:
+        GitReviewClient().discard(str(git_repo_path), ["main.py"])
+    assert "merge conflicts" in str(conflict.value)

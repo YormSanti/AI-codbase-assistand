@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, Minus, Plus, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, Minus, Plus, RefreshCw, Sparkles, TriangleAlert, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import type { RepositoryInfo } from "../types/domain";
 import type { GitChange } from "../types/git";
@@ -11,6 +11,8 @@ import { cleanCommitMessage, commitMessagePrompt, diffReviewPrompt, isDesktopApp
 import { gitApi } from "../api/gitApi";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { PROVIDER_NAMES } from "../lib/providers";
+import { useConfirm } from "../hooks/useConfirm";
+import { announceFilesChanged } from "../lib/fileEvents";
 import "./EditorGitPage.css";
 
 interface Props {
@@ -45,6 +47,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
   const [message, setMessage] = useState("");
   const [drafting, setDrafting] = useState<"message" | "review" | null>(null);
   const { settings } = useAppSettings();
+  const confirm = useConfirm();
   const desktop = isDesktopApp();
   const status = review.status;
   const lines = useMemo(() => parseGitDiff(review.patch?.content ?? ""), [review.patch]);
@@ -67,6 +70,29 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
       setNotice(null);
       toast.success(`Committed ${result.head_commit?.slice(0, 7) ?? ""}`.trim());
     }
+  };
+
+  const discard = async (changes: GitChange[]) => {
+    if (!changes.length || review.busy) return;
+    const untracked = changes.filter(change => change.index_status === "?").length;
+    const single = changes.length === 1 ? changes[0] : null;
+    const confirmed = await confirm(single
+      ? {
+        title: single.index_status === "?" ? `Delete ${fileName(single.path)}?` : `Discard changes in ${fileName(single.path)}?`,
+        description: single.index_status === "?" ? `${single.path} is untracked, so it will be deleted from disk. This cannot be undone.` : `Unstaged edits to ${single.path} will be lost. This cannot be undone.`,
+        confirmLabel: single.index_status === "?" ? "Delete file" : "Discard changes",
+        destructive: true,
+      }
+      : {
+        title: `Discard ${changes.length} changes?`,
+        description: `Unstaged edits will be lost${untracked ? ` and ${untracked} untracked ${untracked === 1 ? "file" : "files"} will be deleted` : ""}. Staged changes are kept. This cannot be undone.`,
+        confirmLabel: "Discard all",
+        destructive: true,
+      });
+    if (!confirmed) return;
+    const paths = changes.map(change => change.path);
+    const result = await review.discard(paths);
+    if (result) announceFilesChanged(paths);
   };
 
   const generateMessage = async () => {
@@ -150,7 +176,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
               {group === "staged" && onAskAI && <button type="button" className="editor-git-group-action" aria-label="Review staged changes with AI" title="Draft an AI review of everything staged" disabled={drafting !== null} onClick={() => void reviewStaged()}>{drafting === "review" ? <LoaderCircle size={13} className="editor-git-spin" /> : <Sparkles size={13} />}</button>}
               {group === "staged"
                 ? <button type="button" className="editor-git-group-action" aria-label="Unstage all changes" title="Unstage all" disabled={review.busy} onClick={() => void review.unstage(changes.map(change => change.path))}><Minus size={13} /></button>
-                : <button type="button" className="editor-git-group-action" aria-label={group === "conflicts" ? "Stage all resolved conflicts" : "Stage all changes"} title={group === "conflicts" ? "Mark all as resolved" : "Stage all"} disabled={review.busy} onClick={() => void review.stage(changes.map(change => change.path))}><Plus size={13} /></button>}
+                : <>{group === "changes" && <button type="button" className="editor-git-group-action" aria-label="Discard all changes" title="Discard all unstaged changes" disabled={review.busy} onClick={() => void discard(changes)}><Undo2 size={13} /></button>}<button type="button" className="editor-git-group-action" aria-label={group === "conflicts" ? "Stage all resolved conflicts" : "Stage all changes"} title={group === "conflicts" ? "Mark all as resolved" : "Stage all"} disabled={review.busy} onClick={() => void review.stage(changes.map(change => change.path))}><Plus size={13} /></button></>}
             </div>
             {expanded[group] && changes.map(change => {
               const code = changeCode(change, group);
@@ -161,7 +187,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
                 </button>
                 {group === "staged"
                   ? <button type="button" className="editor-git-change-action" aria-label={`Unstage ${change.path}`} title="Unstage" disabled={review.busy} onClick={() => void review.unstage([change.path])}><Minus size={13} /></button>
-                  : <button type="button" className="editor-git-change-action" aria-label={`Stage ${change.path}`} title={group === "conflicts" ? "Mark as resolved" : "Stage"} disabled={review.busy} onClick={() => void review.stage([change.path])}><Plus size={13} /></button>}
+                  : <>{group === "changes" && <button type="button" className="editor-git-change-action" aria-label={`Discard ${change.path}`} title={change.index_status === "?" ? "Delete untracked file" : "Discard changes"} disabled={review.busy} onClick={() => void discard([change])}><Undo2 size={13} /></button>}<button type="button" className="editor-git-change-action" aria-label={`Stage ${change.path}`} title={group === "conflicts" ? "Mark as resolved" : "Stage"} disabled={review.busy} onClick={() => void review.stage([change.path])}><Plus size={13} /></button></>}
               </div>;
             })}
           </div>)}

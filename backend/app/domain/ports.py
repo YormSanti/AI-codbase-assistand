@@ -48,6 +48,10 @@ class GitReviewPort(ABC):
         """Remove the given paths from the index, keeping working tree edits."""
 
     @abstractmethod
+    def discard(self, root_path: str, paths: list[str]) -> None:
+        """Throw away working-tree changes: restore tracked files from the index, delete untracked ones."""
+
+    @abstractmethod
     def commit(self, root_path: str, message: str) -> GitCommit:
         """Commit the index with `message`; hooks and identity rules apply as in the CLI."""
 

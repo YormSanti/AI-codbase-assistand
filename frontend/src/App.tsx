@@ -13,6 +13,7 @@ import type { EditorToolView, EditorWorkspaceHandle } from "./editor/editorComma
 import { PageFallback } from "@/components/PageFallback";
 import { Toaster } from "@/components/ui/sonner";
 import { renameThreadIfDefault } from "./hooks/useProjectSessions";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 
 // Pages that are visited on demand load as separate chunks so the first paint
@@ -368,6 +369,7 @@ export default function App() {
   ];
 
   return (
+    <ConfirmProvider>
     <SidebarProvider className={settings.sidebarPosition === "right" ? "flex-row-reverse" : undefined}>
       {activeTab !== "editor" && <AppSidebar
         side={settings.sidebarPosition}
@@ -514,5 +516,6 @@ export default function App() {
       <Toaster theme={resolvedTheme} position="bottom-right" closeButton />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={paletteCommands} />
     </SidebarProvider>
+    </ConfirmProvider>
   );
 }

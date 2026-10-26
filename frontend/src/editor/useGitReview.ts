@@ -84,6 +84,7 @@ export function useGitReview(repositoryId: number | null, active: boolean) {
     clearActionError: () => setAction(previous => ({ ...previous, error: null })),
     stage: (paths: string[]) => runAction(id => gitApi.stage(id, paths)),
     unstage: (paths: string[]) => runAction(id => gitApi.unstage(id, paths)),
+    discard: (paths: string[]) => runAction(id => gitApi.discard(id, paths)),
     commit: (message: string) => runAction(id => gitApi.commit(id, message)),
     patch: diff?.key === diffKey ? diff.data : null,
     diffLoading: Boolean(selection) && (diff?.key !== diffKey || diff.loading),

@@ -142,10 +142,12 @@ commands disable optional index locks, external diff helpers, and textconv.
 Diff output is spooled to a temporary file with a 15-second command timeout
 and a 256,000-byte response limit. Reads never fetch or mutate.
 
-The only writes are the three explicit actions on `GitReviewPort`: `stage`
+The only writes are the explicit actions on `GitReviewPort`: `stage`
 (`git add -A -- <paths>`, so deletions and renames are recorded), `unstage`
 (`git reset HEAD -- <paths>`, or `git rm --cached` before the first commit),
-and `commit` (`git commit -m`). Paths are validated against the current
+`discard` (`git checkout -- <paths>` for tracked files; untracked files are
+unlinked without following symlinks; conflicts and staged-only paths are
+refused), and `commit` (`git commit -m`). Paths are validated against the current
 status, including rename sources, and `GitCommandError` carries Git's own
 stderr (hook failures, missing identity) to the API as HTTP 409. Hooks run as
 they would from the CLI; nothing pushes, fetches, or rewrites history.

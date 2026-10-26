@@ -24,6 +24,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useAppSettings } from "../hooks/useAppSettings";
+import { affectsPath, FILES_CHANGED_EVENT, type FilesChangedDetail } from "../lib/fileEvents";
 import type { CodeEditorHandle } from "./CodeEditorSurface";
 import type { EditorCommand } from "../editor/editorCommands";
 
@@ -168,6 +169,20 @@ export function FileInspector({
     };
   }, [manageCloseGuard]);
 
+  // Reload when IFROG rewrote this file on disk (for example Discard in Source Control),
+  // unless the user has unsaved edits, which keep the existing save-conflict protection.
+  const [diskVersion, setDiskVersion] = useState(0);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = isDirty;
+  useEffect(() => {
+    const onFilesChanged = (event: Event) => {
+      const { paths } = (event as CustomEvent<FilesChangedDetail>).detail ?? { paths: [] };
+      if (!dirtyRef.current && affectsPath(paths, file.path)) setDiskVersion(value => value + 1);
+    };
+    window.addEventListener(FILES_CHANGED_EVENT, onFilesChanged);
+    return () => window.removeEventListener(FILES_CHANGED_EVENT, onFilesChanged);
+  }, [file.path]);
+
   useEffect(() => {
     let active = true;
     setIsLoading(true);
@@ -205,7 +220,7 @@ export function FileInspector({
       });
 
     return () => { active = false; };
-  }, [file.file_id, file.path, localRepositoryId]);
+  }, [file.file_id, file.path, localRepositoryId, diskVersion]);
 
   useEffect(() => {
     if (autoEdit && canEdit && !isEditing) {

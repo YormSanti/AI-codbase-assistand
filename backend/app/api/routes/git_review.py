@@ -84,6 +84,12 @@ def unstage_changes(repository_id: int, request: GitPathsRequest, service: GitRe
     return _run_action(lambda: service.unstage(repository_id, request.paths))
 
 
+@router.post("/{repository_id}/git/discard", response_model=GitStatus)
+def discard_changes(repository_id: int, request: GitPathsRequest, service: GitReviewServiceDep) -> GitStatus:
+    """Discard working-tree changes: tracked files return to their staged/committed version, untracked files are deleted."""
+    return _run_action(lambda: service.discard(repository_id, request.paths))
+
+
 @router.post("/{repository_id}/git/commit", response_model=GitStatus)
 def commit_changes(repository_id: int, request: GitCommitRequest, service: GitReviewServiceDep) -> GitStatus:
     return _run_action(lambda: service.commit(repository_id, request.message))

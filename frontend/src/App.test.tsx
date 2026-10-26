@@ -303,9 +303,12 @@ describe("repository switching", () => {
     await waitFor(() => expect(screen.getByTestId("repository")).toHaveTextContent("/a"));
     localStorage.setItem("threads_1", "saved sessions");
     fireEvent.click(screen.getByText("Edit source"));
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(true).mockReturnValueOnce(false);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     fireEvent.click(screen.getByRole("button", { name: "Remove 1" }));
+    // The sidebar asks in the app's dialog; the unsaved-edits guard still uses the native prompt.
+    fireEvent.click(await screen.findByRole("button", { name: "Remove project" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Project removal canceled.");
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(repositoryApi.remove).not.toHaveBeenCalled();
     expect(localStorage.getItem("threads_1")).toBe("saved sessions");
     expect(screen.getByTestId("repository")).toHaveTextContent("/a");

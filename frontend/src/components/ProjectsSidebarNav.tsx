@@ -5,6 +5,7 @@ import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 
 import { DEFAULT_THREAD_TITLE_PREFIX, useProjectSessions, type ProjectThread } from "../hooks/useProjectSessions";
 import { conversationStorageKey, removeConversation, removeProjectConversations } from "../lib/conversations";
+import { useConfirm } from "../hooks/useConfirm";
 export type { ProjectThread } from "../hooks/useProjectSessions";
 
 interface ProjectsSidebarNavProps {
@@ -170,6 +171,7 @@ export function ProjectsSidebarNav({
 }: ProjectsSidebarNavProps) {
   const [projectsList, setProjectsList] = useState<RepositoryInfo[]>([]);
   const { threads, save } = useProjectSessions(currentRepository?.id);
+  const confirm = useConfirm();
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newProjectPath, setNewProjectPath] = useState("");
@@ -225,9 +227,9 @@ export function ProjectsSidebarNav({
     }
   };
 
-  const handleDeleteThread = (event: React.MouseEvent, thread: ProjectThread) => {
+  const handleDeleteThread = async (event: React.MouseEvent, thread: ProjectThread) => {
     event.stopPropagation();
-    if (!window.confirm(`Delete “${thread.title}”?`)) return;
+    if (!(await confirm({ title: `Delete “${thread.title}”?`, description: "Its conversation is deleted too.", confirmLabel: "Delete thread", destructive: true }))) return;
 
     const updated = threads.filter((item) => item.id !== thread.id);
     save(updated);
@@ -238,7 +240,7 @@ export function ProjectsSidebarNav({
 
   const handleDeleteProject = async (event: React.MouseEvent, project: RepositoryInfo) => {
     event.stopPropagation();
-    if (!window.confirm(`Remove “${project.name}” from IFROG? Your project files will not be deleted.`)) return;
+    if (!(await confirm({ title: `Remove “${project.name}” from IFROG?`, description: "Its index, threads, and saved AI conversations are removed. Your project files are not deleted.", confirmLabel: "Remove project", destructive: true }))) return;
 
     setDeleteError(null);
     try {
@@ -458,7 +460,7 @@ export function ProjectsSidebarNav({
                 <span className="text-[10px] text-muted-foreground/80 font-mono">{Number.isNaN(Date.parse(thread.createdAt)) ? thread.createdAt : new Date(thread.createdAt).toLocaleDateString()}</span>
                 <button
                   type="button"
-                  onClick={(event) => handleDeleteThread(event, thread)}
+                  onClick={(event) => void handleDeleteThread(event, thread)}
                   className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-rose-500/15 hover:text-rose-300 focus-visible:text-rose-300"
                   title="Delete Thread"
                   aria-label={`Delete ${thread.title}`}

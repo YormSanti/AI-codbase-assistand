@@ -300,6 +300,42 @@ class GitReviewClient(GitReviewPort):
             # No HEAD yet: the only way to unstage is to drop the paths from the index.
             self._run_write(root, "rm", "-q", "--cached", "-r", "--", *pathspecs)
 
+    def discard(self, root_path: str, paths: list[str]) -> None:
+        repo = self._repository(root_path)
+        root = Path(str(repo.working_tree_dir)).resolve()
+        if not paths:
+            raise GitCommandError("Choose at least one changed file.")
+        changes = {change.path: change for change in self._changes(str(root))}
+        tracked: list[str] = []
+        untracked: list[Path] = []
+        for path in dict.fromkeys(paths):
+            relative = PurePosixPath(path)
+            if not path or relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
+                raise GitCommandError(f"'{path}' is not a changed file inside the repository.")
+            change = changes.get(path)
+            if change is None:
+                raise GitCommandError(f"'{path}' is no longer changed. Refresh the Git status.")
+            if "U" in (change.index_status, change.worktree_status) or change.index_status + change.worktree_status in ("AA", "DD"):
+                raise GitCommandError(f"'{path}' has merge conflicts. Resolve them or abort the merge instead.")
+            if change.index_status == "?":
+                target = root / path
+                if not target.parent.resolve().is_relative_to(root):
+                    raise GitCommandError(f"'{path}' is not a changed file inside the repository.")
+                untracked.append(target)
+            elif change.worktree_status == " ":
+                raise GitCommandError(f"'{path}' has no unstaged changes to discard. Unstage it first.")
+            else:
+                tracked.append(path)
+        if tracked:
+            # Restores the index version, which also brings back files deleted in the working tree.
+            self._run_write(str(root), "checkout", "-q", "--", *tracked)
+        for target in untracked:
+            try:
+                if target.is_symlink() or target.is_file():
+                    target.unlink()  # a symlink is removed itself, never followed
+            except OSError as exc:
+                raise GitCommandError(f"Could not delete '{target.relative_to(root).as_posix()}': {exc.strerror}") from exc
+
     def commit(self, root_path: str, message: str) -> GitCommit:
         repo = self._repository(root_path)
         root = str(repo.working_tree_dir)

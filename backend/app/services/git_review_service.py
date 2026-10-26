@@ -40,6 +40,11 @@ class GitReviewService:
         self._git.unstage(root, paths)
         return self._git.get_status(root)
 
+    def discard(self, repository_id: int, paths: list[str]) -> GitStatus:
+        root = self._root(repository_id)
+        self._git.discard(root, paths)
+        return self._git.get_status(root)
+
     def commit(self, repository_id: int, message: str) -> GitStatus:
         root = self._root(repository_id)
         self._git.commit(root, message)

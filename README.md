@@ -214,7 +214,12 @@ patch, a `--stat` summary, and the file count.
 Stage and commit without leaving the view: hover a changed file for its
 **+** (stage) or **−** (unstage) button, use the group buttons to stage or
 unstage everything in a section, and mark a resolved merge conflict with
-**+**. Type a message in the commit box and press **Commit** or
+**+**. The **↶** button on a working-tree change discards it (tracked files
+return to their staged or committed version, untracked files are deleted),
+and the **Changes** header's **↶** discards the whole group; both ask first
+in an in-app dialog, never touch staged changes or merge conflicts, and
+reload any open editor tab of that file that has no unsaved edits. Type a
+message in the commit box and press **Commit** or
 **Ctrl/Cmd+Enter**; the button shows how many files are staged and stays
 disabled until there is a message and something staged. Git's own error text
 is shown when a commit is rejected, for example when no identity is
@@ -222,7 +227,8 @@ configured or a hook fails. Pushing and pulling still happen in the terminal.
 
 API: `POST /api/repositories/{id}/git/stage` and `.../git/unstage` take
 `{ "paths": [...] }` limited to currently changed files;
-`POST /api/repositories/{id}/git/commit` takes `{ "message": "..." }`. Each
+`POST /api/repositories/{id}/git/commit` takes `{ "message": "..." }`, and
+`POST /api/repositories/{id}/git/discard` takes `{ "paths": [...] }`. Each
 returns the refreshed Git status.
 
 Use **Terminal** or **Ctrl/Cmd+\`** to show a resizable terminal below the

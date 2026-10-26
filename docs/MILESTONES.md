@@ -98,7 +98,10 @@ setup when this phase starts.*
   Tree-sitter symbol index, ranked exact > prefix > substring
 - [x] AI conversations persist per project and thread; threads are titled
   from their first message; deleting a thread or project removes them
-- [ ] Replace native `window.confirm` prompts with in-app dialogs
+- [x] Discard working-tree changes from Source Control behind an in-app
+  confirmation dialog; open editors reload files IFROG rewrote
+- [ ] Replace the remaining native `window.confirm` prompts (unsaved-edit
+  guards) with the in-app dialog; deletes in the sidebar already use it
 
 ## Environment notes
 

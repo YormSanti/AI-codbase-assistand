@@ -30,6 +30,10 @@ export const gitApi = {
   unstage(repositoryId: number, paths: string[]): Promise<GitStatus> {
     return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/unstage`, { method: "POST", body: JSON.stringify({ paths }) });
   },
+  /** Discard working-tree changes (untracked files are deleted); resolves with the refreshed status. */
+  discard(repositoryId: number, paths: string[]): Promise<GitStatus> {
+    return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/discard`, { method: "POST", body: JSON.stringify({ paths }) });
+  },
   /** Commit the index with `message`; resolves with the refreshed status. */
   commit(repositoryId: number, message: string): Promise<GitStatus> {
     return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/commit`, { method: "POST", body: JSON.stringify({ message }) });
