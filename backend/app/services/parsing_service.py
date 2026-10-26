@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.domain.models import CodeSymbol, FileMetadata
+from app.domain.models import CodeSymbol, FileMetadata, SymbolMatch
 from app.domain.ports import CodeParserPort, SymbolRepositoryPort
 
 
@@ -34,3 +34,6 @@ class SymbolExtractionService:
 
     def list_for_file(self, file_id: int) -> list[CodeSymbol]:
         return self._symbol_repository.list_symbols_for_file(file_id)
+
+    def search(self, repository_id: int, query: str, limit: int = 50) -> list[SymbolMatch]:
+        return self._symbol_repository.search_symbols(repository_id, query, limit)

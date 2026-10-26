@@ -14,7 +14,7 @@ from pathlib import Path
 from app.domain.exceptions import (
     IndexedFileNotFoundError, RepositoryNotFoundError,
 )
-from app.domain.models import CodeSymbol, FileMetadata, FilePreview, RepositoryInfo, TreeNode
+from app.domain.models import CodeSymbol, FileMetadata, FilePreview, RepositoryInfo, SymbolMatch, TreeNode
 from app.domain.ports import FileMetadataRepositoryPort, GitClientPort
 from app.domain.tree_builder import build_tree
 from app.services.parsing_service import SymbolExtractionService
@@ -90,6 +90,11 @@ class IndexingService:
         info = self.get_repository(repository_id)
         files = self._file_repository.list_files(repository_id)
         return build_tree(info.name, files)
+
+    def search_symbols(self, repository_id: int, query: str, limit: int = 50) -> list[SymbolMatch]:
+        """Workspace symbol search over the indexed classes, functions, and methods."""
+        self.get_repository(repository_id)
+        return self._symbol_extraction_service.search(repository_id, query, limit)
 
     def get_symbols(self, file_id: int) -> list[CodeSymbol]:
         if self._file_repository.get_file(file_id) is None:

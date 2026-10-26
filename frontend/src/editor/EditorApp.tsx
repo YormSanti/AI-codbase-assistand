@@ -158,6 +158,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
     if (requestedView === "search" && repository) openSearch();
     else if (requestedView === "git") openGit();
     else if (requestedView === "ai") openAi();
+    else if (requestedView === "symbols" && repository) onCommand?.("openSymbol");
     onRequestedViewHandled?.();
     // openX are stable closures over state setters; re-running on their identity would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,7 +220,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
       <Menubar.Item className="ifrog-editor-menu-item" onSelect={openSettings}>Editor Settings<kbd>Ctrl/Cmd ,</kbd></Menubar.Item>
     </> },
     { label: "Go", items: <>
-      {commandItem("Go to File…", "openFile", "Ctrl/Cmd P")}{commandItem("Go to Line…", "goToLine", "Ctrl/Cmd G", true)}
+      {commandItem("Go to File…", "openFile", "Ctrl/Cmd P")}{commandItem("Go to Symbol in Workspace…", "openSymbol", "Ctrl/Cmd T")}{commandItem("Go to Line…", "goToLine", "Ctrl/Cmd G", true)}
       <Menubar.Separator className="ifrog-editor-menu-separator" />
       {commandItem("Previous Editor", "previousFile", "Ctrl/Cmd Alt ←", true)}{commandItem("Next Editor", "nextFile", "Ctrl/Cmd Alt →", true)}
     </> },
@@ -330,7 +331,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
           <Dialog.Content className="ifrog-editor-help">
             <Dialog.Title>Keyboard Shortcuts</Dialog.Title>
             <Dialog.Description>Use Ctrl on Linux and Windows, or Cmd on macOS.</Dialog.Description>
-            <dl>{[["Go to File", "Ctrl/Cmd P"], ["Save", "Ctrl/Cmd S"], ["Save All", "Ctrl/Cmd Shift S"], ["Close Editor", "Ctrl/Cmd W"], ["Find / Replace", "Ctrl/Cmd F"], ["Search in Files", "Ctrl/Cmd Shift F"], ["Go to Line", "Ctrl/Cmd G"], ["Undo", "Ctrl/Cmd Z"], ["Redo", "Ctrl/Cmd Shift Z"], ["Extensions", "Ctrl/Cmd Shift X"], ["Editor Settings", "Ctrl/Cmd ,"], ["Toggle Terminal", "Ctrl/Cmd `"]].map(([label, shortcut]) => <div key={label}><dt>{label}</dt><dd><kbd>{shortcut}</kbd></dd></div>)}</dl>
+            <dl>{[["Go to File", "Ctrl/Cmd P"], ["Go to Symbol", "Ctrl/Cmd T"], ["Save", "Ctrl/Cmd S"], ["Save All", "Ctrl/Cmd Shift S"], ["Close Editor", "Ctrl/Cmd W"], ["Find / Replace", "Ctrl/Cmd F"], ["Search in Files", "Ctrl/Cmd Shift F"], ["Go to Line", "Ctrl/Cmd G"], ["Undo", "Ctrl/Cmd Z"], ["Redo", "Ctrl/Cmd Shift Z"], ["Extensions", "Ctrl/Cmd Shift X"], ["Editor Settings", "Ctrl/Cmd ,"], ["Toggle Terminal", "Ctrl/Cmd `"]].map(([label, shortcut]) => <div key={label}><dt>{label}</dt><dd><kbd>{shortcut}</kbd></dd></div>)}</dl>
             <Dialog.Close className="ifrog-editor-help-close" aria-label="Close keyboard shortcuts"><X size={17} /></Dialog.Close>
           </Dialog.Content>
         </Dialog.Portal>

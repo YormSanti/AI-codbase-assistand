@@ -81,3 +81,12 @@ export interface SearchResults {
   files_scanned: number;
   truncated: boolean;
 }
+
+export interface SymbolMatch {
+  name: string;
+  kind: SymbolKind;
+  path: string;
+  start_line: number;
+  end_line: number;
+  parent_name: string | null;
+}

@@ -97,3 +97,37 @@ def test_reindex_repository_endpoint(api_client: TestClient, git_repo_path: Path
 
 def test_reindex_unknown_repository_returns_404(api_client: TestClient) -> None:
     assert api_client.post("/api/repositories/999/reindex").status_code == 404
+
+
+def test_workspace_symbol_search_ranks_exact_then_prefix_then_substring(api_client: TestClient, tmp_path: Path) -> None:
+    root = tmp_path / "symbols"
+    root.mkdir()
+    (root / "models.py").write_text(
+        "import os\n\n"
+        "class Order:\n    def total(self):\n        return 0\n\n"
+        "class OrderLine:\n    pass\n\n"
+        "def build_order():\n    pass\n\n"
+        "def reorder_items():\n    pass\n"
+    )
+    (root / "web").mkdir()
+    (root / "web" / "orders.ts").write_text("export function loadOrders() { return []; }\nexport class Cart {}\n")
+    repo_id = api_client.post("/api/repositories/open", json={"path": str(root)}).json()["id"]
+
+    response = api_client.get(f"/api/repositories/{repo_id}/symbols", params={"q": "order"})
+    assert response.status_code == 200
+    names = [(hit["name"], hit["kind"], hit["path"]) for hit in response.json()]
+    assert names[0] == ("Order", "class", "models.py")
+    assert names[1] == ("OrderLine", "class", "models.py")
+    assert ("build_order", "function", "models.py") in names
+    assert ("loadOrders", "function", "web/orders.ts") in names
+    assert all(name != "os" for name, _, _ in names)  # imports are not workspace symbols
+
+    method = api_client.get(f"/api/repositories/{repo_id}/symbols", params={"q": "TOTAL"}).json()
+    assert method == [{"name": "total", "kind": "method", "path": "models.py", "start_line": 4, "end_line": 5, "parent_name": "Order"}]
+
+    # LIKE wildcards in the query are literal characters.
+    assert api_client.get(f"/api/repositories/{repo_id}/symbols", params={"q": "%"}).json() == []
+    assert api_client.get(f"/api/repositories/{repo_id}/symbols", params={"q": "_"}).json()[0]["name"] == "build_order"
+    assert len(api_client.get(f"/api/repositories/{repo_id}/symbols", params={"q": "o", "limit": 2}).json()) == 2
+    assert api_client.get(f"/api/repositories/{repo_id}/symbols", params={"q": ""}).status_code == 422
+    assert api_client.get("/api/repositories/999/symbols", params={"q": "x"}).status_code == 404

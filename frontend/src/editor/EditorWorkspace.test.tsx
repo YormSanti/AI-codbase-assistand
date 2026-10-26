@@ -2,6 +2,7 @@ import { useImperativeHandle, useState, type Ref } from "react";
 import { createRef } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { EditorWorkspaceHandle } from "./editorCommands";
+import { repositoryApi } from "../api/repositoryApi";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ExplorerPage } from "../components/ExplorerPage";
 import type { CodeEditorHandle } from "../components/CodeEditorSurface";
@@ -14,6 +15,7 @@ const nativeWindow = vi.hoisted(() => ({ onCloseRequested: vi.fn() }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => nativeWindow }));
 vi.mock("../api/editorApi", () => ({ editorApi: { getTree: vi.fn(), getContent: vi.fn(), getSymbols: vi.fn(), saveContent: vi.fn() } }));
 vi.mock("../api/fileApi", () => ({ fileApi: { getContent: vi.fn(), getSymbols: vi.fn(), saveContent: vi.fn() } }));
+vi.mock("../api/repositoryApi", () => ({ repositoryApi: { searchSymbols: vi.fn() } }));
 const surface = vi.hoisted(() => ({ goToLine: vi.fn() }));
 vi.mock("../components/CodeEditorSurface", () => ({ CodeEditorSurface: ({ ref, value, label, onChange, onSave, readOnly, active }: {
   ref: Ref<CodeEditorHandle>; value: string; label: string; onChange: (value: string) => void; onSave: () => void; readOnly: boolean; active: boolean;
@@ -158,4 +160,35 @@ it("reveals a search result by opening the file and moving to the line once it l
   await waitFor(() => expect(surface.goToLine).toHaveBeenCalledWith("Edit .env", 1));
   act(() => ref.current!.revealLine("app.ts", 1));
   await waitFor(() => expect(surface.goToLine).toHaveBeenCalledWith("Edit app.ts", 1));
+});
+
+it("finds a workspace symbol with Ctrl+T and opens its file at the definition", async () => {
+  vi.mocked(repositoryApi.searchSymbols).mockResolvedValue([
+    { name: "main", kind: "function", path: "app.ts", start_line: 3, end_line: 9, parent_name: null },
+    { name: "render", kind: "method", path: ".env", start_line: 1, end_line: 2, parent_name: "View" },
+  ]);
+  render(<Workspace />);
+  await screen.findByRole("textbox", { name: "Edit app.ts" });
+  await screen.findByRole("treeitem", { name: ".env" });
+  fireEvent.keyDown(window, { key: "t", ctrlKey: true });
+  const input = await screen.findByRole("textbox", { name: "Search project files" });
+  expect(input).toHaveValue("#");
+  expect(screen.getByText("Type a class, function, or method name.")).toBeInTheDocument();
+  fireEvent.change(input, { target: { value: "#ren" } });
+  expect(await screen.findByRole("option", { name: /View\.render/ })).toBeInTheDocument();
+  expect(repositoryApi.searchSymbols).toHaveBeenCalledWith(4, "ren");
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await screen.findByRole("textbox", { name: "Edit .env" });
+  await waitFor(() => expect(surface.goToLine).toHaveBeenCalledWith("Edit .env", 1));
+  expect(screen.queryByRole("textbox", { name: "Search project files" })).toBeNull();
+});
+
+it("explains when no symbols match", async () => {
+  vi.mocked(repositoryApi.searchSymbols).mockResolvedValue([]);
+  render(<Workspace />);
+  await screen.findByRole("textbox", { name: "Edit app.ts" });
+  fireEvent.keyDown(window, { key: "t", ctrlKey: true });
+  fireEvent.change(await screen.findByRole("textbox", { name: "Search project files" }), { target: { value: "#nothing" } });
+  expect(await screen.findByText(/No matching symbols/)).toBeInTheDocument();
 });

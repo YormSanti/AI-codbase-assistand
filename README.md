@@ -160,6 +160,14 @@ Explorer and the editor retains all open file drafts, including editor-only
 files hidden from File Explorer. Leaving the workspace, changing projects,
 or closing IFROG asks before discarding any unsaved files.
 
+**Go to Symbol in Workspace** (**Ctrl/Cmd+T**, **Go > Go to Symbol in
+Workspace…**, or `#` at the start of **Go to File**) searches the indexed
+classes, functions, and methods by name. Exact names rank first, then
+prefixes, then other matches; methods show their class. Enter opens the
+file at the definition. Symbols come from the Tree-sitter index, so they
+cover Python, JavaScript, and TypeScript files. API:
+`GET /api/repositories/{id}/symbols?q=name&limit=50`.
+
 **Search in files** (**Ctrl/Cmd+Shift+F**, the rail's magnifier-with-text
 icon, or **Edit > Search in Files…**) runs a plain-text search across every
 text file in the project, with a match-case toggle. Results group by file;
@@ -234,8 +242,9 @@ Press **Ctrl/Cmd+K** (or **Ctrl/Cmd+Shift+P** anywhere, including the code
 editor and terminal where Ctrl+K has its own meaning) or click **Commands**
 in the header to open the command palette. Type to filter, use the arrow
 keys, and press Enter. It lists every page, each project IFROG has opened
-before (switching projects without the sidebar), **Open Source Control** and
-**Search in files** (which enter the editor with that view already open),
+before (switching projects without the sidebar), **Open Source Control**,
+**Search in files**, and **Go to symbol in workspace** (which enter the editor
+with that view already open),
 **Re-index project**, and a theme switch. Entries that need a project are
 hidden until one is open.
 

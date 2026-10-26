@@ -242,3 +242,11 @@ it("hands a Source Control diff review to the AI Assistant as an editable draft"
   expect((composer as HTMLTextAreaElement).value).toContain("+new line");
   expect(screen.getByRole("button", { name: "AI Assistant" })).toHaveAttribute("aria-pressed", "true");
 });
+
+it("asks the workspace to open symbol search when that view is requested", async () => {
+  const onCommand = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onCommand={onCommand} requestedView="symbols" onRequestedViewHandled={vi.fn()}>
+    <span>workspace</span>
+  </EditorApp>);
+  await waitFor(() => expect(onCommand).toHaveBeenCalledWith("openSymbol"));
+});

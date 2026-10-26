@@ -92,6 +92,8 @@ setup when this phase starts.*
 - [x] Reopening a project costs one `stat` per unchanged file (size + mtime
   shortcut); `migrate_schema` upgrades existing SQLite files
 - [x] Project-wide **Search in files** (Ctrl/Cmd+Shift+F) with jump-to-line
+- [x] **Go to Symbol in Workspace** (Ctrl/Cmd+T or `#` in Go to File) over the
+  Tree-sitter symbol index, ranked exact > prefix > substring
 - [ ] Replace native `window.confirm` prompts with in-app dialogs
 
 ## Environment notes

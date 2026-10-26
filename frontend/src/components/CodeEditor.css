@@ -161,3 +161,7 @@
   .vscode-editor-actions { padding: 5px 7px; width: 100%; justify-content: flex-end; }
   .vscode-file-status > div > span:nth-child(2), .vscode-file-status > div > span:nth-child(3) { display: none; }
 }
+.vscode-symbol-kind { display: inline-grid; place-items: center; width: 18px; height: 18px; flex-shrink: 0; border-radius: 4px; font: 600 11px var(--font-code, monospace); }
+.vscode-symbol-kind.kind-class { color: #b180d7; background: rgba(177, 128, 215, 0.14); }
+.vscode-symbol-kind.kind-function { color: #3b9ee5; background: rgba(59, 158, 229, 0.14); }
+.vscode-symbol-kind.kind-method { color: #29a37a; background: rgba(41, 163, 122, 0.14); }

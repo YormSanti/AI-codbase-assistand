@@ -1,11 +1,14 @@
 """Repository indexing endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.api.deps import IndexingServiceDep
 from app.api.schemas import OpenRepositoryRequest, RepositoryResponse, TreeNodeResponse
 from app.domain.exceptions import NotAGitRepositoryError, RepositoryNotFoundError
+from app.domain.models import SymbolMatch
 
 router = APIRouter(prefix="/api/repositories", tags=["repositories"])
 
@@ -61,3 +64,17 @@ def get_repository_tree(repository_id: int, service: IndexingServiceDep) -> Tree
     except RepositoryNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return TreeNodeResponse.from_domain(tree)
+
+
+@router.get("/{repository_id}/symbols", response_model=list[SymbolMatch])
+def search_symbols(
+    repository_id: int,
+    service: IndexingServiceDep,
+    q: Annotated[str, Query(min_length=1, max_length=200)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[SymbolMatch]:
+    """Indexed classes, functions, and methods whose name contains `q` (case-insensitive)."""
+    try:
+        return service.search_symbols(repository_id, q, limit)
+    except RepositoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

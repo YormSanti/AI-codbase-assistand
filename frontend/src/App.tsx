@@ -10,7 +10,6 @@ import { DashboardPage } from "@/components/DashboardPage";
 import { ExplorerPage } from "@/components/ExplorerPage";
 import { EditorApp } from "./editor/EditorApp";
 import type { EditorToolView, EditorWorkspaceHandle } from "./editor/editorCommands";
-import { TextSearch } from "lucide-react";
 import { PageFallback } from "@/components/PageFallback";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -24,7 +23,7 @@ const AnalyticsPage = lazy(() => import("@/components/AnalyticsPage").then(m => 
 const SettingsPage = lazy(() => import("@/components/SettingsPage").then(m => ({ default: m.SettingsPage })));
 
 import type { FilePreview, RepositoryInfo, TreeNode } from "./types/domain";
-import { AlertCircle, BarChart3, Bot, Code2, Folder, FolderOpen, GitBranch, LayoutDashboard, RefreshCw, Settings, SquareTerminal, SunMoon, X } from "lucide-react";
+import { AlertCircle, BarChart3, Bot, Braces, Code2, Folder, FolderOpen, GitBranch, LayoutDashboard, RefreshCw, Settings, SquareTerminal, SunMoon, TextSearch, X } from "lucide-react";
 import { CommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useAutoUpdater } from "./hooks/useAutoUpdater";
 import { useAppearance } from "./hooks/useAppearance";
@@ -353,6 +352,7 @@ export default function App() {
     })),
     { id: "source-control", label: "Open Source Control", group: "Editor", icon: GitBranch, disabled: !repository, keywords: "git stage commit diff changes", run: () => openEditorView("git") },
     { id: "search-files", label: "Search in files", group: "Editor", icon: TextSearch, disabled: !repository, keywords: "find text grep", run: () => openEditorView("search") },
+    { id: "go-symbol", label: "Go to symbol in workspace", group: "Editor", icon: Braces, disabled: !repository, keywords: "class function method definition", run: () => openEditorView("symbols") },
     { id: "reindex", label: "Re-index project", group: "Actions", icon: RefreshCw, disabled: !repository || isLoading, keywords: "rescan symbols refresh", run: () => void handleReindex() },
     { id: "theme", label: resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme", group: "Actions", icon: SunMoon, keywords: "appearance", run: () => updateSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" }) },
   ];

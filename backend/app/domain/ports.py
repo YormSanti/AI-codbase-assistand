@@ -10,7 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from app.domain.git_models import CommitDetails, GitCommit, GitDiff, GitStatus, StagedDiff
-from app.domain.models import CodeSymbol, FileMetadata, FileSyncResult, Language, RepositoryInfo
+from app.domain.models import CodeSymbol, FileMetadata, FileSyncResult, Language, RepositoryInfo, SymbolMatch
 
 
 class GitReviewPort(ABC):
@@ -125,3 +125,7 @@ class SymbolRepositoryPort(ABC):
 
     @abstractmethod
     def list_symbols_for_file(self, file_id: int) -> list[CodeSymbol]: ...
+
+    @abstractmethod
+    def search_symbols(self, repository_id: int, query: str, limit: int) -> list[SymbolMatch]:
+        """Classes, functions, and methods whose name contains `query`, best matches first."""

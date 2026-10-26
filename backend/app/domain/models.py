@@ -94,6 +94,18 @@ class CodeSymbol:
 
 
 @dataclass(frozen=True, slots=True)
+class SymbolMatch:
+    """A workspace symbol search hit: the symbol and where it is defined."""
+
+    name: str
+    kind: SymbolKind
+    path: str
+    start_line: int
+    end_line: int
+    parent_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RepositoryInfo:
     """Metadata about an opened Git repository."""
 
