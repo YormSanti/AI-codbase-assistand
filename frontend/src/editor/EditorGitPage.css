@@ -173,3 +173,5 @@
 .editor-git .editor-git-sync button { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border-radius: 4px; color: var(--git-muted); font-size: 11px; }
 .editor-git .editor-git-sync button:hover:not(:disabled) { background: var(--git-hover); color: inherit; }
 .editor-git .editor-git-sync button:disabled { opacity: .45; cursor: not-allowed; }
+.editor-git .editor-git-back-link { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; margin-right: 6px; border-radius: 4px; color: #23a9f2; font-size: 11px; }
+.editor-git .editor-git-back-link:hover { background: var(--git-hover); }

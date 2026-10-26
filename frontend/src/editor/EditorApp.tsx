@@ -6,6 +6,7 @@ import { PageFallback } from "../components/PageFallback";
 import { ThemeToggle } from "../components/ThemeToggle";
 import type { EditorCommand, EditorToolView } from "./editorCommands";
 import "./EditorApp.css";
+import { EditorShellContext, type EditorShell } from "./editorShell";
 
 // Tool views load on first use so opening the editor does not fetch the
 // terminal emulator, AI console, marketplace, or settings up front.
@@ -51,6 +52,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   const [showGit, setShowGit] = useState(false);
   const gitVisible = active && showGit && gitRoot === (repository?.root_path ?? "");
   const [aiRoot, setAiRoot] = useState<string | null>(null);
+  const [historyRequest, setHistoryRequest] = useState<{ path: string; id: number } | null>(null);
   // Prompts drafted inside the editor (for example "Review with AI" on a diff).
   const [localAiPrompt, setLocalAiPrompt] = useState<string | null>(null);
   const [showAi, setShowAi] = useState(false);
@@ -167,6 +169,9 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
     // openX are stable closures over state setters; re-running on their identity would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, requestedView, repository?.root_path]);
+  const shell: EditorShell | null = active && repository ? {
+    showFileHistory: path => { setHistoryRequest({ path, id: Date.now() }); openGit(); },
+  } : null;
   const returnToCode = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(false); setShowSearch(false); };
   const toggleExplorerPanel = () => {
     if (toolVisible) {
@@ -271,10 +276,12 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
 
         <div ref={contentRef} className={active ? "ifrog-editor-content" : "ifrog-file-workspace-content"}>
           <div className={active ? "ifrog-editor-workspace" : "ifrog-file-workspace-page"} hidden={toolVisible}>
-            {typeof children === "function" ? children(!toolVisible) : children}
+            <EditorShellContext.Provider value={shell}>
+              {typeof children === "function" ? children(!toolVisible) : children}
+            </EditorShellContext.Provider>
           </div>
 
-          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><Suspense fallback={<PageFallback />}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} onAskAI={prompt => { setLocalAiPrompt(prompt); openAi(); }} workingTreeGuard={workingTreeGuard} onWorkingTreeChanged={() => { onCommand?.("refreshFiles"); onWorkingTreeChanged?.(); }} /></Suspense></div>}
+          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><Suspense fallback={<PageFallback />}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} onAskAI={prompt => { setLocalAiPrompt(prompt); openAi(); }} workingTreeGuard={workingTreeGuard} onWorkingTreeChanged={() => { onCommand?.("refreshFiles"); onWorkingTreeChanged?.(); }} historyRequest={historyRequest} onHistoryHandled={() => setHistoryRequest(null)} /></Suspense></div>}
 
           {aiRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-ai-view" hidden={!aiVisible}>
             <header className="editor-git-header">

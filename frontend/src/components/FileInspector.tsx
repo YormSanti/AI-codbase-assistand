@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Copy,
   FileCode2,
+  History,
   LoaderCircle,
   MessageSquareCode,
   Pencil,
@@ -27,6 +28,7 @@ import { useAppSettings } from "../hooks/useAppSettings";
 import { affectsPath, FILES_CHANGED_EVENT, type FilesChangedDetail } from "../lib/fileEvents";
 import type { CodeEditorHandle } from "./CodeEditorSurface";
 import type { EditorCommand } from "../editor/editorCommands";
+import { useEditorShell } from "../editor/editorShell";
 
 const CodeEditorSurface = lazy(async () => ({ default: (await import("./CodeEditorSurface")).CodeEditorSurface }));
 
@@ -114,6 +116,7 @@ export function FileInspector({
   const gutterRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<HTMLDivElement>(null);
   const codeEditorRef = useRef<CodeEditorHandle>(null);
+  const shell = useEditorShell();
   const pendingLine = useRef<number | null>(null);
   const attachCodeEditor = useCallback((handle: CodeEditorHandle | null) => {
     codeEditorRef.current = handle;
@@ -377,6 +380,7 @@ export function FileInspector({
         </div>}
 
         <div className={autoEdit ? "vscode-editor-actions" : "flex items-center gap-1.5"}>
+          {shell && autoEdit && <Button variant="ghost" size="icon" className="size-8" aria-label="File history" title="Show the commits that changed this file" onClick={() => shell.showFileHistory(file.path)}><History className="h-3.5 w-3.5" /></Button>}
           {autoEdit && isEditing && <>
             <Button variant="ghost" size="icon" className="size-8" aria-label="Undo" title="Undo (Ctrl/Cmd+Z)" disabled={isSaving || readOnly} onClick={() => codeEditorRef.current?.undo()}><Undo2 className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="size-8" aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)" disabled={isSaving || readOnly} onClick={() => codeEditorRef.current?.redo()}><Redo2 className="h-3.5 w-3.5" /></Button>

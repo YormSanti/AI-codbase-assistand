@@ -4,11 +4,17 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { RepositoryInfo } from "../types/domain";
 import { EditorApp } from "./EditorApp";
 import { gitApi } from "../api/gitApi";
+import { useEditorShell } from "./editorShell";
+
+function HistoryButton() {
+  const shell = useEditorShell();
+  return shell ? <button type="button" onClick={() => shell.showFileHistory("src/a.ts")}>Show history</button> : <span>no shell</span>;
+}
 
 const shells = vi.hoisted(() => ({ start: vi.fn(), close: vi.fn() }));
 vi.mock("../components/ThemeToggle", () => ({ ThemeToggle: () => null }));
 vi.mock("../api/editorApi", () => ({ editorApi: { search: vi.fn().mockResolvedValue({ query: "draft", matches: [{ path: "src/a.ts", line: 3, column: 1, text: "draft line" }], files_scanned: 1, truncated: false }) } }));
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn().mockResolvedValue({ branch: "main", changes: [], commits: [], head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null }), getDiff: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn().mockResolvedValue({ branch: "main", changes: [], commits: [], head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null }), getDiff: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn(), getFileHistory: vi.fn() } }));
 vi.mock("../components/TerminalPage", () => ({ TerminalPage: ({ repository }: { repository: RepositoryInfo }) => {
   const [command, setCommand] = useState("");
   useEffect(() => { shells.start(repository.root_path); return () => { shells.close(repository.root_path); }; }, [repository.root_path]);
@@ -268,4 +274,16 @@ it("refreshes the file tree and notifies the app after Source Control switches b
   fireEvent.click(await screen.findByRole("option", { name: /^topic/ }));
   await waitFor(() => expect(onWorkingTreeChanged).toHaveBeenCalledTimes(1));
   expect(onCommand).toHaveBeenCalledWith("refreshFiles");
+});
+
+it("lets documents open their file history in Source Control through the editor shell", async () => {
+  vi.mocked(gitApi.getStatus).mockResolvedValue({ branch: "main", head_commit: "abc", upstream: null, ahead: null, behind: null, remote_url: null, commits: [], changes: [] });
+  vi.mocked(gitApi.getFileHistory).mockResolvedValue({ path: "src/a.ts", commits: [{ sha: "abc1234", message: "Add a", author: "Dev", committed_at: "2026-10-01T00:00:00Z" }] });
+  const view = render(<EditorApp active={false} repository={repository} isLoading={false} onNavigate={vi.fn()}><HistoryButton /></EditorApp>);
+  expect(screen.getByText("no shell")).toBeInTheDocument(); // File Explorer mode has no editor shell
+  view.rerender(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()}><HistoryButton /></EditorApp>);
+  fireEvent.click(screen.getByRole("button", { name: "Show history" }));
+  expect(await screen.findByRole("region", { name: "History of src/a.ts" }, { timeout: 5000 })).toBeInTheDocument();
+  expect(await screen.findByText("Add a")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Git Repository" })).toHaveAttribute("aria-pressed", "true");
 });

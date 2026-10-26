@@ -72,3 +72,10 @@ export interface BranchList {
   /** Local branches, most recently committed first. */
   branches: BranchInfo[];
 }
+
+export interface FileHistory {
+  /** Path relative to the Git repository root (may differ from the editor's path in a subfolder workspace). */
+  path: string;
+  /** Newest first, following renames. */
+  commits: GitCommit[];
+}

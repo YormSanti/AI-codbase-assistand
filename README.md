@@ -209,6 +209,12 @@ project index refresh. API: `GET /api/repositories/{id}/git/branches`,
 `POST .../git/checkout` with `{ "branch": "..." }`, and `POST .../git/branches`
 with `{ "name": "...", "checkout": true }`.
 
+The **History** button on an editor tab lists the commits that changed that
+file, newest first, following renames (it works in a subfolder workspace
+too). Open one to see the commit with that file's diff already selected;
+**History** in the commit toolbar goes back to the list. API:
+`GET /api/repositories/{id}/git/history?path=...&limit=50`.
+
 Click a commit in the overview's history to open it: the message and body,
 author, date, parent (merges are compared with their first parent), and the
 changed files with their status and added/removed line counts. Select a

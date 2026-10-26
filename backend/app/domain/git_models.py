@@ -32,6 +32,14 @@ class GitStatus:
 
 
 @dataclass
+class FileHistory:
+    path: str
+    """The file's path relative to the Git repository root (it may differ from the editor's path)."""
+    commits: list[GitCommit]
+    """Newest first, following renames."""
+
+
+@dataclass
 class BranchInfo:
     name: str
     upstream: str | None

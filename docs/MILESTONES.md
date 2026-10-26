@@ -68,6 +68,8 @@ setup when this phase starts.*
   unsaved drafts), and create from the current commit
 - [x] Fetch, fast-forward-only pull, and push/publish from Source Control,
   without ever blocking on credential prompts
+- [x] File history from an editor tab (`git log --follow`), opening each
+  commit with that file selected
 - [x] Live Git data on the Dashboard and Git Repository page (branch,
   upstream ahead/behind, working tree summary, recent commits), honoring the
   Git refresh interval setting

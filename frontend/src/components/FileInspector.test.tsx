@@ -6,6 +6,7 @@ import { ApiError } from "../api/client";
 import type { TreeNode } from "../types/domain";
 import { FileInspector } from "./FileInspector";
 import { announceFilesChanged } from "../lib/fileEvents";
+import { EditorShellContext } from "../editor/editorShell";
 
 const nativeWindow = vi.hoisted(() => ({ onCloseRequested: vi.fn() }));
 vi.mock("../api/editorApi", () => ({ editorApi: { getContent: vi.fn(), getSymbols: vi.fn(), saveContent: vi.fn() } }));
@@ -85,6 +86,17 @@ describe("FileInspector", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     return screen.getByRole("textbox", { name: "Edit main.py" });
   }
+
+  it("offers file history only inside the editor shell", async () => {
+    const showFileHistory = vi.fn();
+    const view = render(<FileInspector file={file} onClose={vi.fn()} autoEdit />);
+    await screen.findByRole("textbox", { name: "Edit main.py" });
+    expect(screen.queryByRole("button", { name: "File history" })).toBeNull();
+    view.unmount();
+    render(<EditorShellContext.Provider value={{ showFileHistory }}><FileInspector file={file} onClose={vi.fn()} autoEdit /></EditorShellContext.Provider>);
+    fireEvent.click(await screen.findByRole("button", { name: "File history" }));
+    expect(showFileHistory).toHaveBeenCalledWith("src/main.py");
+  });
 
   it("renders indexed source and its symbol outline", async () => {
     render(<FileInspector file={file} onClose={vi.fn()} />);

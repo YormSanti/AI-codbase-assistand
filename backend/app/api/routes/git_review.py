@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.deps import GitReviewServiceDep
 from app.api.schemas import GitCommitRequest, GitCreateBranchRequest, GitPathsRequest, GitSwitchBranchRequest
 from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError, RepositoryNotFoundError
-from app.domain.git_models import BranchList, CommitDetails, GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import BranchList, CommitDetails, FileHistory, GitDiff, GitStatus, StagedDiff
 
 router = APIRouter(prefix="/api/repositories", tags=["git"])
 
@@ -66,6 +66,17 @@ def get_commit_diff(
 ) -> GitDiff:
     """One changed file's patch within a commit, compared with its first parent."""
     return _run_action(lambda: service.get_commit_diff(repository_id, sha, path))
+
+
+@router.get("/{repository_id}/git/history", response_model=FileHistory)
+def get_file_history(
+    repository_id: int,
+    service: GitReviewServiceDep,
+    path: Annotated[str, Query(min_length=1)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> FileHistory:
+    """Commits that changed one file (path relative to the opened folder), newest first, following renames."""
+    return _run_action(lambda: service.get_file_history(repository_id, path, limit))
 
 
 @router.get("/{repository_id}/git/staged-diff", response_model=StagedDiff)

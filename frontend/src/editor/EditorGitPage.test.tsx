@@ -7,7 +7,7 @@ import { ConfirmProvider } from "../components/ConfirmDialog";
 import { FILES_CHANGED_EVENT } from "../lib/fileEvents";
 import { parseGitDiff, splitGitDiff } from "./gitDiff";
 
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), commit: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn(), fetch: vi.fn(), pull: vi.fn(), push: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), commit: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn(), fetch: vi.fn(), pull: vi.fn(), push: vi.fn(), getFileHistory: vi.fn() } }));
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 const repository = { id: 1, name: "project", root_path: "/project", current_branch: "santi", head_commit: "abc1234", opened_at: null, file_count: 4 };
@@ -407,4 +407,39 @@ it("offers to publish an unpublished branch and shows remote errors", async () =
   expect(screen.getByRole("button", { name: /^Pull/ })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Publish branch" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("terminal prompts disabled");
+});
+
+it("shows a file's history on request and opens a commit with that file selected", async () => {
+  vi.mocked(gitApi.getFileHistory).mockResolvedValue({ path: "frontend/src/main.ts", commits: [
+    { sha: "aaa1111bbbb", message: "Rename entry point", author: "KSK", committed_at: new Date(Date.now() - 3_600_000).toISOString() },
+    { sha: "ccc2222dddd", message: "Create entry point", author: "Dev", committed_at: new Date(Date.now() - 86_400_000 * 3).toISOString() },
+  ] });
+  vi.mocked(gitApi.getCommit).mockResolvedValue({ ...commitDetails, sha: "aaa1111bbbb", files: [
+    { path: "README.md", status: "M", original_path: null, additions: 1, deletions: 0 },
+    { path: "frontend/src/main.ts", status: "R", original_path: "frontend/src/index.ts", additions: 0, deletions: 0 },
+  ] });
+  vi.mocked(gitApi.getCommitDiff).mockResolvedValue({ ...patch("history change"), path: "frontend/src/main.ts" });
+  const onHistoryHandled = vi.fn();
+  render(<EditorGitPage {...props} historyRequest={{ path: "src/main.ts", id: 1 }} onHistoryHandled={onHistoryHandled} />);
+  const history = await screen.findByRole("region", { name: "History of src/main.ts" });
+  expect(onHistoryHandled).toHaveBeenCalledTimes(1);
+  expect(gitApi.getFileHistory).toHaveBeenCalledWith(1, "src/main.ts");
+  expect(await within(history).findByText("Rename entry point")).toBeInTheDocument();
+  expect(within(history).getByText("History of frontend/src/main.ts")).toBeInTheDocument();
+
+  fireEvent.click(within(history).getByRole("button", { name: "Open commit aaa1111: Rename entry point" }));
+  await waitFor(() => expect(gitApi.getCommitDiff).toHaveBeenCalledWith(1, "aaa1111bbbb", "frontend/src/main.ts"));
+  expect(screen.getByRole("button", { name: "Renamed: frontend/src/main.ts" })).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+  expect(await screen.findByRole("region", { name: "History of src/main.ts" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Repository overview" }));
+  expect(await screen.findByText("3 changed files")).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: /History of/ })).toBeNull();
+});
+
+it("explains a file without commits", async () => {
+  vi.mocked(gitApi.getFileHistory).mockResolvedValue({ path: "new.txt", commits: [] });
+  render(<EditorGitPage {...props} historyRequest={{ path: "new.txt", id: 2 }} />);
+  expect(await screen.findByText("No commits have changed this file yet.")).toBeInTheDocument();
 });

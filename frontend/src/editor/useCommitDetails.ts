@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { gitApi } from "../api/gitApi";
 import type { CommitDetails, GitDiff } from "../types/git";
 
@@ -6,8 +6,13 @@ interface Loaded<T> { key: string; data: T | null; error: string | null }
 
 const message = (reason: unknown, fallback: string) => reason instanceof Error ? reason.message : fallback;
 
-/** One commit's details and the diff of the selected file; late responses for other commits are ignored. */
-export function useCommitDetails(repositoryId: number | null, sha: string | null) {
+/**
+ * One commit's details and the diff of the selected file; late responses for other commits are ignored.
+ * `preferredPath` (repository-relative) is selected when the commit changed it, otherwise the first file.
+ */
+export function useCommitDetails(repositoryId: number | null, sha: string | null, preferredPath: string | null = null) {
+  const preferred = useRef(preferredPath);
+  preferred.current = preferredPath;
   const key = repositoryId !== null && sha ? `${repositoryId}:${sha}` : null;
   const [details, setDetails] = useState<Loaded<CommitDetails> | null>(null);
   const [selected, setSelected] = useState<{ key: string; path: string } | null>(null);
@@ -22,7 +27,8 @@ export function useCommitDetails(repositoryId: number | null, sha: string | null
     gitApi.getCommit(repositoryId, sha).then(data => {
       if (!current) return;
       setDetails({ key, data, error: null });
-      setSelected(data.files[0] ? { key, path: data.files[0].path } : null);
+      const initial = data.files.find(file => file.path === preferred.current) ?? data.files[0];
+      setSelected(initial ? { key, path: initial.path } : null);
     }).catch(reason => { if (current) setDetails({ key, data: null, error: message(reason, "Could not read this commit.") }); });
     return () => { current = false; };
   }, [key, repositoryId, sha]);

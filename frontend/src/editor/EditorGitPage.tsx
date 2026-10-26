@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowDownToLine, ArrowLeft, ArrowUp, ArrowUpFromLine, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, Minus, Plus, RefreshCcw, RefreshCw, Sparkles, TriangleAlert, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import type { RepositoryInfo } from "../types/domain";
@@ -14,6 +14,8 @@ import { PROVIDER_NAMES } from "../lib/providers";
 import { useConfirm } from "../hooks/useConfirm";
 import { announceFilesChanged } from "../lib/fileEvents";
 import { BranchPicker } from "./BranchPicker";
+import type { FileHistory } from "../types/git";
+import { formatRelativeTime } from "../lib/time";
 import "./EditorGitPage.css";
 
 interface Props {
@@ -27,6 +29,9 @@ interface Props {
   workingTreeGuard?: (action: string) => string | null;
   /** Called after Git rewrote the working tree (branch switch, pull), so the app can refresh files and the index. */
   onWorkingTreeChanged?: () => void;
+  /** Show the commit history of this file (path relative to the opened folder). */
+  historyRequest?: { path: string; id: number } | null;
+  onHistoryHandled?: () => void;
 }
 
 const diffScopes: Record<ChangeGroup, DiffScope> = { staged: "staged", changes: "working tree", conflicts: "merge conflict" };
@@ -41,12 +46,35 @@ const commitStatusNames: Record<string, string> = { A: "Added", M: "Modified", D
 function subjectOf(message: string) { return message.split("\n", 1)[0]; }
 function bodyOf(message: string) { return message.split("\n").slice(1).join("\n").trim(); }
 
-export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAskAI, workingTreeGuard, onWorkingTreeChanged }: Props) {
+export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAskAI, workingTreeGuard, onWorkingTreeChanged, historyRequest, onHistoryHandled }: Props) {
   const review = useGitReview(repository?.id ?? null, active);
   const [expanded, setExpanded] = useState<Record<ChangeGroup, boolean>>({ conflicts: true, staged: true, changes: true });
   const [layout, setLayout] = useState<"split" | "unified">("split");
   const [commitSha, setCommitSha] = useState<string | null>(null);
-  const commitView = useCommitDetails(repository?.id ?? null, commitSha);
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ path: string; data: FileHistory | null; error: string | null } | null>(null);
+  const historyData = history?.path === historyPath ? history : null;
+  const commitView = useCommitDetails(repository?.id ?? null, commitSha, historyData?.data?.path ?? null);
+
+  useEffect(() => {
+    if (!historyRequest) return;
+    review.select(null);
+    setCommitSha(null);
+    setHistoryPath(historyRequest.path);
+    onHistoryHandled?.();
+    // review.select is a new closure each render; only a new request should run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyRequest]);
+
+  useEffect(() => {
+    if (!historyPath || !repository) return;
+    let current = true;
+    setHistory({ path: historyPath, data: null, error: null });
+    gitApi.getFileHistory(repository.id, historyPath)
+      .then(data => { if (current) setHistory({ path: historyPath, data, error: null }); })
+      .catch(reason => { if (current) setHistory({ path: historyPath, data: null, error: reason instanceof Error ? reason.message : "Could not read this file's history." }); });
+    return () => { current = false; };
+  }, [historyPath, repository]);
   const [copied, setCopied] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -59,9 +87,9 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
   const { added, removed } = diffCounts(lines);
   const commitLines = useMemo(() => parseGitDiff(commitView.patch?.content ?? ""), [commitView.patch]);
   const commitCounts = diffCounts(commitLines);
-  const openChange = (path: string, group: ChangeGroup) => { setCommitSha(null); review.select({ path, group }); };
+  const openChange = (path: string, group: ChangeGroup) => { setCommitSha(null); setHistoryPath(null); review.select({ path, group }); };
   const openCommit = (sha: string) => { review.select(null); setCommitSha(sha); };
-  const showOverview = () => { setCommitSha(null); review.select(null); };
+  const showOverview = () => { setCommitSha(null); setHistoryPath(null); review.select(null); };
   const groups = (Object.keys(groupNames) as ChangeGroup[]).map(group => ({ group, changes: groupChanges(status?.changes ?? [], group) }));
   const branch = status?.branch ?? (status?.head_commit ? "Detached HEAD" : "No commits yet");
   const stagedCount = groups.find(item => item.group === "staged")?.changes.length ?? 0;
@@ -210,7 +238,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
           <button type="button" aria-label={`Pull${status.behind ? ` ${status.behind} ${status.behind === 1 ? "commit" : "commits"}` : ""}`} title="Pull (fast-forward only)" disabled={review.busy || !status.upstream} onClick={() => void sync("pull")}><ArrowDownToLine size={13} /><span>{status.behind ?? 0}</span></button>
           <button type="button" aria-label={status.upstream ? `Push${status.ahead ? ` ${status.ahead} ${status.ahead === 1 ? "commit" : "commits"}` : ""}` : "Publish branch"} title={status.upstream ? `Push to ${status.upstream}` : "Publish this branch to the remote"} disabled={review.busy || !status.branch || !status.head_commit} onClick={() => void sync("push")}><ArrowUpFromLine size={13} /><span>{status.upstream ? status.ahead ?? 0 : "Publish"}</span></button>
         </div>}
-        <button type="button" className={`editor-git-overview-link ${!review.selection && !commitSha ? "is-selected" : ""}`} onClick={showOverview}><History size={15} /><span>Repository overview</span></button>
+        <button type="button" className={`editor-git-overview-link ${!review.selection && !commitSha && !historyPath ? "is-selected" : ""}`} onClick={showOverview}><History size={15} /><span>Repository overview</span></button>
         <div className="editor-git-change-list">
           {groups.map(({ group, changes }) => changes.length > 0 && <div className="editor-git-change-group" key={group}>
             <div className="editor-git-group">
@@ -239,7 +267,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
       </aside>
 
       <div className="editor-git-main">
-        <header className="editor-git-header"><div className="editor-git-tab"><GitBranch size={15} /><span>{review.selection ? fileName(review.selection.path) : commitSha ? `Commit ${commitSha.slice(0, 7)}` : "Git Repository"}</span></div><div className="editor-git-header-actions">{status?.remote_url && <button type="button" title={status.remote_url} onClick={() => void openRemote()}><ExternalLink size={14} /><span>Open remote</span></button>}<button type="button" onClick={onReturn}><ArrowLeft size={14} /><span>Back to code</span></button></div></header>
+        <header className="editor-git-header"><div className="editor-git-tab"><GitBranch size={15} /><span>{review.selection ? fileName(review.selection.path) : commitSha ? `Commit ${commitSha.slice(0, 7)}` : historyPath ? `History · ${fileName(historyPath)}` : "Git Repository"}</span></div><div className="editor-git-header-actions">{status?.remote_url && <button type="button" title={status.remote_url} onClick={() => void openRemote()}><ExternalLink size={14} /><span>Open remote</span></button>}<button type="button" onClick={onReturn}><ArrowLeft size={14} /><span>Back to code</span></button></div></header>
         {review.error && <div className="editor-git-error" role="alert"><TriangleAlert size={15} /><span>{review.error}</span><button type="button" onClick={review.refresh}>Retry</button></div>}
         {review.actionError && <div className="editor-git-error" role="alert"><TriangleAlert size={15} /><span>{review.actionError}</span><button type="button" onClick={review.clearActionError}>Dismiss</button></div>}
         {notice && <div className="editor-git-error" role="alert">{notice}</div>}
@@ -250,7 +278,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
               : !commitView.details ? <div className="editor-git-empty"><LoaderCircle className="editor-git-spin" size={24} /><p>Loading commit…</p></div>
               : <>
                 <div className="editor-git-diff-toolbar">
-                  <div><span title={commitView.details.message}>{subjectOf(commitView.details.message)}</span><small>{commitView.details.files.length} {commitView.details.files.length === 1 ? "file" : "files"} changed</small></div>
+                  <div>{historyPath && <button type="button" className="editor-git-back-link" onClick={() => setCommitSha(null)}><ArrowLeft size={13} /><span>History</span></button>}<span title={commitView.details.message}>{subjectOf(commitView.details.message)}</span><small>{commitView.details.files.length} {commitView.details.files.length === 1 ? "file" : "files"} changed</small></div>
                   <div className="editor-git-diff-controls">
                     <button type="button" className="editor-git-commit-hash" aria-label={`Copy commit ${commitView.details.sha.slice(0, 7)}`} title={commitView.details.sha} onClick={() => void copyCommit(commitView.details!.sha)}><code>{commitView.details.sha.slice(0, 7)}</code>{copied === commitView.details.sha ? <Check size={13} /> : <Copy size={13} />}</button>
                     <button type="button" aria-label="Split diff" aria-pressed={layout === "split"} title="Side by side diff" onClick={() => setLayout("split")}><Columns2 size={15} /></button>
@@ -286,7 +314,13 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
           : review.selection ? <>
             <div className="editor-git-diff-toolbar"><div><span title={review.selection.path}>{review.selection.path}</span><small>{review.selection.group === "staged" ? "HEAD → Index" : review.selection.group === "conflicts" ? "Merge conflict" : "Index → Working tree"}</small></div><div className="editor-git-diff-controls">{review.patch && <span className="editor-git-diff-stats"><b>+{added}</b><b>−{removed}</b></span>}{onAskAI && <button type="button" className="editor-git-ai-review" title="Draft an AI review of this diff" disabled={!review.patch || review.patch.is_binary || !lines.length} onClick={() => { if (review.patch && review.selection) onAskAI(diffReviewPrompt(review.selection.path, diffScopes[review.selection.group], review.patch.content)); }}><Sparkles size={14} /><span>Review with AI</span></button>}<button type="button" aria-label="Split diff" aria-pressed={layout === "split" && review.selection.group !== "conflicts"} title={review.selection.group === "conflicts" ? "Merge conflicts use a unified diff" : "Side by side diff"} disabled={review.selection.group === "conflicts"} onClick={() => setLayout("split")}><Columns2 size={15} /></button><button type="button" aria-label="Unified diff" aria-pressed={layout === "unified" || review.selection.group === "conflicts"} title="Unified diff" onClick={() => setLayout("unified")}><List size={15} /></button></div></div>
             {review.diffLoading ? <div className="editor-git-empty"><LoaderCircle className="editor-git-spin" size={24} /><p>Loading diff…</p></div> : review.diffError ? <div className="editor-git-empty" role="alert"><TriangleAlert size={26} /><p>{review.diffError}</p><button type="button" className="editor-git-primary" onClick={review.refresh}>Retry diff</button></div> : review.patch?.is_binary ? <div className="editor-git-empty"><FileCode2 size={35} /><h2>Binary file</h2><p>A text diff is unavailable for this file.</p></div> : !lines.length ? <div className="editor-git-empty"><CheckCircle2 size={28} /><p>No text changes in this diff.</p><button type="button" onClick={review.refresh}>Refresh Git status</button></div> : <DiffView key={`${review.selection.group}:${review.selection.path}`} lines={lines} layout={review.selection.group === "conflicts" ? "unified" : layout} labels={review.selection.group === "staged" ? ["HEAD", "Index"] : ["Index", "Working tree"]} truncated={review.patch?.truncated} />}
-          </> : <div className="editor-git-overview">
+          </> : historyPath ? <div className="editor-git-overview" aria-label={`History of ${historyPath}`} role="region">
+            <div className="editor-git-history-heading"><div><History size={16} /><h2>History of {historyData?.data?.path ?? historyPath}</h2></div><span>{historyData?.data ? `${historyData.data.commits.length} ${historyData.data.commits.length === 1 ? "commit" : "commits"}${historyData.data.commits.length === 50 ? " (latest 50)" : ""}` : ""}</span></div>
+            {historyData?.error ? <div className="editor-git-empty" role="alert"><TriangleAlert size={26} /><p>{historyData.error}</p></div>
+              : !historyData?.data ? <div className="editor-git-empty"><LoaderCircle className="editor-git-spin" size={24} /><p>Reading history…</p></div>
+              : !historyData.data.commits.length ? <div className="editor-git-no-history"><GitCommitHorizontal size={25} /><p>No commits have changed this file yet.</p></div>
+              : <ol className="editor-git-history">{historyData.data.commits.map(commit => <li key={commit.sha}><span className="editor-git-history-dot"><GitCommitHorizontal size={17} /></span><button type="button" className="editor-git-history-open" aria-label={`Open commit ${commit.sha.slice(0, 7)}: ${commit.message}`} onClick={() => openCommit(commit.sha)}><strong>{commit.message}</strong><span>{commit.author}<span>·</span><time dateTime={commit.committed_at} title={new Date(commit.committed_at).toLocaleString()}>{formatRelativeTime(commit.committed_at)}</time></span></button><button type="button" className="editor-git-commit-hash" aria-label={`Copy commit ${commit.sha.slice(0, 7)}`} title={commit.sha} onClick={() => void copyCommit(commit.sha)}><code>{commit.sha.slice(0, 7)}</code>{copied === commit.sha ? <Check size={13} /> : <Copy size={13} />}</button></li>)}</ol>}
+          </div> : <div className="editor-git-overview">
             <div className="editor-git-hero"><div className="editor-git-hero-mark"><GitBranch size={25} /></div><div><p>REPOSITORY</p><h1>{status.remote_url?.split("/").pop() ?? repository.name}</h1><span title={repository.root_path}>{repository.root_path}</span></div><span className="editor-git-branch"><GitBranch size={13} />{branch}</span></div>
             <div className="editor-git-metrics"><div><span>Working tree</span><strong>{status.changes.length ? `${status.changes.length} changed ${status.changes.length === 1 ? "file" : "files"}` : "Working tree clean"}</strong><small>{groupChanges(status.changes, "staged").length} staged · {groupChanges(status.changes, "changes").length} unstaged{groupChanges(status.changes, "conflicts").length ? ` · ${groupChanges(status.changes, "conflicts").length} conflicts` : ""}</small></div><div><span>Upstream</span><strong>{status.upstream ?? "No upstream configured"}</strong><small><ArrowUp size={12} />{status.ahead ?? "—"} ahead <ArrowDown size={12} />{status.behind ?? "—"} behind</small></div><div><span>Latest commit</span><strong className="editor-git-mono">{status.head_commit?.slice(0, 7) ?? "No commits yet"}</strong><small>{status.commits[0]?.message ?? "Stage changes and commit from the sidebar."}</small></div></div>
             <div className="editor-git-history-heading"><div><History size={16} /><h2>Commit history</h2></div><span>{status.commits.length ? `Latest ${status.commits.length} commits` : ""}</span></div>

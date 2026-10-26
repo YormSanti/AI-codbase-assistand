@@ -624,3 +624,36 @@ def test_network_commands_do_not_wait_for_terminal_prompts(api_client: TestClien
     response = api_client.post(f"{base}/fetch")
     assert response.status_code == 409  # fails fast with Git's message instead of hanging
     assert response.json()["detail"]
+
+
+def test_file_history_follows_renames_and_maps_subfolder_paths(api_client: TestClient, git_repo_path: Path) -> None:
+    repo = Repo(git_repo_path)
+    (git_repo_path / "src" / "app.ts").write_text("export const x = 2;\n")
+    _commit_all(repo, "change app")
+    repo.git.mv("src/app.ts", "src/main.ts")
+    _commit_all(repo, "rename app to main")
+    (git_repo_path / "main.py").write_text("print('unrelated')\n")
+    _commit_all(repo, "unrelated change")
+
+    base = open_project(api_client, git_repo_path)
+    history = api_client.get(f"{base}/history", params={"path": "src/main.ts"}).json()
+    assert history["path"] == "src/main.ts"
+    assert [commit["message"] for commit in history["commits"]] == ["rename app to main", "change app", "initial commit"]
+    assert api_client.get(f"{base}/history", params={"path": "src/main.ts", "limit": 1}).json()["commits"][0]["message"] == "rename app to main"
+
+    subfolder = open_project(api_client, git_repo_path / "src")
+    scoped = api_client.get(f"{subfolder}/history", params={"path": "main.ts"}).json()
+    assert scoped["path"] == "src/main.ts"
+    assert len(scoped["commits"]) == 3
+
+    for bad in ["../main.py", "/etc/passwd", ".git/config"]:
+        assert api_client.get(f"{base}/history", params={"path": bad}).status_code == 409, bad
+    assert api_client.get(f"{base}/history", params={"path": "never-existed.txt"}).json()["commits"] == []
+
+
+def test_file_history_of_a_repository_without_commits(tmp_path: Path) -> None:
+    fresh = tmp_path / "fresh"
+    Repo.init(fresh)
+    (fresh / "a.txt").write_text("a\n")
+    history = GitReviewClient().get_file_history(str(fresh), "a.txt", 50)
+    assert history.commits == []

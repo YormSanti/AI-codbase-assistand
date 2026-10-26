@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from git import GitError, Repo
 
 from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError
-from app.domain.git_models import BranchInfo, BranchList, CommitDetails, CommitFile, GitChange, GitCommit, GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import BranchInfo, BranchList, CommitDetails, CommitFile, FileHistory, GitChange, GitCommit, GitDiff, GitStatus, StagedDiff
 from app.domain.ports import GitReviewPort
 
 MAX_DIFF_BYTES = 256_000
@@ -227,6 +227,30 @@ class GitReviewClient(GitReviewPort):
         content = raw.decode("utf-8", errors="replace")
         binary = any(line.startswith("Binary files ") for line in content.splitlines())
         return GitDiff(path, False, content, is_binary=binary, truncated=truncated)
+
+    def get_file_history(self, root_path: str, path: str, limit: int) -> FileHistory:
+        repo = self._repository(root_path)
+        git_root = Path(str(repo.working_tree_dir)).resolve()
+        relative = PurePosixPath(path)
+        if not path or relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
+            raise GitReviewError("Choose a file inside the project.")
+        # Editor paths are relative to the opened folder, which may be a subfolder of the repository.
+        folder = Path(root_path).resolve()
+        prefix = folder.relative_to(git_root).as_posix() if folder.is_relative_to(git_root) else "."
+        git_path = path if prefix == "." else f"{prefix}/{path}"
+        if not repo.head.is_valid():
+            return FileHistory(git_path, [])
+        raw, _ = self._run(
+            str(git_root), "log", "--follow", f"-n{max(1, min(limit, 200))}",
+            "--format=%H%x00%an%x00%aI%x00%s", "--", git_path, limit=1_000_000,
+        )
+        commits = []
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            parts = line.split("\0")
+            if len(parts) == 4:
+                sha, author, date, subject = parts
+                commits.append(GitCommit(sha, subject or "(No commit message)", author or "Unknown", datetime.fromisoformat(date)))
+        return FileHistory(git_path, commits)
 
     def get_staged_diff(self, root_path: str) -> StagedDiff:
         repo = self._repository(root_path)
