@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner";
 import { Terminal as XTerm } from "xterm";
 import "xterm/css/xterm.css";
-import { getBackendUrl } from "@/api/client";
+import { ensureBackendReady, getBackendUrl } from "@/api/client";
 import type { RepositoryInfo } from "@/types/domain";
 
 interface TerminalPane {
@@ -227,6 +227,7 @@ function TerminalSession({
 
     const connect = async () => {
       try {
+        await ensureBackendReady();
         const backendUrl = await getBackendUrl();
         if (disposed) return;
         const wsUrl = new URL("/ws/terminal", backendUrl);
