@@ -16,8 +16,9 @@ CodeMirror editor with tabs and search, run shells in an integrated
 terminal, review diffs and stage/unstage/commit from Source Control, see
 live branch, upstream, and commit data on the dashboard and Git page, open a
 command palette (Ctrl/Cmd+K) to jump anywhere, and chat with the Codex or
-Gemini CLI from the desktop app. Semantic search and RAG chat (Phase 2) and
-the health/security scans (Phase 4) are not built yet; see
+Gemini CLI in the desktop app or the browser. The Code Health page scans for secrets, risky
+patterns, TODOs, and large files. Semantic search and RAG chat (Phase 2) and
+duplicate-code and complexity checks are not built yet; see
 [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 The Git Repository page shows live data from the opened repository: branch,
@@ -231,7 +232,7 @@ messages in the conversation collapse behind **Show more**, and follow-ups
 replay only as many recent turns as fit the CLI's prompt limit.
 
 The sparkle button inside the commit box writes a commit message for the
-staged changes with your default AI provider (desktop app). It sends the
+staged changes with your default AI provider. It sends the
 staged file list, the staged diff, and recent commit subjects so the message
 matches the project's style, then puts the reply in the box for you to edit;
 nothing is committed until you press **Commit**. The sparkle in the **Staged
@@ -269,6 +270,19 @@ Terminal page continues to keep its existing sessions for each project.
 The dedicated editor app lives in `frontend/src/editor/EditorApp.tsx` and
 `EditorApp.css`. It shares the file workspace, CodeMirror engine, file APIs,
 and save/conflict handling with the existing File Explorer.
+
+## AI in the browser
+
+The AI features (chat, Review with AI, commit messages, provider status)
+work in the web build as well as the desktop app. The desktop app runs the
+Codex or Gemini CLI through Tauri; the browser build asks the local backend
+to run the same CLI with the same flags (Codex in its read-only sandbox) in
+the selected project's folder and streams the reply back. The CLI must be
+installed and signed in on the machine running the backend; if it is not,
+the AI page says so and suggests running `codex login` or `gemini` on the
+Terminal page. API: `GET /api/agent/providers` and `POST /api/agent/run`
+(`{ "provider", "prompt", "repository_id" }`, streamed as newline-delimited
+JSON `chunk` events followed by `done` or `error`).
 
 ## AI conversations
 
@@ -319,7 +333,7 @@ minified bundles, binaries, and files over 1 MB are not scanned. API:
 The Dashboard shows live state only: indexed file count and when the index
 was last built, the current branch and upstream, the working tree summary,
 language breakdown, the latest commits, and a system status panel that pings
-the backend `/health` endpoint and, in the desktop app, reports whether the
+the backend `/health` endpoint and reports whether the
 Codex and Gemini CLIs are installed and signed in. **Re-index** rescans the
 working tree and rebuilds every symbol via `POST /api/repositories/{id}/reindex`.
 Quick actions link only to pages that exist.

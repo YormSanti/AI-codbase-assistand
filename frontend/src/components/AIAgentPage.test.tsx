@@ -109,3 +109,26 @@ it("restores a thread's conversation after remounting, titles it once, and clear
   await user.click(screen.getByRole("button", { name: "New thread" }));
   expect(localStorage.getItem("ifrog_ai_conversation:1:t1")).toBeNull();
 });
+
+it("chats in the browser build through the backend and explains how to sign in", async () => {
+  const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+    if (String(url).endsWith("/api/agent/providers")) {
+      return { ok: true, status: 200, json: async () => ({ codex: { installed: true, authenticated: false }, gemini: { installed: true, authenticated: true } }) };
+    }
+    const encoder = new TextEncoder();
+    const parts = ['{"type":"chunk","text":"Browser "}\n', '{"type":"done","content":"Browser reply"}\n'];
+    let index = 0;
+    return { ok: true, status: 200, body: { getReader: () => ({ read: async () => index < parts.length ? { done: false, value: encoder.encode(parts[index++]) } : { done: true, value: undefined } }) } };
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  updateSettings({ defaultProvider: "codex" });
+  const user = userEvent.setup();
+  render(<AIAgentPage repository={{ id: 3, name: "repo", root_path: "/repo", current_branch: "main", head_commit: null, opened_at: null, file_count: 1 }} />);
+  expect(await screen.findByText("Sign in by running `codex login` on the Terminal page.")).toBeInTheDocument();
+  await user.type(screen.getByPlaceholderText("Ask anything"), "Hello{Enter}");
+  expect(await screen.findByText("Browser reply")).toBeInTheDocument();
+  const runCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/api/agent/run"))!;
+  expect(JSON.parse(runCall[1]!.body as string)).toEqual({ provider: "codex", prompt: "Hello", repository_id: 3 });
+  expect(screen.queryByText("Desktop app required")).toBeNull();
+  vi.unstubAllGlobals();
+});

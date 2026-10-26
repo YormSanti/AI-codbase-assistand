@@ -102,7 +102,6 @@ export function DashboardPage({ repository, tree, isLoading, onNavigate, onReind
   const [backend, setBackend] = useState<"checking" | "ok" | "down">("checking");
   const [providers, setProviders] = useState<Record<ProviderId, ProviderStatus> | null | "loading">("loading");
   const [reindexing, setReindexing] = useState(false);
-  const isDesktop = "__TAURI_INTERNALS__" in window;
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30_000);
@@ -286,8 +285,8 @@ export function DashboardPage({ repository, tree, isLoading, onNavigate, onReind
           {(["codex", "gemini"] as ProviderId[]).map(id => {
             const described = providers === "loading" ? null : providers === null ? null : describeProvider(providers[id]);
             return (
-              <StatusRow key={id} label={`${PROVIDER_NAMES[id]} CLI`} detail={isDesktop ? "AI provider for the assistant" : "Available in the desktop app"}>
-                {!isDesktop ? <StatusPill tone="muted">Desktop only</StatusPill> : providers === "loading" ? <StatusPill tone="muted">Checking…</StatusPill> : described ? <StatusPill tone={described.tone}>{described.label}</StatusPill> : <StatusPill tone="muted">Unknown</StatusPill>}
+              <StatusRow key={id} label={`${PROVIDER_NAMES[id]} CLI`} detail="AI provider for the assistant">
+                {providers === "loading" ? <StatusPill tone="muted">Checking…</StatusPill> : described ? <StatusPill tone={described.tone}>{described.label}</StatusPill> : <StatusPill tone="muted">Unknown</StatusPill>}
               </StatusRow>
             );
           })}

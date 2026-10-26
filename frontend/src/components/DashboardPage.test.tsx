@@ -8,6 +8,10 @@ import type { GitStatus } from "../types/git";
 
 vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn() } }));
 vi.mock("../api/healthApi", () => ({ healthApi: { check: vi.fn() } }));
+vi.mock("../lib/providers", async importOriginal => ({
+  ...(await importOriginal<typeof import("../lib/providers")>()),
+  getProviderStatuses: vi.fn().mockResolvedValue({ codex: { installed: true, authenticated: true }, gemini: { installed: false, authenticated: false } }),
+}));
 
 const repository: RepositoryInfo = { id: 3, name: "sample", root_path: "/sample", current_branch: "main", head_commit: "abcdef1234567", opened_at: new Date(Date.now() - 120_000).toISOString(), file_count: 42 };
 const tree: TreeNode = { name: "sample", path: "", is_directory: true, file_id: null, language: null, size_bytes: null, children: [
@@ -39,7 +43,8 @@ describe("DashboardPage", () => {
     expect(screen.getByText("tracking origin/main")).toBeInTheDocument();
     expect(screen.getByText("1 staged · 1 unstaged")).toBeInTheDocument();
     expect(screen.getByText("origin/main · 1 ahead, 0 behind")).toBeInTheDocument();
-    expect(screen.getAllByText("Desktop only")).toHaveLength(2);
+    expect(await screen.findByText("Connected")).toBeInTheDocument(); // provider status works in the browser build too
+    expect(screen.getByText("Not installed")).toBeInTheDocument();
     expect(screen.queryByText("Production build passed")).not.toBeInTheDocument();
     expect(screen.queryByText("Tree-sitter Parser")).not.toBeInTheDocument();
   });

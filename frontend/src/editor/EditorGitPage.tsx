@@ -7,7 +7,7 @@ import { groupChanges, useGitReview, type ChangeGroup } from "./useGitReview";
 import { diffCounts, parseGitDiff } from "./gitDiff";
 import { DiffView } from "./DiffView";
 import { useCommitDetails } from "./useCommitDetails";
-import { cleanCommitMessage, commitMessagePrompt, diffReviewPrompt, isDesktopApp, runAgent, stagedReviewPrompt, type DiffScope } from "../lib/agent";
+import { cleanCommitMessage, commitMessagePrompt, diffReviewPrompt, runAgent, stagedReviewPrompt, type DiffScope } from "../lib/agent";
 import { gitApi } from "../api/gitApi";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { PROVIDER_NAMES } from "../lib/providers";
@@ -81,7 +81,6 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
   const [drafting, setDrafting] = useState<"message" | "review" | null>(null);
   const { settings } = useAppSettings();
   const confirm = useConfirm();
-  const desktop = isDesktopApp();
   const status = review.status;
   const lines = useMemo(() => parseGitDiff(review.patch?.content ?? ""), [review.patch]);
   const { added, removed } = diffCounts(lines);
@@ -170,6 +169,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
         provider: settings.defaultProvider,
         prompt: commitMessagePrompt(staged.stat, staged.content, status.commits.map(commit => commit.message), staged.truncated),
         workingDirectory: repository.root_path,
+        repositoryId: repository.id,
       });
       const cleaned = cleanCommitMessage(reply);
       if (!cleaned) { setNotice(`${PROVIDER_NAMES[settings.defaultProvider]} returned an empty message. Try again or write one yourself.`); return; }
@@ -225,8 +225,8 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
           <div className="editor-git-commit-input">
             <textarea aria-label="Commit message" rows={2} value={message} disabled={review.busy || drafting === "message"} placeholder={drafting === "message" ? "Writing a commit message…" : stagedCount ? "Message (Ctrl/Cmd+Enter to commit)" : "Stage changes to commit"} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void commit(); } }} />
             <button type="button" className="editor-git-generate" aria-label="Generate commit message with AI"
-              title={!desktop ? "Generating commit messages needs the desktop app" : stagedCount ? `Write a message for the staged changes with ${PROVIDER_NAMES[settings.defaultProvider]}` : "Stage changes first"}
-              disabled={!desktop || !stagedCount || review.busy || drafting !== null} onClick={() => void generateMessage()}>
+              title={stagedCount ? `Write a message for the staged changes with ${PROVIDER_NAMES[settings.defaultProvider]}` : "Stage changes first"}
+              disabled={!stagedCount || review.busy || drafting !== null} onClick={() => void generateMessage()}>
               {drafting === "message" ? <LoaderCircle size={13} className="editor-git-spin" /> : <Sparkles size={13} />}
             </button>
           </div>

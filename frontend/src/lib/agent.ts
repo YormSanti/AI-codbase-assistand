@@ -1,4 +1,5 @@
 import type { ProviderId } from "./providers";
+import { apiStream } from "../api/client";
 
 /** The desktop shell rejects prompts over 64,000 characters; stay safely below it. */
 export const MAX_AGENT_PROMPT_CHARS = 60_000;
@@ -14,14 +15,33 @@ export function isDesktopApp(): boolean {
 export interface RunAgentOptions {
   provider: ProviderId;
   prompt: string;
+  /** Desktop app: run in this folder. */
   workingDirectory?: string | null;
+  /** Browser build: run in this indexed project's folder. */
+  repositoryId?: number | null;
   /** Receives streamed output as it arrives; the resolved value is always the complete reply. */
   onChunk?: (chunk: string) => void;
 }
 
-/** Run one non-interactive request through the Codex or Gemini CLI (desktop app only). */
-export async function runAgent({ provider, prompt, workingDirectory, onChunk }: RunAgentOptions): Promise<string> {
-  if (!isDesktopApp()) throw new Error("AI providers run through the desktop app.");
+type AgentEvent = { type: "chunk"; text: string } | { type: "done"; content: string } | { type: "error"; message: string };
+
+/**
+ * Run one non-interactive request through the Codex or Gemini CLI: through the
+ * Tauri command in the desktop app, through the local backend in the browser.
+ */
+export async function runAgent({ provider, prompt, workingDirectory, repositoryId, onChunk }: RunAgentOptions): Promise<string> {
+  if (!isDesktopApp()) {
+    let result: string | null = null;
+    let failure: string | null = null;
+    await apiStream<AgentEvent>("/api/agent/run", { provider, prompt, repository_id: repositoryId ?? null }, event => {
+      if (event.type === "chunk") onChunk?.(event.text);
+      else if (event.type === "done") result = event.content;
+      else failure = event.message;
+    });
+    if (failure !== null) throw new Error(failure);
+    if (result === null) throw new Error("The connection closed before the reply finished. Try again.");
+    return result;
+  }
   const { invoke } = await import("@tauri-apps/api/core");
   const streamId = crypto.randomUUID();
   let unlisten: (() => void) | undefined;

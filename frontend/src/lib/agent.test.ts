@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildConversationPrompt, cleanCommitMessage, clipForPrompt, commitMessagePrompt, diffReviewPrompt, fenced, MAX_CONTEXT_CHARS, stagedReviewPrompt } from "./agent";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { runAgent, buildConversationPrompt, cleanCommitMessage, clipForPrompt, commitMessagePrompt, diffReviewPrompt, fenced, MAX_CONTEXT_CHARS, stagedReviewPrompt } from "./agent";
 
 describe("agent prompt helpers", () => {
   it("clips long context at a line break and reports it", () => {
@@ -75,5 +75,39 @@ describe("commit message helpers", () => {
     const prompt = stagedReviewPrompt(" 2 files changed", "+x\n");
     expect(prompt).toContain("Review the staged changes below before I commit them.");
     expect(prompt).toContain("```diff\n+x\n```");
+  });
+});
+
+function streamResponse(parts: string[]) {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return {
+    ok: true, status: 200,
+    body: { getReader: () => ({ read: async () => index < parts.length ? { done: false, value: encoder.encode(parts[index++]) } : { done: true, value: undefined } }) },
+  };
+}
+
+describe("runAgent in the browser build", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("streams chunks from the backend, even when events are split across reads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(streamResponse(['{"type":"chunk","text":"Hel', 'lo"}\n{"type":"chunk","text":" there"}\n', '{"type":"done","content":"Hello there"}\n']));
+    vi.stubGlobal("fetch", fetchMock);
+    const chunks: string[] = [];
+    const reply = await runAgent({ provider: "codex", prompt: "hi", repositoryId: 7, onChunk: chunk => chunks.push(chunk) });
+    expect(reply).toBe("Hello there");
+    expect(chunks).toEqual(["Hello", " there"]);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/agent/run");
+    expect(JSON.parse(init.body)).toEqual({ provider: "codex", prompt: "hi", repository_id: 7 });
+  });
+
+  it("turns error events, cut-off streams, and HTTP errors into exceptions", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse(['{"type":"error","message":"Codex failed: quota"}\n'])));
+    await expect(runAgent({ provider: "codex", prompt: "hi" })).rejects.toThrow("Codex failed: quota");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse(['{"type":"chunk","text":"partial"}\n'])));
+    await expect(runAgent({ provider: "codex", prompt: "hi" })).rejects.toThrow("closed before the reply finished");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, statusText: "Not Found", json: async () => ({ detail: "No repository with id=9" }) }));
+    await expect(runAgent({ provider: "codex", prompt: "hi", repositoryId: 9 })).rejects.toThrow("No repository with id=9");
   });
 });

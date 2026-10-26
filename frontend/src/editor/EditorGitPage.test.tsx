@@ -9,6 +9,8 @@ import { parseGitDiff, splitGitDiff } from "./gitDiff";
 
 vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), commit: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn(), fetch: vi.fn(), pull: vi.fn(), push: vi.fn(), getFileHistory: vi.fn() } }));
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+const backend = vi.hoisted(() => ({ apiStream: vi.fn() }));
+vi.mock("../api/client", async importOriginal => ({ ...(await importOriginal<typeof import("../api/client")>()), apiStream: backend.apiStream }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 const repository = { id: 1, name: "project", root_path: "/project", current_branch: "santi", head_commit: "abc1234", opened_at: null, file_count: 4 };
 const status: GitStatus = {
@@ -197,13 +199,18 @@ it("writes a commit message for the staged changes with the default provider", a
   expect(screen.getByRole("button", { name: "Commit (1)" })).toBeEnabled();
 });
 
-it("explains why message generation is unavailable in the browser and reports provider errors", async () => {
+it("writes commit messages in the browser build through the backend and reports provider errors", async () => {
   vi.mocked(gitApi.getStagedDiff).mockResolvedValue(stagedDiff);
+  backend.apiStream.mockImplementation(async (_path: string, _body: unknown, onEvent: (event: unknown) => void) => {
+    onEvent({ type: "chunk", text: "docs: " });
+    onEvent({ type: "done", content: "docs: explain the change" });
+  });
   const view = render(<EditorGitPage {...props} />);
   await screen.findByText("3 changed files");
-  const generate = screen.getByRole("button", { name: "Generate commit message with AI" });
-  expect(generate).toBeDisabled();
-  expect(generate).toHaveAttribute("title", "Generating commit messages needs the desktop app");
+  fireEvent.click(screen.getByRole("button", { name: "Generate commit message with AI" }));
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Commit message" })).toHaveValue("docs: explain the change"));
+  expect(backend.apiStream).toHaveBeenCalledWith("/api/agent/run", expect.objectContaining({ provider: "gemini", repository_id: 1 }), expect.any(Function));
+  expect(tauri.invoke).not.toHaveBeenCalled();
   view.unmount();
 
   Object.assign(window, { __TAURI_INTERNALS__: {} });

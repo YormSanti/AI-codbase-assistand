@@ -73,3 +73,34 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
 
   return response.json() as Promise<T>;
 }
+
+/**
+ * POST `body` and read a newline-delimited JSON stream, calling `onEvent` for
+ * each event as it arrives. HTTP errors reject like apiRequest.
+ */
+export async function apiStream<E>(path: string, body: unknown, onEvent: (event: E) => void): Promise<void> {
+  await ensureBackendReady();
+  const backendUrl = await getBackendUrl();
+  const response = await fetch(`${backendUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({ detail: response.statusText }));
+    const message = Array.isArray(detail.detail) ? detail.detail.map((item: { msg?: string }) => item.msg).join("; ") : detail.detail;
+    throw new ApiError(response.status, message ?? response.statusText);
+  }
+  if (!response.body) throw new ApiError(response.status, "The server sent an empty stream.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffered += decoder.decode(value, { stream: !done });
+    const lines = buffered.split("\n");
+    buffered = done ? "" : lines.pop() ?? "";
+    for (const line of lines) if (line.trim()) onEvent(JSON.parse(line) as E);
+    if (done) return;
+  }
+}
