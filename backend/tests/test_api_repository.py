@@ -82,3 +82,18 @@ def test_health_endpoint(api_client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_reindex_repository_endpoint(api_client: TestClient, git_repo_path: Path) -> None:
+    opened = api_client.post("/api/repositories/open", json={"path": str(git_repo_path)})
+    repository_id = opened.json()["id"]
+    (git_repo_path / "added.py").write_text("x = 1\n")
+
+    response = api_client.post(f"/api/repositories/{repository_id}/reindex")
+
+    assert response.status_code == 200
+    assert response.json()["file_count"] == 6
+
+
+def test_reindex_unknown_repository_returns_404(api_client: TestClient) -> None:
+    assert api_client.post("/api/repositories/999/reindex").status_code == 404

@@ -9,7 +9,7 @@ from __future__ import annotations
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.domain.models import FileMetadata, Language, RepositoryInfo
+from app.domain.models import FileMetadata, FileSyncResult, Language, RepositoryInfo
 from app.domain.ports import FileMetadataRepositoryPort
 from app.infrastructure.db.orm_models import FileRecord, RepositoryRecord, SymbolRecord
 
@@ -84,23 +84,53 @@ class SqlAlchemyFileMetadataRepository(FileMetadataRepositoryPort):
         )
         self._session.flush()
 
-    def replace_files(self, repository_id: int, files: list[FileMetadata]) -> list[FileMetadata]:
-        self._session.execute(delete(FileRecord).where(FileRecord.repository_id == repository_id))
-
-        records = [
-            FileRecord(
-                repository_id=repository_id,
-                relative_path=f.relative_path,
-                size_bytes=f.size_bytes,
-                language=f.language.value,
-                content_hash=f.content_hash,
-                is_binary=f.is_binary,
+    def sync_files(self, repository_id: int, files: list[FileMetadata]) -> FileSyncResult:
+        existing = {
+            record.relative_path: record
+            for record in self._session.scalars(
+                select(FileRecord).where(FileRecord.repository_id == repository_id)
             )
-            for f in files
-        ]
-        self._session.add_all(records)
+        }
+
+        kept: list[FileRecord] = []
+        changed: list[FileRecord] = []
+        for f in files:
+            record = existing.pop(f.relative_path, None)
+            if record is None:
+                record = FileRecord(
+                    repository_id=repository_id,
+                    relative_path=f.relative_path,
+                    size_bytes=f.size_bytes,
+                    language=f.language.value,
+                    content_hash=f.content_hash,
+                    is_binary=f.is_binary,
+                )
+                self._session.add(record)
+                changed.append(record)
+            elif (
+                record.content_hash != f.content_hash
+                or record.size_bytes != f.size_bytes
+                or record.language != f.language.value
+                or record.is_binary != f.is_binary
+            ):
+                record.size_bytes = f.size_bytes
+                record.language = f.language.value
+                record.content_hash = f.content_hash
+                record.is_binary = f.is_binary
+                changed.append(record)
+            kept.append(record)
+
+        removed_ids = [record.id for record in existing.values()]
+        if removed_ids:
+            self._session.execute(delete(SymbolRecord).where(SymbolRecord.file_id.in_(removed_ids)))
+            self._session.execute(delete(FileRecord).where(FileRecord.id.in_(removed_ids)))
+
         self._session.flush()
-        return [_to_file_metadata(r) for r in records]
+        return FileSyncResult(
+            files=[_to_file_metadata(r) for r in kept],
+            changed=[_to_file_metadata(r) for r in changed],
+            removed=len(removed_ids),
+        )
 
     def list_files(self, repository_id: int) -> list[FileMetadata]:
         records = self._session.scalars(

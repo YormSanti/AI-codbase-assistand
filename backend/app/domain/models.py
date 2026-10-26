@@ -59,6 +59,18 @@ class FileMetadata:
         return self.relative_path.rsplit("/", 1)[0]
 
 
+@dataclass(frozen=True, slots=True)
+class FileSyncResult:
+    """Outcome of reconciling scanned files with the stored index."""
+
+    files: list[FileMetadata]
+    """Every indexed file after the sync, each with its persisted id."""
+    changed: list[FileMetadata]
+    """Files that were added or whose content hash changed and need re-parsing."""
+    removed: int = 0
+    """Stored files that no longer exist in the working tree."""
+
+
 class SymbolKind(str, Enum):
     CLASS = "class"
     FUNCTION = "function"

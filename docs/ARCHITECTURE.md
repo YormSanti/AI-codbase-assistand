@@ -175,6 +175,10 @@ orphaned `symbols` rows behind, and since SQLite can reuse rowids, a new
 unrelated file could inherit a stale file's leftover symbols. Verified with
 a direct cascade test during Milestone 1.2.
 
-Opening an already-known `root_path` re-indexes in place (files and their
-symbols are fully replaced, not appended), so re-opening a repo after a
-`git pull` reflects the new state.
+Opening an already-known `root_path` refreshes the index incrementally.
+`sync_files` hashes every file but only inserts new rows, updates rows whose
+content hash changed, and deletes rows (with their symbols) for files that
+disappeared; unchanged files keep their ids and stored symbols. Only the
+changed files are parsed again, so re-opening a large repository on app
+start is cheap. `POST /api/repositories/{id}/reindex` forces a full
+re-parse, for example after the parser gains a language.

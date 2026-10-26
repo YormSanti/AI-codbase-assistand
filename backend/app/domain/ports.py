@@ -10,7 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from app.domain.git_models import GitDiff, GitStatus
-from app.domain.models import CodeSymbol, FileMetadata, Language, RepositoryInfo
+from app.domain.models import CodeSymbol, FileMetadata, FileSyncResult, Language, RepositoryInfo
 
 
 class GitReviewPort(ABC):
@@ -56,8 +56,13 @@ class FileMetadataRepositoryPort(ABC):
         """Delete a repository and its indexed files."""
 
     @abstractmethod
-    def replace_files(self, repository_id: int, files: list[FileMetadata]) -> list[FileMetadata]:
-        """Atomically replace all indexed files for a repository (re-index)."""
+    def sync_files(self, repository_id: int, files: list[FileMetadata]) -> FileSyncResult:
+        """Reconcile the stored index with `files`.
+
+        Unchanged files keep their ids (and symbols), changed files are
+        updated in place, new files are inserted, and files missing from
+        `files` are removed together with their symbols.
+        """
 
     @abstractmethod
     def list_files(self, repository_id: int) -> list[FileMetadata]: ...

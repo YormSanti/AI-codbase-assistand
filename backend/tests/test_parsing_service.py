@@ -22,7 +22,7 @@ def _persisted_file(db_session: Session, relative_path: str, language: Language)
     repo = file_repository.save_repository(
         RepositoryInfo(name="repo", root_path=f"/repo-{relative_path}", current_branch=None, head_commit=None)
     )
-    [file] = file_repository.replace_files(
+    [file] = file_repository.sync_files(
         repo.id,
         [
             FileMetadata(
@@ -33,7 +33,7 @@ def _persisted_file(db_session: Session, relative_path: str, language: Language)
                 is_binary=False,
             )
         ],
-    )
+    ).files
     return file
 
 
@@ -55,7 +55,7 @@ def test_extract_and_store_skips_binary_files(db_session: Session, tmp_path: Pat
     repo = file_repository.save_repository(
         RepositoryInfo(name="repo", root_path="/repo-binary", current_branch=None, head_commit=None)
     )
-    [file] = file_repository.replace_files(
+    [file] = file_repository.sync_files(
         repo.id,
         [
             FileMetadata(
@@ -66,7 +66,7 @@ def test_extract_and_store_skips_binary_files(db_session: Session, tmp_path: Pat
                 is_binary=True,
             )
         ],
-    )
+    ).files
 
     result = _service(db_session).extract_and_store(file, str(tmp_path))
 

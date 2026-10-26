@@ -33,6 +33,18 @@ def get_repository(repository_id: int, service: IndexingServiceDep) -> Repositor
     return RepositoryResponse.from_domain(info)
 
 
+@router.post("/{repository_id}/reindex", response_model=RepositoryResponse)
+def reindex_repository(repository_id: int, service: IndexingServiceDep) -> RepositoryResponse:
+    """Rescan the working tree and rebuild symbols for every file."""
+    try:
+        info = service.reindex_repository(repository_id)
+    except RepositoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NotAGitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RepositoryResponse.from_domain(info)
+
+
 @router.delete("/{repository_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_repository(repository_id: int, service: IndexingServiceDep) -> Response:
     try:

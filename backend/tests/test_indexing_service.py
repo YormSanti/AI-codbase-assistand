@@ -110,3 +110,90 @@ def _find_file(node, name: str):
         yield node
     for child in node.children:
         yield from _find_file(child, name)
+
+
+class _CountingParser:
+    """Delegates to the real parser while counting parse calls."""
+
+    def __init__(self, inner) -> None:
+        self._inner = inner
+        self.calls: list[str] = []
+
+    def supports(self, language) -> bool:
+        return self._inner.supports(language)
+
+    def parse(self, source: bytes, language):
+        self.calls.append(language.value)
+        return self._inner.parse(source, language)
+
+
+def _counting_service(db_session):
+    from tests.conftest import _code_parser
+    from app.infrastructure.db.sqlite_repository import SqlAlchemyFileMetadataRepository
+    from app.infrastructure.db.sqlite_symbol_repository import SqlAlchemySymbolRepository
+    from app.infrastructure.git.git_client import GitPythonClient
+    from app.infrastructure.parsing.file_scanner import scan_files
+    from app.services.parsing_service import SymbolExtractionService
+
+    parser = _CountingParser(_code_parser)
+    service = IndexingService(
+        git_client=GitPythonClient(),
+        file_repository=SqlAlchemyFileMetadataRepository(db_session),
+        scan_files=scan_files,
+        symbol_extraction_service=SymbolExtractionService(
+            parser=parser, symbol_repository=SqlAlchemySymbolRepository(db_session)
+        ),
+    )
+    return service, parser
+
+
+def test_reopen_keeps_file_ids_and_skips_unchanged_files(db_session, git_repo_path: Path) -> None:
+    service, parser = _counting_service(db_session)
+    first = service.open_repository(str(git_repo_path))
+    first_ids = {f.path: f.file_id for f in _leaves(service.get_tree(first.id))}
+    parsed_initially = len(parser.calls)
+    assert parsed_initially > 0
+
+    second = service.open_repository(str(git_repo_path))
+
+    assert second.file_count == first.file_count
+    assert {f.path: f.file_id for f in _leaves(service.get_tree(second.id))} == first_ids
+    assert len(parser.calls) == parsed_initially  # nothing changed, nothing re-parsed
+
+
+def test_reopen_reparses_changed_files_and_drops_deleted_ones(db_session, git_repo_path: Path) -> None:
+    service, parser = _counting_service(db_session)
+    info = service.open_repository(str(git_repo_path))
+    main_py = next(_find_file(service.get_tree(info.id), "main.py"))
+    readme = next(_find_file(service.get_tree(info.id), "README.md"))
+    parser.calls.clear()
+
+    (git_repo_path / "main.py").write_text("def main():\n    pass\n\ndef helper():\n    pass\n")
+    (git_repo_path / "README.md").unlink()
+
+    refreshed = service.open_repository(str(git_repo_path))
+
+    assert refreshed.file_count == info.file_count - 1
+    assert parser.calls == ["python"]  # only the edited file was parsed again
+    assert [s.name for s in service.get_symbols(main_py.file_id)] == ["main", "helper"]
+    with pytest.raises(IndexedFileNotFoundError):
+        service.get_symbols(readme.file_id)
+
+
+def test_reindex_repository_reparses_every_file(db_session, git_repo_path: Path) -> None:
+    service, parser = _counting_service(db_session)
+    info = service.open_repository(str(git_repo_path))
+    parsed_initially = len(parser.calls)
+    parser.calls.clear()
+
+    reindexed = service.reindex_repository(info.id)
+
+    assert reindexed.id == info.id
+    assert len(parser.calls) == parsed_initially
+
+
+def _leaves(node):
+    if not node.is_directory:
+        yield node
+    for child in node.children:
+        yield from _leaves(child)

@@ -21,6 +21,11 @@ export const repositoryApi = {
     return apiRequest<RepositoryInfo[]>("/api/repositories");
   },
 
+  /** Rescan the working tree and rebuild symbols for every file. */
+  reindex(repositoryId: number): Promise<RepositoryInfo> {
+    return apiRequest<RepositoryInfo>(`/api/repositories/${repositoryId}/reindex`, { method: "POST" });
+  },
+
   remove(repositoryId: number): Promise<void> {
     return apiRequest<void>(`/api/repositories/${repositoryId}`, {
       method: "DELETE",

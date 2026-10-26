@@ -38,16 +38,22 @@ class IndexingService:
         self._scan_files = scan_files
         self._symbol_extraction_service = symbol_extraction_service
 
-    def open_repository(self, path: str) -> RepositoryInfo:
-        """Open (or re-index, if already known) a Git repository at `path`."""
+    def open_repository(self, path: str, *, reparse_all: bool = False) -> RepositoryInfo:
+        """Open (or refresh, if already known) a repository at `path`.
+
+        Files are hashed on every open, but only files that are new or whose
+        content changed are parsed again; unchanged files keep their ids and
+        stored symbols. Pass `reparse_all=True` to rebuild every symbol, for
+        example after the parser gained support for a language.
+        """
         info = self._git_client.open(path)
         saved = self._file_repository.save_repository(info)
 
         relative_paths = self._git_client.list_tracked_files(saved.root_path)
         files = self._scan_files(saved.root_path, relative_paths)
-        indexed = self._file_repository.replace_files(saved.id, files)
+        synced = self._file_repository.sync_files(saved.id, files)
 
-        for file in indexed:
+        for file in synced.files if reparse_all else synced.changed:
             self._symbol_extraction_service.extract_and_store(file, saved.root_path)
 
         return RepositoryInfo(
@@ -57,8 +63,13 @@ class IndexingService:
             current_branch=saved.current_branch,
             head_commit=saved.head_commit,
             opened_at=saved.opened_at,
-            file_count=len(indexed),
+            file_count=len(synced.files),
         )
+
+    def reindex_repository(self, repository_id: int) -> RepositoryInfo:
+        """Rescan a known repository and re-parse every file."""
+        info = self.get_repository(repository_id)
+        return self.open_repository(info.root_path, reparse_all=True)
 
     def list_repositories(self) -> list[RepositoryInfo]:
         return self._file_repository.list_repositories()
