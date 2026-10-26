@@ -64,8 +64,19 @@ def test_cli_index_nonexistent_path(capsys: pytest.CaptureFixture[str]) -> None:
     assert "Directory does not exist" in captured.err
 
 
-def test_cli_status(capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["status", "1"])
+def _indexed_repository_id(capsys: pytest.CaptureFixture[str], path) -> str:
+    """Index the fixture repository through the CLI and return its id as a CLI argument."""
+    import json
+    assert main(["index", str(path)]) == 0
+    capsys.readouterr()
+    assert main(["list", "--json"]) == 0
+    repositories = json.loads(capsys.readouterr().out)
+    return str(next(item["id"] for item in repositories if item["root_path"] == str(path)))
+
+
+def test_cli_status(capsys: pytest.CaptureFixture[str], git_repo_path) -> None:
+    repository = _indexed_repository_id(capsys, git_repo_path)
+    code = main(["status", repository])
     assert code == 0
     captured = capsys.readouterr()
     # New format shows repo name, branch, upstream
@@ -73,9 +84,10 @@ def test_cli_status(capsys: pytest.CaptureFixture[str]) -> None:
     assert "Upstream" in captured.out
 
 
-def test_cli_status_json(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_status_json(capsys: pytest.CaptureFixture[str], git_repo_path) -> None:
     import json
-    code = main(["status", "1", "--json"])
+    repository = _indexed_repository_id(capsys, git_repo_path)
+    code = main(["status", repository, "--json"])
     assert code == 0
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -83,15 +95,17 @@ def test_cli_status_json(capsys: pytest.CaptureFixture[str]) -> None:
     assert "changes" in data
 
 
-def test_cli_symbols(capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["symbols", "1", "-f", "terminal.py"])
+def test_cli_symbols(capsys: pytest.CaptureFixture[str], git_repo_path) -> None:
+    repository = _indexed_repository_id(capsys, git_repo_path)
+    code = main(["symbols", repository, "-f", "main.py"])
     assert code == 0
     captured = capsys.readouterr()
-    assert "terminal.py" in captured.out
+    assert "main.py" in captured.out
 
 
-def test_cli_symbols_kind_filter(capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["symbols", "1", "--kind", "function"])
+def test_cli_symbols_kind_filter(capsys: pytest.CaptureFixture[str], git_repo_path) -> None:
+    repository = _indexed_repository_id(capsys, git_repo_path)
+    code = main(["symbols", repository, "--kind", "function"])
     assert code == 0
 
 
