@@ -78,6 +78,15 @@ describe("Git Repository page", () => {
     expect(navigate).toHaveBeenCalledWith("editor");
   });
 
+  it("prefers opening Source Control directly when the shell offers it", async () => {
+    const onReviewChanges = vi.fn();
+    const navigate = vi.fn();
+    render(<GitPage repository={repository} onNavigate={navigate} onReviewChanges={onReviewChanges} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review changes in editor" }));
+    expect(onReviewChanges).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("reports Git errors with a retry action", async () => {
     vi.mocked(gitApi.getStatus).mockRejectedValueOnce(new Error("'/sample' is not a Git repository"));
     render(<GitPage repository={repository} onNavigate={vi.fn()} />);

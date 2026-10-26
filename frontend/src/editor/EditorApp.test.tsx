@@ -210,3 +210,17 @@ it("searches project files from the rail and jumps to a match in the code view",
   fireEvent.keyDown(window, { key: "F", ctrlKey: true, shiftKey: true });
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
 });
+
+it("opens a requested tool view once it is active and reports it handled", async () => {
+  const onRequestedViewHandled = vi.fn();
+  const view = render(<EditorApp active={false} repository={repository} isLoading={false} onNavigate={vi.fn()} requestedView="search" onRequestedViewHandled={onRequestedViewHandled}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  expect(onRequestedViewHandled).not.toHaveBeenCalled();
+  view.rerender(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} requestedView="search" onRequestedViewHandled={onRequestedViewHandled}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  expect(await screen.findByRole("searchbox", { name: "Search in files" }, { timeout: 5000 })).toBeInTheDocument();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  expect(onRequestedViewHandled).toHaveBeenCalledTimes(1);
+});

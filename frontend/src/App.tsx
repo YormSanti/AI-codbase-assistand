@@ -9,7 +9,8 @@ import { SiteHeader } from "@/components/site-header";
 import { DashboardPage } from "@/components/DashboardPage";
 import { ExplorerPage } from "@/components/ExplorerPage";
 import { EditorApp } from "./editor/EditorApp";
-import type { EditorWorkspaceHandle } from "./editor/editorCommands";
+import type { EditorToolView, EditorWorkspaceHandle } from "./editor/editorCommands";
+import { TextSearch } from "lucide-react";
 import { PageFallback } from "@/components/PageFallback";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -59,6 +60,7 @@ export default function App() {
 
   const [isSessionRestored, setIsSessionRestored] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [editorView, setEditorView] = useState<EditorToolView | null>(null);
   const [knownRepositories, setKnownRepositories] = useState<RepositoryInfo[]>([]);
   const repositoryRequest = useRef(0);
   const editorState = useRef({ dirty: false, saving: false });
@@ -75,14 +77,20 @@ export default function App() {
     return !editorState.current.dirty || window.confirm("Discard your unsaved changes and continue?");
   }
 
-  function handleSelectTab(tab: string) {
-    if (tab === activeTab) return;
+  function handleSelectTab(tab: string): boolean {
+    if (tab === activeTab) return true;
     const staysInWorkspace = ["explorer", "editor"].includes(activeTab) && ["explorer", "editor"].includes(tab);
     const editorOnlyFile = selectedFile?.file_id !== null && selectedFile?.file_id !== undefined && selectedFile.file_id < 0;
-    if (!staysInWorkspace && !canLeaveEditor()) return;
+    if (!staysInWorkspace && !canLeaveEditor()) return false;
     if (editorOnlyFile && tab !== "editor") setSelectedFile(null);
     setError(null); // a stale error from another view should not follow the user around
     setActiveTab(tab);
+    return true;
+  }
+
+  /** Enter the code editor with one of its tool views (Source Control, Search, AI) already open. */
+  function openEditorView(view: EditorToolView) {
+    if (handleSelectTab("editor")) setEditorView(view);
   }
 
   function handleFileSaved(preview: FilePreview) {
@@ -343,6 +351,8 @@ export default function App() {
       id: `open-${item.id}`, label: `Open ${item.name}`, hint: item.root_path, group: "Projects", icon: FolderOpen,
       keywords: "project repository switch", run: () => { void handleOpen(item.root_path).catch(() => { /* shown in the error banner */ }); },
     })),
+    { id: "source-control", label: "Open Source Control", group: "Editor", icon: GitBranch, disabled: !repository, keywords: "git stage commit diff changes", run: () => openEditorView("git") },
+    { id: "search-files", label: "Search in files", group: "Editor", icon: TextSearch, disabled: !repository, keywords: "find text grep", run: () => openEditorView("search") },
     { id: "reindex", label: "Re-index project", group: "Actions", icon: RefreshCw, disabled: !repository || isLoading, keywords: "rescan symbols refresh", run: () => void handleReindex() },
     { id: "theme", label: resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme", group: "Actions", icon: SunMoon, keywords: "appearance", run: () => updateSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" }) },
   ];
@@ -397,6 +407,8 @@ export default function App() {
               onNavigate={handleSelectTab}
               onCommand={command => editorWorkspaceRef.current?.runCommand(command)}
               onRevealLine={(path, line) => editorWorkspaceRef.current?.revealLine(path, line)}
+              requestedView={editorView}
+              onRequestedViewHandled={() => setEditorView(null)}
             >
               {workspaceVisible => <ExplorerPage
                 ref={editorWorkspaceRef}
@@ -435,6 +447,7 @@ export default function App() {
                 key={repository?.id ?? "none"}
                 repository={repository}
                 onNavigate={handleSelectTab}
+                onReviewChanges={() => openEditorView("git")}
               />
             </Suspense>
           )}

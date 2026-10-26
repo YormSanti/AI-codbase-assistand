@@ -4,7 +4,7 @@ import { Dialog, Menubar } from "radix-ui";
 import type { RepositoryInfo } from "../types/domain";
 import { PageFallback } from "../components/PageFallback";
 import { ThemeToggle } from "../components/ThemeToggle";
-import type { EditorCommand } from "./editorCommands";
+import type { EditorCommand, EditorToolView } from "./editorCommands";
 import "./EditorApp.css";
 
 // Tool views load on first use so opening the editor does not fetch the
@@ -24,6 +24,9 @@ interface Props {
   onCommand?: (command: EditorCommand) => void;
   /** Open a file at a line, used by project-wide search results. */
   onRevealLine?: (path: string, line: number) => void;
+  /** A tool view to open once the shell is active (command palette, Git page). */
+  requestedView?: EditorToolView | null;
+  onRequestedViewHandled?: () => void;
   hasSelectedFile?: boolean;
   aiPrompt?: string | null;
   onAiPromptConsumed?: () => void;
@@ -32,7 +35,7 @@ interface Props {
 
 // Keep the shared file workspace at the same position in the tree so entering
 // the editor from File Explorer does not remount the current unsaved draft.
-export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, onRevealLine, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
+export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, onRevealLine, requestedView, onRequestedViewHandled, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalRoot, setTerminalRoot] = useState<string | null>(null);
   const [terminalHeight, setTerminalHeight] = useState(260);
@@ -148,6 +151,15 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   const openExtensions = () => { setShowGit(false); setShowAi(false); setShowSettings(false); setShowSearch(false); setShowExtensions(true); };
   const openSettings = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSearch(false); setShowSettings(true); };
   const openSearch = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(false); setShowSearch(true); };
+  useEffect(() => {
+    if (!active || !requestedView) return;
+    if (requestedView === "search" && repository) openSearch();
+    else if (requestedView === "git") openGit();
+    else if (requestedView === "ai") openAi();
+    onRequestedViewHandled?.();
+    // openX are stable closures over state setters; re-running on their identity would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, requestedView, repository?.root_path]);
   const returnToCode = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(false); setShowSearch(false); };
   const toggleExplorerPanel = () => {
     if (toolVisible) {

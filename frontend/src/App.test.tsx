@@ -8,7 +8,11 @@ import { ProjectsSidebarNav } from "./components/ProjectsSidebarNav";
 import App from "./App";
 
 vi.mock("./hooks/useAutoUpdater", () => ({ useAutoUpdater: vi.fn() }));
-vi.mock("./api/editorApi", () => ({ editorApi: { getTree: vi.fn() } }));
+vi.mock("./api/editorApi", () => ({ editorApi: { getTree: vi.fn(), search: vi.fn() } }));
+vi.mock("./api/gitApi", () => ({ gitApi: {
+  getStatus: vi.fn().mockResolvedValue({ branch: "main", head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null, changes: [], commits: [] }),
+  getDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), commit: vi.fn(),
+} }));
 vi.mock("./api/repositoryApi", () => ({ repositoryApi: { list: vi.fn(), open: vi.fn(), getTree: vi.fn(), remove: vi.fn() } }));
 vi.mock("@/components/ui/sidebar", () => ({
   SidebarProvider: ({ children }: { children: ReactNode }) => children,
@@ -135,6 +139,22 @@ describe("command palette", () => {
     fireEvent.keyDown(reopened, { key: "Enter" });
     await waitFor(() => expect(repositoryApi.open).toHaveBeenCalledWith("/b"));
     await waitFor(() => expect(localStorage.getItem("ifrog_repo_path")).toBe("/b"));
+  });
+});
+
+describe("editor tool views", () => {
+  it("opens Source Control directly from the command palette", async () => {
+    vi.mocked(repositoryApi.open).mockResolvedValue(repo(1));
+    render(<App />);
+    fireEvent.click(screen.getByText("Open /a"));
+    await waitFor(() => expect(screen.getByTestId("repository")).toHaveTextContent("/a"));
+    fireEvent.keyDown(window, { key: "P", ctrlKey: true, shiftKey: true });
+    const input = await screen.findByRole("combobox", { name: "Command palette" });
+    fireEvent.change(input, { target: { value: "source control" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByRole("region", { name: "IFROG Editor" })).toBeInTheDocument();
+    expect(await screen.findByRole("complementary", { name: "Source Control" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Git Repository" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 

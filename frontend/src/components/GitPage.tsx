@@ -13,6 +13,8 @@ import { formatRelativeTime } from "../lib/time";
 interface Props {
   repository: RepositoryInfo | null;
   onNavigate: (tab: string) => void;
+  /** Opens the editor directly on Source Control; falls back to the plain editor. */
+  onReviewChanges?: () => void;
 }
 
 type IconType = ComponentType<{ size?: number; className?: string }>;
@@ -41,7 +43,8 @@ function Row({ icon: Icon, label, children }: { icon: IconType; label: string; c
   );
 }
 
-export function GitPage({ repository, onNavigate }: Props) {
+export function GitPage({ repository, onNavigate, onReviewChanges }: Props) {
+  const reviewChanges = onReviewChanges ?? (() => onNavigate("editor"));
   const git = useGitStatus(repository?.id ?? null);
   const [copied, setCopied] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -168,7 +171,7 @@ export function GitPage({ repository, onNavigate }: Props) {
             </div>
           </div>
           {status && status.changes.length > 0 && (
-            <button type="button" className={`${buttonClass} w-fit`} onClick={() => onNavigate("editor")}>Review changes in editor</button>
+            <button type="button" className={`${buttonClass} w-fit`} onClick={reviewChanges}>Review changes in editor</button>
           )}
         </Card>
       </div>
