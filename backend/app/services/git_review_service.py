@@ -1,6 +1,6 @@
 """Resolve selected projects before reading live Git data."""
 from app.domain.exceptions import RepositoryNotFoundError
-from app.domain.git_models import GitDiff, GitStatus
+from app.domain.git_models import GitDiff, GitStatus, StagedDiff
 from app.domain.ports import FileMetadataRepositoryPort, GitReviewPort
 
 
@@ -20,6 +20,9 @@ class GitReviewService:
 
     def get_diff(self, repository_id: int, path: str, staged: bool) -> GitDiff:
         return self._git.get_diff(self._root(repository_id), path, staged)
+
+    def get_staged_diff(self, repository_id: int) -> StagedDiff:
+        return self._git.get_staged_diff(self._root(repository_id))
 
     def stage(self, repository_id: int, paths: list[str]) -> GitStatus:
         root = self._root(repository_id)

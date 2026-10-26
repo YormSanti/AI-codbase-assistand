@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { GitDiff, GitStatus } from "../types/git";
+import type { GitDiff, GitStatus, StagedDiff } from "../types/git";
 
 export const gitApi = {
   getStatus(repositoryId: number): Promise<GitStatus> {
@@ -8,6 +8,10 @@ export const gitApi = {
   getDiff(repositoryId: number, path: string, staged: boolean): Promise<GitDiff> {
     const params = new URLSearchParams({ path, staged: String(staged) });
     return apiRequest<GitDiff>(`/api/repositories/${repositoryId}/git/diff?${params}`);
+  },
+  /** Combined patch, stat, and file count of everything staged. */
+  getStagedDiff(repositoryId: number): Promise<StagedDiff> {
+    return apiRequest<StagedDiff>(`/api/repositories/${repositoryId}/git/staged-diff`);
   },
   /** Stage the given changed paths; resolves with the refreshed status. */
   stage(repositoryId: number, paths: string[]): Promise<GitStatus> {

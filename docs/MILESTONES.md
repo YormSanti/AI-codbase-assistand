@@ -60,6 +60,8 @@ setup when this phase starts.*
 - [x] Selected-diff handoff to desktop AI for review and commit-message suggestions
 - [x] Stage, unstage, mark-resolved, and commit from the editor's Source
   Control view (`POST .../git/stage`, `.../git/unstage`, `.../git/commit`)
+- [x] AI-written commit messages from the staged diff and AI review of a
+  file diff or of everything staged (`GET .../git/staged-diff`)
 - [x] Live Git data on the Dashboard and Git Repository page (branch,
   upstream ahead/behind, working tree summary, recent commits), honoring the
   Git refresh interval setting

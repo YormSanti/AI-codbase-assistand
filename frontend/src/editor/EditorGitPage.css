@@ -131,3 +131,8 @@
 .editor-git-change-row.is-selected { background: var(--git-hover); }
 .editor-git .editor-git-ai-review { display: inline-flex; align-items: center; gap: 6px; width: auto !important; padding: 0 9px; margin-right: 4px; font-size: 12px; color: #23a9f2; }
 .editor-git .editor-git-ai-review:disabled { opacity: .45; cursor: not-allowed; }
+.editor-git-commit-input { position: relative; }
+.editor-git-commit-input textarea { padding-right: 30px !important; }
+.editor-git .editor-git-generate { position: absolute; right: 5px; top: 5px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 4px; color: #23a9f2; }
+.editor-git .editor-git-generate:hover:not(:disabled) { background: var(--git-hover); }
+.editor-git .editor-git-generate:disabled { color: var(--git-muted); opacity: .5; cursor: not-allowed; }

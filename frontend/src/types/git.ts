@@ -30,3 +30,10 @@ export interface GitDiff {
   is_binary: boolean;
   truncated: boolean;
 }
+
+export interface StagedDiff {
+  content: string;
+  stat: string;
+  files: number;
+  truncated: boolean;
+}

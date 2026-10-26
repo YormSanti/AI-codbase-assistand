@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildConversationPrompt, clipForPrompt, diffReviewPrompt, fenced, MAX_CONTEXT_CHARS } from "./agent";
+import { buildConversationPrompt, cleanCommitMessage, clipForPrompt, commitMessagePrompt, diffReviewPrompt, fenced, MAX_CONTEXT_CHARS, stagedReviewPrompt } from "./agent";
 
 describe("agent prompt helpers", () => {
   it("clips long context at a line break and reports it", () => {
@@ -45,5 +45,35 @@ describe("agent prompt helpers", () => {
     expect(tight).toContain("User: second question");
     expect(tight).toContain("Codex: second answer");
     expect(tight.length).toBeLessThanOrEqual(300);
+  });
+});
+
+describe("commit message helpers", () => {
+  it("asks for a message matching recent history with the stat and diff attached", () => {
+    const prompt = commitMessagePrompt(" app.ts | 2 +-\n 1 file changed", "@@\n-a\n+b\n", ["feat: add search", "fix(git): stage renames"]);
+    expect(prompt).toContain("at most 72 characters");
+    expect(prompt).toContain("Recent commit subjects:\n- feat: add search\n- fix(git): stage renames");
+    expect(prompt).toContain("Files changed:\n```\n app.ts | 2 +-\n 1 file changed\n```");
+    expect(prompt).toContain("```diff\n@@\n-a\n+b\n```");
+    expect(prompt).not.toContain("was cut");
+    expect(commitMessagePrompt("stat", "+x", [], true)).toContain("(The diff was cut; base the message on the file list and what is shown.)");
+  });
+
+  it("cleans fences, labels, quotes, and stray whitespace from the reply", () => {
+    expect(cleanCommitMessage("  feat: add search  \n")).toBe("feat: add search");
+    expect(cleanCommitMessage("```\nfeat: add search\n\nExplain why.   \n```")).toBe("feat: add search\n\nExplain why.");
+    expect(cleanCommitMessage("```text\nfix: x\n```")).toBe("fix: x");
+    expect(cleanCommitMessage("Commit message: fix: handle empty input")).toBe("fix: handle empty input");
+    expect(cleanCommitMessage("**Suggested commit message:** docs: update readme")).toBe("docs: update readme");
+    expect(cleanCommitMessage('"chore: bump deps"')).toBe("chore: bump deps");
+    expect(cleanCommitMessage("feat: a\n\n\n\nbody")).toBe("feat: a\n\nbody");
+    expect(cleanCommitMessage("   ")).toBe("");
+    expect(cleanCommitMessage("commit message parser: accept trailers")).toBe("commit message parser: accept trailers");
+  });
+
+  it("builds a staged review prompt", () => {
+    const prompt = stagedReviewPrompt(" 2 files changed", "+x\n");
+    expect(prompt).toContain("Review the staged changes below before I commit them.");
+    expect(prompt).toContain("```diff\n+x\n```");
   });
 });

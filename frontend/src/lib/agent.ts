@@ -95,3 +95,51 @@ export function buildConversationPrompt(
   }
   return turns.length ? `${header}${turns.join("\n\n")}${footer}` : latest;
 }
+
+/** Draft prompt asking the assistant to review everything staged for the next commit. */
+export function stagedReviewPrompt(stat: string, patch: string, truncatedByGit = false): string {
+  const { text, truncated } = clipForPrompt(patch);
+  return [
+    "Review the staged changes below before I commit them. Point out bugs, risky edits, and missing tests, and cite the files and diff lines. Keep the review short and concrete.",
+    "",
+    "Files changed:",
+    fenced(stat),
+    "",
+    fenced(text, "diff"),
+    ...(truncated || truncatedByGit ? ["", "(The diff was cut; review what is shown and say if more context is needed.)"] : []),
+  ].join("\n");
+}
+
+/** Prompt asking the assistant for a commit message for the staged changes. */
+export function commitMessagePrompt(stat: string, patch: string, recentSubjects: string[] = [], truncatedByGit = false): string {
+  const { text, truncated } = clipForPrompt(patch);
+  const history = recentSubjects.filter(Boolean).slice(0, 8);
+  return [
+    "Write a git commit message for the staged changes below.",
+    "",
+    "Rules:",
+    "- First line: an imperative summary of at most 72 characters.",
+    "- Match the style of the recent commit subjects listed below (for example a Conventional Commits prefix such as feat: or fix:) when they follow one.",
+    "- If it helps, add a blank line and a short body wrapped at 72 characters that explains what changed and why.",
+    "- Reply with the commit message only: no code fences, quotes, labels, or commentary.",
+    ...(history.length ? ["", "Recent commit subjects:", ...history.map(subject => `- ${subject}`)] : []),
+    "",
+    "Files changed:",
+    fenced(stat),
+    "",
+    fenced(text, "diff"),
+    ...(truncated || truncatedByGit ? ["", "(The diff was cut; base the message on the file list and what is shown.)"] : []),
+  ].join("\n");
+}
+
+/** Turn a CLI reply into a clean commit message: no fences, labels, quotes, or trailing blank lines. */
+export function cleanCommitMessage(reply: string): string {
+  let text = reply.replace(/\r\n/g, "\n").trim();
+  const fencedReply = text.match(/^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1\s*$/);
+  if (fencedReply) text = fencedReply[2].trim();
+  // A leading label such as "Commit message:" or "**Suggested commit message:**" (the colon is required,
+  // so a real subject like "commit message parser: ..." is left alone).
+  text = text.replace(/^\**\s*(?:suggested\s+)?commit message\s*(?::\s*\**|\**\s*:)\s*/i, "").trim();
+  if (/^(["'`])[\s\S]*\1$/.test(text) && !text.includes("\n")) text = text.slice(1, -1).trim();
+  return text.split("\n").map(line => line.replace(/\s+$/, "")).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}

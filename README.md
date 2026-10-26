@@ -187,6 +187,15 @@ composer is multi-line (**Shift+Enter** adds a line, **Enter** sends), long
 messages in the conversation collapse behind **Show more**, and follow-ups
 replay only as many recent turns as fit the CLI's prompt limit.
 
+The sparkle button inside the commit box writes a commit message for the
+staged changes with your default AI provider (desktop app). It sends the
+staged file list, the staged diff, and recent commit subjects so the message
+matches the project's style, then puts the reply in the box for you to edit;
+nothing is committed until you press **Commit**. The sparkle in the **Staged
+Changes** header drafts an AI review of everything staged. API:
+`GET /api/repositories/{id}/git/staged-diff` returns the combined staged
+patch, a `--stat` summary, and the file count.
+
 Stage and commit without leaving the view: hover a changed file for its
 **+** (stage) or **−** (unstage) button, use the group buttons to stage or
 unstage everything in a section, and mark a resolved merge conflict with

@@ -32,6 +32,16 @@ class GitStatus:
 
 
 @dataclass
+class StagedDiff:
+    """Everything staged for the next commit, for review or commit-message drafting."""
+
+    content: str
+    stat: str
+    files: int
+    truncated: bool = False
+
+
+@dataclass
 class GitDiff:
     path: str
     staged: bool

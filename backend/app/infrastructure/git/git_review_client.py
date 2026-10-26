@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from git import GitError, Repo
 
 from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError
-from app.domain.git_models import GitChange, GitCommit, GitDiff, GitStatus
+from app.domain.git_models import GitChange, GitCommit, GitDiff, GitStatus, StagedDiff
 from app.domain.ports import GitReviewPort
 
 MAX_DIFF_BYTES = 256_000
@@ -141,6 +141,23 @@ class GitReviewClient(GitReviewPort):
         content = raw.decode("utf-8", errors="replace")
         binary = any(line.startswith("Binary files ") for line in content.splitlines())
         return GitDiff(path, staged, content, is_binary=binary, truncated=truncated)
+
+    def get_staged_diff(self, root_path: str) -> StagedDiff:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        options = ("--cached", "-M", "--no-ext-diff", "--no-textconv", "--no-color")
+        names, _ = self._run(root, "diff", *options, "--name-only", "-z", limit=4_000_000)
+        files = len([name for name in names.split(b"\0") if name])
+        if not files:
+            return StagedDiff(content="", stat="", files=0)
+        stat, _ = self._run(root, "diff", *options, "--stat=120", limit=64_000)
+        patch, truncated = self._run(root, "diff", *options)
+        return StagedDiff(
+            content=patch.decode("utf-8", errors="replace"),
+            stat=stat.decode("utf-8", errors="replace").rstrip(),
+            files=files,
+            truncated=truncated,
+        )
 
     # ── Explicit actions ────────────────────────────────────────────────
 

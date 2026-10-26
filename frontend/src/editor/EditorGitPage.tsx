@@ -5,7 +5,10 @@ import type { RepositoryInfo } from "../types/domain";
 import type { GitChange } from "../types/git";
 import { groupChanges, useGitReview, type ChangeGroup } from "./useGitReview";
 import { parseGitDiff, splitGitDiff, type DiffLine } from "./gitDiff";
-import { diffReviewPrompt, type DiffScope } from "../lib/agent";
+import { cleanCommitMessage, commitMessagePrompt, diffReviewPrompt, isDesktopApp, runAgent, stagedReviewPrompt, type DiffScope } from "../lib/agent";
+import { gitApi } from "../api/gitApi";
+import { useAppSettings } from "../hooks/useAppSettings";
+import { PROVIDER_NAMES } from "../lib/providers";
 import "./EditorGitPage.css";
 
 interface Props {
@@ -37,6 +40,9 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
   const [copied, setCopied] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [drafting, setDrafting] = useState<"message" | "review" | null>(null);
+  const { settings } = useAppSettings();
+  const desktop = isDesktopApp();
   const status = review.status;
   const lines = useMemo(() => parseGitDiff(review.patch?.content ?? ""), [review.patch]);
   const visibleLines = useMemo(() => lines.slice(0, lineLimit), [lines, lineLimit]);
@@ -55,6 +61,43 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
       setMessage("");
       setNotice(null);
       toast.success(`Committed ${result.head_commit?.slice(0, 7) ?? ""}`.trim());
+    }
+  };
+
+  const generateMessage = async () => {
+    if (!repository || !status || drafting || !stagedCount) return;
+    setDrafting("message");
+    setNotice(null);
+    try {
+      const staged = await gitApi.getStagedDiff(repository.id);
+      if (!staged.files) { setNotice("Nothing is staged. Stage changes before generating a message."); return; }
+      const reply = await runAgent({
+        provider: settings.defaultProvider,
+        prompt: commitMessagePrompt(staged.stat, staged.content, status.commits.map(commit => commit.message), staged.truncated),
+        workingDirectory: repository.root_path,
+      });
+      const cleaned = cleanCommitMessage(reply);
+      if (!cleaned) { setNotice(`${PROVIDER_NAMES[settings.defaultProvider]} returned an empty message. Try again or write one yourself.`); return; }
+      setMessage(cleaned);
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : "Could not generate a commit message.");
+    } finally {
+      setDrafting(null);
+    }
+  };
+
+  const reviewStaged = async () => {
+    if (!repository || !onAskAI || drafting) return;
+    setDrafting("review");
+    setNotice(null);
+    try {
+      const staged = await gitApi.getStagedDiff(repository.id);
+      if (!staged.files) { setNotice("Nothing is staged to review."); return; }
+      onAskAI(stagedReviewPrompt(staged.stat, staged.content, staged.truncated));
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : "Could not read the staged changes.");
+    } finally {
+      setDrafting(null);
     }
   };
 
@@ -84,7 +127,14 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
         <header className="editor-git-sidebar-heading"><h2>SOURCE CONTROL</h2><button type="button" aria-label="Refresh Git status" title="Refresh Git status" disabled={!repository || review.loading} onClick={review.refresh}><RefreshCw size={15} className={review.loading ? "editor-git-spin" : undefined} /></button></header>
         {repository && <div className="editor-git-project"><GitBranch size={17} /><div><strong>{repository.name}</strong><span>{status ? branch : review.loading ? "Reading Git repository…" : "Git unavailable"}</span></div><span className="editor-git-count">{status?.changes.length ?? "—"}</span></div>}
         {repository && status && <form className="editor-git-commit-box" onSubmit={event => { event.preventDefault(); void commit(); }}>
-          <textarea aria-label="Commit message" rows={2} value={message} disabled={review.busy} placeholder={stagedCount ? "Message (Ctrl/Cmd+Enter to commit)" : "Stage changes to commit"} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void commit(); } }} />
+          <div className="editor-git-commit-input">
+            <textarea aria-label="Commit message" rows={2} value={message} disabled={review.busy || drafting === "message"} placeholder={drafting === "message" ? "Writing a commit message…" : stagedCount ? "Message (Ctrl/Cmd+Enter to commit)" : "Stage changes to commit"} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void commit(); } }} />
+            <button type="button" className="editor-git-generate" aria-label="Generate commit message with AI"
+              title={!desktop ? "Generating commit messages needs the desktop app" : stagedCount ? `Write a message for the staged changes with ${PROVIDER_NAMES[settings.defaultProvider]}` : "Stage changes first"}
+              disabled={!desktop || !stagedCount || review.busy || drafting !== null} onClick={() => void generateMessage()}>
+              {drafting === "message" ? <LoaderCircle size={13} className="editor-git-spin" /> : <Sparkles size={13} />}
+            </button>
+          </div>
           <button type="submit" className="editor-git-primary editor-git-commit-button" disabled={!canCommit} title={stagedCount ? "Commit staged changes" : "Stage changes first"}>{review.busy ? <LoaderCircle size={13} className="editor-git-spin" /> : <Check size={13} />}<span>Commit{stagedCount ? ` (${stagedCount})` : ""}</span></button>
         </form>}
         <button type="button" className={`editor-git-overview-link ${!review.selection ? "is-selected" : ""}`} onClick={() => review.select(null)}><History size={15} /><span>Repository overview</span></button>
@@ -92,6 +142,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
           {groups.map(({ group, changes }) => changes.length > 0 && <div className="editor-git-change-group" key={group}>
             <div className="editor-git-group">
               <button type="button" className="editor-git-group-heading" aria-expanded={expanded[group]} onClick={() => setExpanded(value => ({ ...value, [group]: !value[group] }))}>{expanded[group] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>{groupNames[group]}</span><span className="editor-git-count">{changes.length}</span></button>
+              {group === "staged" && onAskAI && <button type="button" className="editor-git-group-action" aria-label="Review staged changes with AI" title="Draft an AI review of everything staged" disabled={drafting !== null} onClick={() => void reviewStaged()}>{drafting === "review" ? <LoaderCircle size={13} className="editor-git-spin" /> : <Sparkles size={13} />}</button>}
               {group === "staged"
                 ? <button type="button" className="editor-git-group-action" aria-label="Unstage all changes" title="Unstage all" disabled={review.busy} onClick={() => void review.unstage(changes.map(change => change.path))}><Minus size={13} /></button>
                 : <button type="button" className="editor-git-group-action" aria-label={group === "conflicts" ? "Stage all resolved conflicts" : "Stage all changes"} title={group === "conflicts" ? "Mark all as resolved" : "Stage all"} disabled={review.busy} onClick={() => void review.stage(changes.map(change => change.path))}><Plus size={13} /></button>}

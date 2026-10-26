@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.domain.git_models import GitDiff, GitStatus
+from app.domain.git_models import GitCommit, GitDiff, GitStatus, StagedDiff
 from app.domain.models import CodeSymbol, FileMetadata, FileSyncResult, Language, RepositoryInfo
 
 
@@ -26,6 +26,10 @@ class GitReviewPort(ABC):
 
     @abstractmethod
     def get_diff(self, root_path: str, path: str, staged: bool) -> GitDiff: ...
+
+    @abstractmethod
+    def get_staged_diff(self, root_path: str) -> StagedDiff:
+        """The combined patch and stat of everything currently staged."""
 
     @abstractmethod
     def stage(self, root_path: str, paths: list[str]) -> None:

@@ -1,11 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { gitApi } from "../api/gitApi";
 import type { GitDiff, GitStatus } from "../types/git";
 import { EditorGitPage } from "./EditorGitPage";
 import { parseGitDiff, splitGitDiff } from "./gitDiff";
 
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), commit: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), commit: vi.fn() } }));
+const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 const repository = { id: 1, name: "project", root_path: "/project", current_branch: "santi", head_commit: "abc1234", opened_at: null, file_count: 4 };
 const status: GitStatus = {
   branch: "santi", head_commit: "abc1234", upstream: "origin/santi", ahead: 2, behind: 0, remote_url: null,
@@ -19,7 +21,7 @@ const status: GitStatus = {
 const patch = (text = "new", staged = false): GitDiff => ({ path: "src/main.ts", staged, is_binary: false, truncated: false, content: `diff --git a/src/main.ts b/src/main.ts\n--- a/src/main.ts\n+++ b/src/main.ts\n@@ -10,2 +20,2 @@\n-old\n+${text}\n context\n` });
 const props = { repository, active: true, onReturn: vi.fn(), onOpenFolder: vi.fn() };
 beforeEach(() => { vi.mocked(gitApi.getStatus).mockResolvedValue(status); vi.mocked(gitApi.getDiff).mockResolvedValue(patch()); });
-afterEach(() => { cleanup(); vi.resetAllMocks(); });
+afterEach(() => { cleanup(); vi.resetAllMocks(); Reflect.deleteProperty(window, "__TAURI_INTERNALS__"); localStorage.clear(); });
 
 it("reviews staged and working-tree versions separately, with conflicts in their own group", async () => {
   render(<EditorGitPage {...props} />);
@@ -172,4 +174,52 @@ it("hides the AI review without a handler and disables it for binary diffs", asy
   fireEvent.click(await screen.findByRole("button", { name: "Changes: README.md" }));
   expect(await screen.findByText("Binary file")).toBeVisible();
   expect(screen.getByRole("button", { name: "Review with AI" })).toBeDisabled();
+});
+
+const stagedDiff = { content: "diff --git a/src/main.ts b/src/main.ts\n@@ -1 +1 @@\n-old\n+new\n", stat: " src/main.ts | 2 +-\n 1 file changed", files: 1, truncated: false };
+
+it("writes a commit message for the staged changes with the default provider", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  vi.mocked(gitApi.getStagedDiff).mockResolvedValue(stagedDiff);
+  tauri.invoke.mockResolvedValue({ content: "```\nfix(main): replace old value\n\nKeeps the new behaviour.\n```" });
+  render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Generate commit message with AI" }));
+  const message = screen.getByRole("textbox", { name: "Commit message" });
+  await waitFor(() => expect(message).toHaveValue("fix(main): replace old value\n\nKeeps the new behaviour."));
+  const request = tauri.invoke.mock.calls.find(([command]) => command === "run_agent")![1].request;
+  expect(request.provider).toBe("gemini");
+  expect(request.workingDirectory).toBe("/project");
+  expect(request.prompt).toContain("- Preserve folder scope");
+  expect(request.prompt).toContain("+new");
+  expect(screen.getByRole("button", { name: "Commit (1)" })).toBeEnabled();
+});
+
+it("explains why message generation is unavailable in the browser and reports provider errors", async () => {
+  vi.mocked(gitApi.getStagedDiff).mockResolvedValue(stagedDiff);
+  const view = render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  const generate = screen.getByRole("button", { name: "Generate commit message with AI" });
+  expect(generate).toBeDisabled();
+  expect(generate).toHaveAttribute("title", "Generating commit messages needs the desktop app");
+  view.unmount();
+
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  tauri.invoke.mockRejectedValue(new Error("Gemini CLI was not found. Connect or install Gemini first."));
+  render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Generate commit message with AI" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Gemini CLI was not found");
+  expect(screen.getByRole("textbox", { name: "Commit message" })).toHaveValue("");
+});
+
+it("drafts an AI review of everything staged", async () => {
+  vi.mocked(gitApi.getStagedDiff).mockResolvedValue(stagedDiff);
+  const onAskAI = vi.fn();
+  render(<EditorGitPage {...props} onAskAI={onAskAI} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Review staged changes with AI" }));
+  await waitFor(() => expect(onAskAI).toHaveBeenCalledTimes(1));
+  expect(onAskAI.mock.calls[0][0]).toContain("Review the staged changes below before I commit them.");
+  expect(onAskAI.mock.calls[0][0]).toContain(" src/main.ts | 2 +-");
 });

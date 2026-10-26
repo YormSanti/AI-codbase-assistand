@@ -294,3 +294,35 @@ def test_unborn_repository_can_stage_unstage_and_commit(tmp_path: Path) -> None:
     status = client.get_status(str(empty))
     assert status.head_commit == commit.sha
     assert status.changes == []
+
+
+def test_staged_diff_combines_only_staged_files(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    empty = api_client.get(f"{base}/staged-diff")
+    assert empty.status_code == 200
+    assert empty.json() == {"content": "", "stat": "", "files": 0, "truncated": False}
+
+    repo = Repo(git_repo_path)
+    (git_repo_path / "main.py").write_text("def main():\n    return 'staged'\n")
+    (git_repo_path / "notes.txt").write_text("new staged file\n")
+    repo.index.add(["main.py", "notes.txt"])
+    (git_repo_path / "README.md").write_text("# unstaged edit\n")
+
+    body = api_client.get(f"{base}/staged-diff").json()
+    assert body["files"] == 2
+    assert body["truncated"] is False
+    assert "+    return 'staged'" in body["content"]
+    assert "+new staged file" in body["content"]
+    assert "unstaged edit" not in body["content"]
+    assert "main.py" in body["stat"] and "notes.txt" in body["stat"]
+    assert "2 files changed" in body["stat"]
+
+
+def test_staged_diff_on_an_unborn_branch(tmp_path: Path) -> None:
+    empty = tmp_path / "unborn"
+    repo = Repo.init(empty)
+    (empty / "first.txt").write_text("first\n")
+    repo.index.add(["first.txt"])
+    staged = GitReviewClient().get_staged_diff(str(empty))
+    assert staged.files == 1
+    assert "+first" in staged.content

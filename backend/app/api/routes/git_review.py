@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.deps import GitReviewServiceDep
 from app.api.schemas import GitCommitRequest, GitPathsRequest
 from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError, RepositoryNotFoundError
-from app.domain.git_models import GitDiff, GitStatus
+from app.domain.git_models import GitDiff, GitStatus, StagedDiff
 
 router = APIRouter(prefix="/api/repositories", tags=["git"])
 
@@ -49,6 +49,12 @@ def _run_action(action):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (GitReviewError, GitCommandError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{repository_id}/git/staged-diff", response_model=StagedDiff)
+def get_staged_diff(repository_id: int, service: GitReviewServiceDep) -> StagedDiff:
+    """Combined patch, stat, and file count of everything staged for the next commit."""
+    return _run_action(lambda: service.get_staged_diff(repository_id))
 
 
 @router.post("/{repository_id}/git/stage", response_model=GitStatus)
