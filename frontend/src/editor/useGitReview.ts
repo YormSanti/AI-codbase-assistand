@@ -85,6 +85,8 @@ export function useGitReview(repositoryId: number | null, active: boolean) {
     stage: (paths: string[]) => runAction(id => gitApi.stage(id, paths)),
     unstage: (paths: string[]) => runAction(id => gitApi.unstage(id, paths)),
     discard: (paths: string[]) => runAction(id => gitApi.discard(id, paths)),
+    switchBranch: (name: string) => runAction(id => gitApi.switchBranch(id, name)),
+    createBranch: (name: string) => runAction(id => gitApi.createBranch(id, name)),
     commit: (message: string) => runAction(id => gitApi.commit(id, message)),
     patch: diff?.key === diffKey ? diff.data : null,
     diffLoading: Boolean(selection) && (diff?.key !== diffKey || diff.loading),

@@ -64,6 +64,8 @@ setup when this phase starts.*
   file diff or of everything staged (`GET .../git/staged-diff`)
 - [x] Commit details from the history: message, author, parents, changed
   files with line counts, and per-file diffs (`GET .../git/commits/{sha}`)
+- [x] Branch picker: list, switch (guarded against uncommitted changes and
+  unsaved drafts), and create from the current commit
 - [x] Live Git data on the Dashboard and Git Repository page (branch,
   upstream ahead/behind, working tree summary, recent commits), honoring the
   Git refresh interval setting

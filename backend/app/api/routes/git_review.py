@@ -4,9 +4,9 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps import GitReviewServiceDep
-from app.api.schemas import GitCommitRequest, GitPathsRequest
+from app.api.schemas import GitCommitRequest, GitCreateBranchRequest, GitPathsRequest, GitSwitchBranchRequest
 from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError, RepositoryNotFoundError
-from app.domain.git_models import CommitDetails, GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import BranchList, CommitDetails, GitDiff, GitStatus, StagedDiff
 
 router = APIRouter(prefix="/api/repositories", tags=["git"])
 
@@ -82,6 +82,24 @@ def stage_changes(repository_id: int, request: GitPathsRequest, service: GitRevi
 @router.post("/{repository_id}/git/unstage", response_model=GitStatus)
 def unstage_changes(repository_id: int, request: GitPathsRequest, service: GitReviewServiceDep) -> GitStatus:
     return _run_action(lambda: service.unstage(repository_id, request.paths))
+
+
+@router.get("/{repository_id}/git/branches", response_model=BranchList)
+def list_branches(repository_id: int, service: GitReviewServiceDep) -> BranchList:
+    """Local branches, most recently committed first, and the checked-out branch."""
+    return _run_action(lambda: service.list_branches(repository_id))
+
+
+@router.post("/{repository_id}/git/branches", response_model=GitStatus)
+def create_branch(repository_id: int, request: GitCreateBranchRequest, service: GitReviewServiceDep) -> GitStatus:
+    """Create a branch at HEAD and, by default, switch to it."""
+    return _run_action(lambda: service.create_branch(repository_id, request.name, request.checkout))
+
+
+@router.post("/{repository_id}/git/checkout", response_model=GitStatus)
+def switch_branch(repository_id: int, request: GitSwitchBranchRequest, service: GitReviewServiceDep) -> GitStatus:
+    """Check out an existing local branch. Refused while tracked files have changes."""
+    return _run_action(lambda: service.switch_branch(repository_id, request.branch))
 
 
 @router.post("/{repository_id}/git/discard", response_model=GitStatus)

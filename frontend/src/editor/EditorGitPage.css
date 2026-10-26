@@ -151,3 +151,18 @@
 .editor-git .editor-git-history-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; text-align: left; padding: 2px 4px; border-radius: 4px; }
 .editor-git .editor-git-history-open:hover { background: var(--git-hover); }
 .editor-git-history-open > span { display: flex; align-items: center; gap: 7px; color: var(--git-muted); font-size: 11px; }
+
+/* Branch picker */
+.editor-git .editor-git-branch-trigger { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 1px 4px; margin-left: -4px; border-radius: 4px; color: var(--git-muted); font-size: 11px; }
+.editor-git .editor-git-branch-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-git .editor-git-branch-trigger:hover:not(:disabled) { background: var(--git-hover); color: inherit; }
+.editor-git-branch-popover { z-index: 60; width: 300px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 12px 32px var(--shadow-strong); font-size: 12px; }
+.editor-git-branch-popover input { width: 100%; height: 28px; padding: 0 8px; margin-bottom: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--background); color: inherit; font: inherit; outline: none; }
+.editor-git-branch-popover input:focus { border-color: #23a9f2; }
+.editor-git-branch-popover ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; }
+.editor-git-branch-popover li[role="option"] { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.editor-git-branch-popover li.is-selected { background: var(--accent); }
+.editor-git-branch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-git-branch-popover small { flex-shrink: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 10px; }
+.editor-git-branch-note { display: flex; align-items: center; gap: 6px; padding: 8px; color: var(--muted-foreground); }
+.editor-git-branch-error { padding: 6px 8px; color: var(--destructive, #dc2626); }

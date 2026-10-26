@@ -187,6 +187,17 @@ diffs after Git commands in the terminal. Open files, drafts, undo history,
 and the terminal stay available while reviewing Git. **Back to code** or
 **Ctrl/Cmd+P** returns to the file workspace.
 
+Click the branch name under the project in the Source Control sidebar to
+switch branches: the list shows local branches, most recent first, with
+their upstream. Typing a name that does not exist offers **Create branch …
+from here**, which branches from the current commit and switches to it
+(uncommitted changes come along). Switching to an existing branch is refused
+while tracked files have uncommitted changes or the editor has unsaved
+drafts; after a switch the editor's file list, open clean tabs, and the
+project index refresh. API: `GET /api/repositories/{id}/git/branches`,
+`POST .../git/checkout` with `{ "branch": "..." }`, and `POST .../git/branches`
+with `{ "name": "...", "checkout": true }`.
+
 Click a commit in the overview's history to open it: the message and body,
 author, date, parent (merges are compared with their first parent), and the
 changed files with their status and added/removed line counts. Select a

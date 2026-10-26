@@ -13,6 +13,7 @@ import { useAppSettings } from "../hooks/useAppSettings";
 import { PROVIDER_NAMES } from "../lib/providers";
 import { useConfirm } from "../hooks/useConfirm";
 import { announceFilesChanged } from "../lib/fileEvents";
+import { BranchPicker } from "./BranchPicker";
 import "./EditorGitPage.css";
 
 interface Props {
@@ -22,6 +23,10 @@ interface Props {
   onOpenFolder: () => void;
   /** Hands a drafted prompt to the editor's AI Assistant. */
   onAskAI?: (prompt: string) => void;
+  /** Returns a reason to refuse a branch switch (for example unsaved editor drafts), or null to allow it. */
+  branchSwitchBlocker?: () => string | null;
+  /** Called after the checked-out branch changed, so the app can refresh files and the index. */
+  onBranchChanged?: () => void;
 }
 
 const diffScopes: Record<ChangeGroup, DiffScope> = { staged: "staged", changes: "working tree", conflicts: "merge conflict" };
@@ -36,7 +41,7 @@ const commitStatusNames: Record<string, string> = { A: "Added", M: "Modified", D
 function subjectOf(message: string) { return message.split("\n", 1)[0]; }
 function bodyOf(message: string) { return message.split("\n").slice(1).join("\n").trim(); }
 
-export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAskAI }: Props) {
+export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAskAI, branchSwitchBlocker, onBranchChanged }: Props) {
   const review = useGitReview(repository?.id ?? null, active);
   const [expanded, setExpanded] = useState<Record<ChangeGroup, boolean>>({ conflicts: true, staged: true, changes: true });
   const [layout, setLayout] = useState<"split" | "unified">("split");
@@ -93,6 +98,19 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
     const paths = changes.map(change => change.path);
     const result = await review.discard(paths);
     if (result) announceFilesChanged(paths);
+  };
+
+  const changeBranch = async (name: string, create: boolean): Promise<boolean> => {
+    const blocked = branchSwitchBlocker?.();
+    if (blocked) { setNotice(blocked); return false; }
+    setNotice(null);
+    const result = await (create ? review.createBranch(name) : review.switchBranch(name));
+    if (!result) return false;
+    setCommitSha(null);
+    announceFilesChanged(["*"]);
+    onBranchChanged?.();
+    toast.success(create ? `Created and switched to ${name}` : `Switched to ${name}`);
+    return true;
   };
 
   const generateMessage = async () => {
@@ -156,7 +174,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
     <div className="editor-git-body">
       <aside className="editor-git-sidebar" aria-label="Source Control">
         <header className="editor-git-sidebar-heading"><h2>SOURCE CONTROL</h2><button type="button" aria-label="Refresh Git status" title="Refresh Git status" disabled={!repository || review.loading} onClick={review.refresh}><RefreshCw size={15} className={review.loading ? "editor-git-spin" : undefined} /></button></header>
-        {repository && <div className="editor-git-project"><GitBranch size={17} /><div><strong>{repository.name}</strong><span>{status ? branch : review.loading ? "Reading Git repository…" : "Git unavailable"}</span></div><span className="editor-git-count">{status?.changes.length ?? "—"}</span></div>}
+        {repository && <div className="editor-git-project"><GitBranch size={17} /><div><strong>{repository.name}</strong>{status ? <BranchPicker repositoryId={repository.id} label={branch} current={status.branch} disabled={review.busy} onSwitch={name => changeBranch(name, false)} onCreate={name => changeBranch(name, true)} /> : <span>{review.loading ? "Reading Git repository…" : "Git unavailable"}</span>}</div><span className="editor-git-count">{status?.changes.length ?? "—"}</span></div>}
         {repository && status && <form className="editor-git-commit-box" onSubmit={event => { event.preventDefault(); void commit(); }}>
           <div className="editor-git-commit-input">
             <textarea aria-label="Commit message" rows={2} value={message} disabled={review.busy || drafting === "message"} placeholder={drafting === "message" ? "Writing a commit message…" : stagedCount ? "Message (Ctrl/Cmd+Enter to commit)" : "Stage changes to commit"} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void commit(); } }} />

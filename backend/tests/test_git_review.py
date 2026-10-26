@@ -465,3 +465,72 @@ def test_discard_refuses_conflicted_files(git_repo_path: Path) -> None:
     with pytest.raises(GitCommandError) as conflict:
         GitReviewClient().discard(str(git_repo_path), ["main.py"])
     assert "merge conflicts" in str(conflict.value)
+
+
+def test_list_switch_and_create_branches(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    original = repo.active_branch.name
+    repo.git.branch("feature/login")
+    (git_repo_path / "untracked.py").unlink()
+
+    listing = api_client.get(f"{base}/branches").json()
+    assert listing["current"] == original and listing["detached"] is False
+    assert {branch["name"] for branch in listing["branches"]} == {original, "feature/login"}
+    assert all(branch["subject"] == "initial commit" for branch in listing["branches"])
+
+    switched = api_client.post(f"{base}/checkout", json={"branch": "feature/login"})
+    assert switched.status_code == 200 and switched.json()["branch"] == "feature/login"
+    assert repo.active_branch.name == "feature/login"
+
+    (git_repo_path / "main.py").write_text("work in progress\n")
+    created = api_client.post(f"{base}/branches", json={"name": "fix/typo", "checkout": True})
+    assert created.status_code == 200 and created.json()["branch"] == "fix/typo"
+    assert (git_repo_path / "main.py").read_text() == "work in progress\n"  # changes come along
+
+    blocked = api_client.post(f"{base}/checkout", json={"branch": original})
+    assert blocked.status_code == 409
+    assert "before switching branches" in blocked.json()["detail"]
+    assert repo.active_branch.name == "fix/typo"
+
+    no_checkout = api_client.post(f"{base}/branches", json={"name": "later", "checkout": False})
+    assert no_checkout.status_code == 200 and no_checkout.json()["branch"] == "fix/typo"
+    assert "later" in [head.name for head in repo.heads]
+
+
+def test_branch_requests_are_validated(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    current = repo.active_branch.name
+    assert api_client.post(f"{base}/checkout", json={"branch": "missing"}).status_code == 409
+    assert api_client.post(f"{base}/checkout", json={"branch": "--orphan"}).status_code == 409
+    assert api_client.post(f"{base}/checkout", json={"branch": current}).status_code == 200  # already there
+    for name in ["bad name", "-leading-dash", "ends.lock", "a..b", "@{-1}", "trailing/", "x" * 201]:
+        response = api_client.post(f"{base}/branches", json={"name": name})
+        assert response.status_code in (409, 422), name
+    duplicate = api_client.post(f"{base}/branches", json={"name": current})
+    assert duplicate.status_code == 409 and "already exists" in duplicate.json()["detail"]
+
+    fresh = tmp_path / "fresh"
+    Repo.init(fresh)
+    unborn_base = open_project(api_client, fresh)
+    listing = api_client.get(f"{unborn_base}/branches").json()
+    assert listing["branches"] == [] and listing["current"] is not None
+    first = api_client.post(f"{unborn_base}/branches", json={"name": "topic"})
+    assert first.status_code == 409 and "first commit" in first.json()["detail"]
+
+
+def test_untracked_files_in_the_way_surface_gits_error(git_repo_path: Path) -> None:
+    repo = Repo(git_repo_path)
+    original = repo.active_branch.name
+    actor = Actor("Test", "test@example.com")
+    repo.git.checkout("-b", "adds-file")
+    (git_repo_path / "untracked.py").write_text("tracked on the other branch\n")
+    repo.index.add(["untracked.py"])
+    repo.index.commit("track it", author=actor, committer=actor)
+    repo.git.checkout(original)
+    (git_repo_path / "untracked.py").write_text("local untracked copy\n")
+    with pytest.raises(GitCommandError) as overwritten:
+        GitReviewClient().switch_branch(str(git_repo_path), "adds-file")
+    assert "untracked" in str(overwritten.value).lower()
+    assert repo.active_branch.name == original

@@ -92,6 +92,26 @@ export default function App() {
     return true;
   }
 
+  /** Re-read the current project after Git changed it underneath us (branch switch), keeping the open file. */
+  async function refreshRepository() {
+    if (!repository) return;
+    const requestId = ++repositoryRequest.current;
+    try {
+      const info = await repositoryApi.open(repository.root_path);
+      if (requestId !== repositoryRequest.current) return;
+      const treeData = await repositoryApi.getTree(info.id);
+      if (requestId !== repositoryRequest.current) return;
+      setRepository(info);
+      setTree(treeData);
+    } catch {
+      // Source Control already shows the live Git state; the index catches up on the next open.
+    }
+  }
+
+  const branchSwitchBlocker = () => editorState.current.saving
+    ? "Wait for the file to finish saving before switching branches."
+    : editorState.current.dirty ? "Save or discard your unsaved edits before switching branches." : null;
+
   /** Open `path` in the code editor with the cursor on `line`, from any page. */
   function openInEditor(path: string, line: number) {
     if (handleSelectTab("editor")) setRevealRequest({ path, line, id: Date.now() });
@@ -421,6 +441,8 @@ export default function App() {
               onRevealLine={(path, line) => editorWorkspaceRef.current?.revealLine(path, line)}
               requestedView={editorView}
               onRequestedViewHandled={() => setEditorView(null)}
+              branchSwitchBlocker={branchSwitchBlocker}
+              onBranchChanged={() => void refreshRepository()}
             >
               {workspaceVisible => <ExplorerPage
                 ref={editorWorkspaceRef}

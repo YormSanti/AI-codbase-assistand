@@ -7,7 +7,7 @@ import { ConfirmProvider } from "../components/ConfirmDialog";
 import { FILES_CHANGED_EVENT } from "../lib/fileEvents";
 import { parseGitDiff, splitGitDiff } from "./gitDiff";
 
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), commit: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), commit: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn() } }));
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 const repository = { id: 1, name: "project", root_path: "/project", current_branch: "santi", head_commit: "abc1234", opened_at: null, file_count: 4 };
@@ -307,4 +307,63 @@ it("discards a whole group with one confirmation that counts untracked files", a
   fireEvent.click(screen.getByRole("button", { name: "Discard all" }));
   await waitFor(() => expect(gitApi.discard).toHaveBeenCalledWith(1, ["src/main.ts", "README.md"]));
   expect(screen.queryByRole("button", { name: "Discard merge.ts" })).toBeNull(); // conflicts are never discarded
+});
+
+const branches = { current: "santi", detached: false, branches: [
+  { name: "santi", upstream: "origin/santi", subject: "Preserve folder scope", committed_at: "2026-10-07T01:00:00Z" },
+  { name: "main", upstream: "origin/main", subject: "Release 1.4", committed_at: "2026-10-01T01:00:00Z" },
+  { name: "feature/login", upstream: null, subject: "Login form", committed_at: "2026-09-20T01:00:00Z" },
+] };
+
+it("switches branches from the picker and tells the app to refresh", async () => {
+  vi.mocked(gitApi.listBranches).mockResolvedValue(branches);
+  vi.mocked(gitApi.switchBranch).mockResolvedValue({ ...status, branch: "main", changes: [] });
+  const onBranchChanged = vi.fn();
+  const announced = vi.fn();
+  window.addEventListener(FILES_CHANGED_EVENT, announced);
+  render(<EditorGitPage {...props} onBranchChanged={onBranchChanged} branchSwitchBlocker={() => null} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: santi)" }));
+  expect(await screen.findByRole("option", { name: /feature\/login/ })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter or create branch" }), { target: { value: "mai" } });
+  expect(screen.getAllByRole("option")).toHaveLength(2); // the match plus "create it"
+  expect(screen.getByRole("option", { name: "Create branch “mai” from here" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("option", { name: /^main/ }));
+  await waitFor(() => expect(gitApi.switchBranch).toHaveBeenCalledWith(1, "main"));
+  await waitFor(() => expect(onBranchChanged).toHaveBeenCalledTimes(1));
+  expect((announced.mock.calls[0][0] as CustomEvent).detail).toEqual({ paths: ["*"] });
+  expect(await screen.findByRole("button", { name: "Switch branch (current: main)" })).toBeInTheDocument();
+  expect(screen.queryByRole("listbox", { name: "Branches" })).toBeNull();
+  window.removeEventListener(FILES_CHANGED_EVENT, announced);
+});
+
+it("creates a branch from the filter text and respects the unsaved-edits blocker", async () => {
+  vi.mocked(gitApi.listBranches).mockResolvedValue(branches);
+  vi.mocked(gitApi.createBranch).mockResolvedValue({ ...status, branch: "fix/typo" });
+  let blocked: string | null = "Save or discard your unsaved edits before switching branches.";
+  render(<EditorGitPage {...props} branchSwitchBlocker={() => blocked} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: santi)" }));
+  const input = await screen.findByRole("textbox", { name: "Filter or create branch" });
+  fireEvent.change(input, { target: { value: "fix/typo" } });
+  expect(screen.getByRole("option", { name: "Create branch “fix/typo” from here" })).toBeInTheDocument();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(await screen.findByRole("alert")).toHaveTextContent("Save or discard your unsaved edits before switching branches.");
+  expect(gitApi.createBranch).not.toHaveBeenCalled();
+
+  blocked = null;
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(gitApi.createBranch).toHaveBeenCalledWith(1, "fix/typo"));
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: fix/typo)" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Filter or create branch" }), { target: { value: "bad name" } });
+  expect(screen.queryByRole("option", { name: /Create branch/ })).toBeNull();
+  expect(screen.getByText(/No branch matches/)).toBeInTheDocument();
+});
+
+it("shows Git's refusal when switching with uncommitted changes", async () => {
+  vi.mocked(gitApi.listBranches).mockResolvedValue(branches);
+  vi.mocked(gitApi.switchBranch).mockRejectedValue(new Error("Commit, stash, or discard your changes before switching branches."));
+  render(<EditorGitPage {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: santi)" }));
+  fireEvent.click(await screen.findByRole("option", { name: /^main/ }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("before switching branches");
+  expect(screen.getByRole("listbox", { name: "Branches" })).toBeInTheDocument(); // stays open to try again
 });

@@ -57,3 +57,18 @@ export interface CommitDetails {
   parents: string[];
   files: CommitFile[];
 }
+
+export interface BranchInfo {
+  name: string;
+  upstream: string | null;
+  subject: string;
+  committed_at: string | null;
+}
+
+export interface BranchList {
+  /** Checked-out branch (also one without commits yet); null when HEAD is detached. */
+  current: string | null;
+  detached: boolean;
+  /** Local branches, most recently committed first. */
+  branches: BranchInfo[];
+}

@@ -8,7 +8,7 @@ import { gitApi } from "../api/gitApi";
 const shells = vi.hoisted(() => ({ start: vi.fn(), close: vi.fn() }));
 vi.mock("../components/ThemeToggle", () => ({ ThemeToggle: () => null }));
 vi.mock("../api/editorApi", () => ({ editorApi: { search: vi.fn().mockResolvedValue({ query: "draft", matches: [{ path: "src/a.ts", line: 3, column: 1, text: "draft line" }], files_scanned: 1, truncated: false }) } }));
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn().mockResolvedValue({ branch: "main", changes: [], commits: [], head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null }), getDiff: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn().mockResolvedValue({ branch: "main", changes: [], commits: [], head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null }), getDiff: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn() } }));
 vi.mock("../components/TerminalPage", () => ({ TerminalPage: ({ repository }: { repository: RepositoryInfo }) => {
   const [command, setCommand] = useState("");
   useEffect(() => { shells.start(repository.root_path); return () => { shells.close(repository.root_path); }; }, [repository.root_path]);
@@ -249,4 +249,23 @@ it("asks the workspace to open symbol search when that view is requested", async
     <span>workspace</span>
   </EditorApp>);
   await waitFor(() => expect(onCommand).toHaveBeenCalledWith("openSymbol"));
+});
+
+it("refreshes the file tree and notifies the app after Source Control switches branch", async () => {
+  vi.mocked(gitApi.getStatus).mockResolvedValue({ branch: "main", head_commit: "abc", upstream: null, ahead: null, behind: null, remote_url: null, commits: [], changes: [] });
+  vi.mocked(gitApi.listBranches).mockResolvedValue({ current: "main", detached: false, branches: [
+    { name: "main", upstream: null, subject: "x", committed_at: null },
+    { name: "topic", upstream: null, subject: "y", committed_at: null },
+  ] });
+  vi.mocked(gitApi.switchBranch).mockResolvedValue({ branch: "topic", head_commit: "def", upstream: null, ahead: null, behind: null, remote_url: null, commits: [], changes: [] });
+  const onCommand = vi.fn();
+  const onBranchChanged = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onCommand={onCommand} onBranchChanged={onBranchChanged} branchSwitchBlocker={() => null}>
+    <span>workspace</span>
+  </EditorApp>);
+  fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: main)" }));
+  fireEvent.click(await screen.findByRole("option", { name: /^topic/ }));
+  await waitFor(() => expect(onBranchChanged).toHaveBeenCalledTimes(1));
+  expect(onCommand).toHaveBeenCalledWith("refreshFiles");
 });

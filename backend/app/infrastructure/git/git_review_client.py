@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import difflib
+from datetime import datetime
 import os
 import re
 import subprocess
@@ -12,12 +13,14 @@ from urllib.parse import urlsplit
 from git import GitError, Repo
 
 from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError
-from app.domain.git_models import CommitDetails, CommitFile, GitChange, GitCommit, GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import BranchInfo, BranchList, CommitDetails, CommitFile, GitChange, GitCommit, GitDiff, GitStatus, StagedDiff
 from app.domain.ports import GitReviewPort
 
 MAX_DIFF_BYTES = 256_000
 MAX_COMMIT_MESSAGE_CHARS = 10_000
 _SHA = re.compile(r"[0-9a-fA-F]{4,64}")
+# Conservative branch names; git check-ref-format then applies Git's own rules.
+_BRANCH_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/\-]{0,199}")
 
 
 def remote_web_url(remote: str) -> str | None:
@@ -299,6 +302,58 @@ class GitReviewClient(GitReviewPort):
         else:
             # No HEAD yet: the only way to unstage is to drop the paths from the index.
             self._run_write(root, "rm", "-q", "--cached", "-r", "--", *pathspecs)
+
+    # ── Branches ────────────────────────────────────────────────────────
+
+    def list_branches(self, root_path: str) -> BranchList:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        detached = repo.head.is_detached
+        current = None if detached else repo.head.reference.name
+        raw, _ = self._run(
+            root, "for-each-ref", "--sort=-committerdate",
+            "--format=%(refname:short)%00%(upstream:short)%00%(committerdate:iso-strict)%00%(subject)",
+            "refs/heads", limit=2_000_000,
+        )
+        branches: list[BranchInfo] = []
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            parts = line.split("\0")
+            if len(parts) != 4:
+                continue
+            name, upstream, date, subject = parts
+            branches.append(BranchInfo(name, upstream or None, subject, datetime.fromisoformat(date) if date else None))
+        return BranchList(current=current, detached=detached, branches=branches)
+
+    def switch_branch(self, root_path: str, name: str) -> None:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        branches = self.list_branches(root)
+        if name not in {branch.name for branch in branches.branches}:
+            raise GitCommandError(f"There is no local branch named '{name}'.")
+        if name == branches.current:
+            return
+        if any(change.index_status != "?" for change in self._changes(root)):
+            raise GitCommandError("Commit, stash, or discard your changes before switching branches.")
+        # `--` ends the revision list, so the name can never be read as a path or option.
+        self._run_write(root, "checkout", "-q", name, "--")
+
+    def create_branch(self, root_path: str, name: str, checkout: bool) -> None:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        if not _BRANCH_NAME.fullmatch(name or "") or "@{" in name:
+            raise GitCommandError(f"'{name}' is not a valid branch name.")
+        try:
+            self._run(root, "check-ref-format", "--branch", name, limit=400)
+        except GitReviewError as exc:
+            raise GitCommandError(f"'{name}' is not a valid branch name.") from exc
+        if not repo.head.is_valid():
+            raise GitCommandError("Make a first commit before creating branches.")
+        if name in {branch.name for branch in self.list_branches(root).branches}:
+            raise GitCommandError(f"A branch named '{name}' already exists.")
+        if checkout:
+            self._run_write(root, "checkout", "-q", "-b", name)
+        else:
+            self._run_write(root, "branch", name)
 
     def discard(self, root_path: str, paths: list[str]) -> None:
         repo = self._repository(root_path)

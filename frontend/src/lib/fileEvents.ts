@@ -2,7 +2,7 @@
 export const FILES_CHANGED_EVENT = "ifrog:files-changed-on-disk";
 
 export interface FilesChangedDetail {
-  /** Repository-relative paths as Git reports them. */
+  /** Repository-relative paths as Git reports them; "*" means any file may have changed (a branch switch). */
   paths: string[];
 }
 
@@ -15,5 +15,5 @@ export function announceFilesChanged(paths: string[]): void {
  * folder, which may be a subfolder; match either exactly or by path suffix.
  */
 export function affectsPath(changed: string[], editorPath: string): boolean {
-  return changed.some(path => path === editorPath || path.endsWith(`/${editorPath}`));
+  return changed.some(path => path === "*" || path === editorPath || path.endsWith(`/${editorPath}`));
 }

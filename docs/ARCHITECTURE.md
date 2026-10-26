@@ -147,7 +147,10 @@ The only writes are the explicit actions on `GitReviewPort`: `stage`
 (`git reset HEAD -- <paths>`, or `git rm --cached` before the first commit),
 `discard` (`git checkout -- <paths>` for tracked files; untracked files are
 unlinked without following symlinks; conflicts and staged-only paths are
-refused), and `commit` (`git commit -m`). Paths are validated against the current
+refused), `switch_branch` (`git checkout <branch> --`, only to an existing
+local branch and only with no tracked changes), `create_branch` (validated by
+a conservative pattern and `git check-ref-format --branch`, from HEAD), and
+`commit` (`git commit -m`). Paths are validated against the current
 status, including rename sources, and `GitCommandError` carries Git's own
 stderr (hook failures, missing identity) to the API as HTTP 409. Hooks run as
 they would from the CLI; nothing pushes, fetches, or rewrites history.

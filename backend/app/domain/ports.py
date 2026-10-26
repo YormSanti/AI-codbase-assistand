@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.domain.git_models import CommitDetails, GitCommit, GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import BranchList, CommitDetails, GitCommit, GitDiff, GitStatus, StagedDiff
 from app.domain.models import CodeSymbol, FileMetadata, FileSyncResult, Language, RepositoryInfo, SymbolMatch
 
 
@@ -46,6 +46,18 @@ class GitReviewPort(ABC):
     @abstractmethod
     def unstage(self, root_path: str, paths: list[str]) -> None:
         """Remove the given paths from the index, keeping working tree edits."""
+
+    @abstractmethod
+    def list_branches(self, root_path: str) -> BranchList:
+        """Local branches and which one is checked out."""
+
+    @abstractmethod
+    def switch_branch(self, root_path: str, name: str) -> None:
+        """Check out an existing local branch; refused while tracked files have changes."""
+
+    @abstractmethod
+    def create_branch(self, root_path: str, name: str, checkout: bool) -> None:
+        """Create a branch at HEAD, optionally switching to it (working-tree changes come along)."""
 
     @abstractmethod
     def discard(self, root_path: str, paths: list[str]) -> None:

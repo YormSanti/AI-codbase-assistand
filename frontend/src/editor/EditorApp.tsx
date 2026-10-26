@@ -24,6 +24,10 @@ interface Props {
   onCommand?: (command: EditorCommand) => void;
   /** Open a file at a line, used by project-wide search results. */
   onRevealLine?: (path: string, line: number) => void;
+  /** Returns a reason to refuse a branch switch, such as unsaved drafts. */
+  branchSwitchBlocker?: () => string | null;
+  /** Called after Source Control switched or created a branch. */
+  onBranchChanged?: () => void;
   /** A tool view to open once the shell is active (command palette, Git page). */
   requestedView?: EditorToolView | null;
   onRequestedViewHandled?: () => void;
@@ -35,7 +39,7 @@ interface Props {
 
 // Keep the shared file workspace at the same position in the tree so entering
 // the editor from File Explorer does not remount the current unsaved draft.
-export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, onRevealLine, requestedView, onRequestedViewHandled, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
+export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, onRevealLine, requestedView, onRequestedViewHandled, branchSwitchBlocker, onBranchChanged, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalRoot, setTerminalRoot] = useState<string | null>(null);
   const [terminalHeight, setTerminalHeight] = useState(260);
@@ -270,7 +274,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
             {typeof children === "function" ? children(!toolVisible) : children}
           </div>
 
-          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><Suspense fallback={<PageFallback />}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} onAskAI={prompt => { setLocalAiPrompt(prompt); openAi(); }} /></Suspense></div>}
+          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><Suspense fallback={<PageFallback />}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} onAskAI={prompt => { setLocalAiPrompt(prompt); openAi(); }} branchSwitchBlocker={branchSwitchBlocker} onBranchChanged={() => { onCommand?.("refreshFiles"); onBranchChanged?.(); }} /></Suspense></div>}
 
           {aiRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-ai-view" hidden={!aiVisible}>
             <header className="editor-git-header">

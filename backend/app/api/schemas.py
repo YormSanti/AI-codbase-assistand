@@ -118,6 +118,15 @@ class GitPathsRequest(BaseModel):
     paths: list[str] = Field(..., min_length=1, max_length=500, description="Changed paths from the current Git status")
 
 
+class GitSwitchBranchRequest(BaseModel):
+    branch: str = Field(..., min_length=1, max_length=200)
+
+
+class GitCreateBranchRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    checkout: bool = True
+
+
 class GitCommitRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=10_000)
 

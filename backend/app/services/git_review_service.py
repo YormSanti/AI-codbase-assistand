@@ -1,6 +1,6 @@
 """Resolve selected projects before reading live Git data."""
 from app.domain.exceptions import RepositoryNotFoundError
-from app.domain.git_models import CommitDetails, GitDiff, GitStatus, StagedDiff
+from app.domain.git_models import BranchList, CommitDetails, GitDiff, GitStatus, StagedDiff
 from app.domain.ports import FileMetadataRepositoryPort, GitReviewPort
 
 
@@ -38,6 +38,19 @@ class GitReviewService:
     def unstage(self, repository_id: int, paths: list[str]) -> GitStatus:
         root = self._root(repository_id)
         self._git.unstage(root, paths)
+        return self._git.get_status(root)
+
+    def list_branches(self, repository_id: int) -> BranchList:
+        return self._git.list_branches(self._root(repository_id))
+
+    def switch_branch(self, repository_id: int, name: str) -> GitStatus:
+        root = self._root(repository_id)
+        self._git.switch_branch(root, name)
+        return self._git.get_status(root)
+
+    def create_branch(self, repository_id: int, name: str, checkout: bool) -> GitStatus:
+        root = self._root(repository_id)
+        self._git.create_branch(root, name, checkout)
         return self._git.get_status(root)
 
     def discard(self, repository_id: int, paths: list[str]) -> GitStatus:

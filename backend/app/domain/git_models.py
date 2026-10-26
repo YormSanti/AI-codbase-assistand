@@ -32,6 +32,23 @@ class GitStatus:
 
 
 @dataclass
+class BranchInfo:
+    name: str
+    upstream: str | None
+    subject: str
+    committed_at: datetime | None
+
+
+@dataclass
+class BranchList:
+    current: str | None
+    """The checked-out branch, including a branch without commits yet; None when HEAD is detached."""
+    detached: bool
+    branches: list[BranchInfo]
+    """Local branches, most recently committed first."""
+
+
+@dataclass
 class CommitFile:
     path: str
     status: str

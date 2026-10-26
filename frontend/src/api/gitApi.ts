@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { CommitDetails, GitDiff, GitStatus, StagedDiff } from "../types/git";
+import type { BranchList, CommitDetails, GitDiff, GitStatus, StagedDiff } from "../types/git";
 
 export const gitApi = {
   getStatus(repositoryId: number): Promise<GitStatus> {
@@ -29,6 +29,18 @@ export const gitApi = {
   /** Remove the given paths from the index, keeping working tree edits. */
   unstage(repositoryId: number, paths: string[]): Promise<GitStatus> {
     return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/unstage`, { method: "POST", body: JSON.stringify({ paths }) });
+  },
+  /** Local branches, most recently committed first, and the checked-out branch. */
+  listBranches(repositoryId: number): Promise<BranchList> {
+    return apiRequest<BranchList>(`/api/repositories/${repositoryId}/git/branches`);
+  },
+  /** Check out an existing local branch; refused while tracked files have changes. */
+  switchBranch(repositoryId: number, branch: string): Promise<GitStatus> {
+    return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/checkout`, { method: "POST", body: JSON.stringify({ branch }) });
+  },
+  /** Create a branch at HEAD and switch to it. */
+  createBranch(repositoryId: number, name: string): Promise<GitStatus> {
+    return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/branches`, { method: "POST", body: JSON.stringify({ name, checkout: true }) });
   },
   /** Discard working-tree changes (untracked files are deleted); resolves with the refreshed status. */
   discard(repositoryId: number, paths: string[]): Promise<GitStatus> {
