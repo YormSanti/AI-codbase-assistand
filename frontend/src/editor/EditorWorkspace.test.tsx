@@ -65,7 +65,7 @@ it("retains drafts across indexed and local tabs and saves all files with their 
   await screen.findByText("Saved 2 files.");
   expect(fileApi.saveContent).toHaveBeenCalledWith(8, "const draft = true;", "a".repeat(64));
   expect(editorApi.saveContent).toHaveBeenCalledWith(4, ".env", "MODE=test", "a".repeat(64));
-  expect(onStateChange).toHaveBeenLastCalledWith({ dirty: false, saving: false });
+  await waitFor(() => expect(onStateChange).toHaveBeenLastCalledWith({ dirty: false, saving: false }));
   await waitFor(() => expect(screen.queryByText("2 unsaved")).not.toBeInTheDocument());
 });
 
