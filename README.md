@@ -15,9 +15,9 @@ files (path/size/language/hash respecting `.gitignore`), parse Python/JS/TS
 source with Tree-sitter to extract classes/functions/methods/imports, and
 browse the tree from a web UI.
 
-The Git Repository page uses the original repository dashboard. Its activity
-list and branch diagram are illustrative, not live Git history. Read-only
-Git status and diff APIs remain available in the backend.
+The Git Repository page shows live data from the opened repository: branch,
+HEAD commit, upstream ahead/behind counts, working tree summary, and recent
+commits, refreshed on focus and on the interval chosen in Settings.
 
 ## Prerequisites
 
@@ -176,12 +176,14 @@ and save/conflict handling with the existing File Explorer.
 ## Git Repository dashboard
 
 Open a local repository and select **Git Repository** in the sidebar to see
-the original **Repository Details**, **Branch & Commit**, and **Git Activity**
-cards. Repository metadata comes from the opened project; the activity list,
-branch diagram, and missing-metadata fallbacks are demo content. The original
-**Open on GitHub** button opens this project's fixed GitHub URL, not the
-selected repository's remote. This view does not poll Git, show diffs, or
-send Git review prompts to AI.
+the **Repository Details**, **Branch & Commit**, and **Git Activity** cards.
+Everything shown is live: the current branch, HEAD commit (click to copy),
+upstream with ahead/behind counts, the working tree summary (staged,
+unstaged, conflicts), and the recent commit list from `git log`. **Open
+remote** opens the selected repository's own remote URL. The page refreshes
+when the window regains focus and on the Git refresh interval from Settings;
+**Refresh** reloads on demand. Diffs, staging, and AI review live in the
+editor's Source Control view (**Review changes in editor**).
 
 API: `GET /api/repositories/{id}/git` returns current metadata, changes, and
 recent commits; `GET /api/repositories/{id}/git/diff?path=main.py&staged=false`

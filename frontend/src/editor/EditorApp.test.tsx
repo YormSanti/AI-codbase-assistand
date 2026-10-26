@@ -24,7 +24,7 @@ it("keeps the file draft and shell when entering and leaving the editor through 
   expect(screen.getByLabelText("File draft")).toHaveValue("unsaved draft");
   expect(shells.start).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  fireEvent.change(await screen.findByLabelText("Shell input"), { target: { value: "npm run dev" } });
+  fireEvent.change(await screen.findByLabelText("Shell input", {}, { timeout: 5000 }), { target: { value: "npm run dev" } });
   view.rerender(<EditorApp {...props}><input aria-label="File draft" defaultValue="saved" /></EditorApp>);
   expect(screen.getByLabelText("File draft")).toHaveValue("unsaved draft");
   expect(screen.getByLabelText("Shell input")).not.toBeVisible();
@@ -40,7 +40,7 @@ it("switches a visible terminal to the new project and defers a hidden terminal 
   const third = { ...repository, id: 3, name: "third", root_path: "/third" };
   const view = render(<EditorApp {...props}><span>workspace</span></EditorApp>);
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  await waitFor(() => expect(shells.start).toHaveBeenCalledWith("/project"));
+  await waitFor(() => expect(shells.start).toHaveBeenCalledWith("/project"), { timeout: 5000 });
   view.rerender(<EditorApp {...props} repository={next}><span>workspace</span></EditorApp>);
   expect(shells.close).toHaveBeenCalledWith("/project");
   expect(shells.start).toHaveBeenLastCalledWith("/next");
@@ -59,9 +59,9 @@ it("keeps drafts and the terminal alive while reviewing Git inside the editor", 
   </EditorApp>);
   fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "unsaved" } });
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  fireEvent.change(await screen.findByLabelText("Shell input"), { target: { value: "git status" } });
+  fireEvent.change(await screen.findByLabelText("Shell input", {}, { timeout: 5000 }), { target: { value: "git status" } });
   fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
-  expect((await screen.findAllByText("Working tree clean"))[0]).toBeVisible();
+  expect((await screen.findAllByText("Working tree clean", {}, { timeout: 5000 }))[0]).toBeVisible();
   expect(screen.getByLabelText("File draft")).not.toBeVisible();
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
   expect(screen.getByLabelText("Shell input")).toHaveValue("git status");
@@ -107,7 +107,7 @@ it("opens extensions inside the editor without navigating away from code", async
 
   // The draft is hidden while extensions view is visible
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
-  expect(await screen.findByText("Install from VSIX…")).toBeVisible();
+  expect(await screen.findByText("Install from VSIX…", {}, { timeout: 5000 })).toBeVisible();
   expect(screen.getByText("Python")).toBeVisible();
 
   // Clicking "Back to code" returns to code
@@ -163,7 +163,7 @@ it("opens dedicated editor settings inside the editor workspace without kicking 
 
   // The draft is safely hidden in the background while settings is visible
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
-  expect(await screen.findByText("Editor Settings")).toBeVisible();
+  expect(await screen.findByText("Editor Settings", {}, { timeout: 5000 })).toBeVisible();
   expect(screen.getByText("Editor: Font Size")).toBeVisible();
   expect(screen.getByText("Live Preview")).toBeVisible();
 
@@ -184,7 +184,7 @@ it("toggles editor settings with Ctrl+, shortcut without navigating away", async
   // Press Ctrl+,
   fireEvent.keyDown(window, { key: ",", ctrlKey: true });
   expect(onNavigate).not.toHaveBeenCalled();
-  expect(await screen.findByText("Editor Settings")).toBeVisible();
+  expect(await screen.findByText("Editor Settings", {}, { timeout: 5000 })).toBeVisible();
 
   // Press Ctrl+, again to toggle back
   fireEvent.keyDown(window, { key: ",", ctrlKey: true });

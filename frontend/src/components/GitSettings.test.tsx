@@ -5,23 +5,41 @@ import { updateSettings } from "../hooks/useAppSettings";
 import { GitPage } from "./GitPage";
 
 vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn() } }));
+const repository = { id: 1, name: "repo", root_path: "/repo", current_branch: "main", head_commit: null, opened_at: null, file_count: 0 };
+
 beforeEach(() => {
   localStorage.clear(); vi.clearAllMocks(); vi.useFakeTimers();
   vi.mocked(gitApi.getStatus).mockImplementation(async () => ({ branch: "main", head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null, changes: [], commits: [] }));
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); localStorage.clear(); });
 
-it("does not start live Git review polling on the restored original dashboard", async () => {
+it("refreshes Git status on the interval chosen in Settings and stops when set to manual", async () => {
   updateSettings({ gitRefreshInterval: 60 });
-  render(<GitPage repository={{ id: 1, name: "repo", root_path: "/repo", current_branch: "main", head_commit: null, opened_at: null, file_count: 0 }} onNavigate={vi.fn()} />);
+  render(<GitPage repository={repository} onNavigate={vi.fn()} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(gitApi.getStatus).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Working tree clean")).toBeInTheDocument();
+
   await act(async () => { await vi.advanceTimersByTimeAsync(59_000); });
-  expect(gitApi.getStatus).not.toHaveBeenCalled();
+  expect(gitApi.getStatus).toHaveBeenCalledTimes(1);
   await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
-  expect(gitApi.getStatus).not.toHaveBeenCalled();
+  expect(gitApi.getStatus).toHaveBeenCalledTimes(2);
+
   act(() => updateSettings({ gitRefreshInterval: 0 }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+  expect(gitApi.getStatus).toHaveBeenCalledTimes(2);
+
   fireEvent(window, new Event("focus"));
-  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
-  expect(gitApi.getStatus).not.toHaveBeenCalled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(gitApi.getStatus).toHaveBeenCalledTimes(3);
   expect(gitApi.getDiff).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+});
+
+it("refreshes on demand from the toolbar", async () => {
+  updateSettings({ gitRefreshInterval: 0 });
+  render(<GitPage repository={repository} onNavigate={vi.fn()} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Git status" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(gitApi.getStatus).toHaveBeenCalledTimes(2);
 });
