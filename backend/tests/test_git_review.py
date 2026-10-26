@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from git import Actor, Repo
 
-from app.domain.exceptions import GitReviewError
+from app.domain.exceptions import GitCommandError, GitReviewError
 from app.infrastructure.git.git_review_client import GitReviewClient, MAX_DIFF_BYTES, remote_web_url
 
 
@@ -191,3 +191,106 @@ def test_invalid_project_and_diff_requests(api_client: TestClient, git_repo_path
 ])
 def test_remote_web_links(remote: str, expected: str | None) -> None:
     assert remote_web_url(remote) == expected
+
+
+def _configure_identity(path: Path) -> Repo:
+    repo = Repo(path)
+    repo.git.config("user.name", "Test User")
+    repo.git.config("user.email", "test@example.com")
+    return repo
+
+
+def test_stage_unstage_and_commit_from_the_api(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = _configure_identity(git_repo_path)
+    (git_repo_path / "main.py").write_text("def main():\n    return 'edited'\n")
+    (git_repo_path / "notes.txt").write_text("brand new\n")
+    (git_repo_path / "README.md").unlink()
+
+    staged = api_client.post(f"{base}/stage", json={"paths": ["main.py", "notes.txt", "README.md"]})
+    assert staged.status_code == 200
+    index = {change["path"]: change["index_status"] for change in staged.json()["changes"]}
+    assert {path: index[path] for path in ["main.py", "notes.txt", "README.md"]} == {"main.py": "M", "notes.txt": "A", "README.md": "D"}
+    assert index["untracked.py"] == "?"
+
+    unstaged = api_client.post(f"{base}/unstage", json={"paths": ["notes.txt"]})
+    assert unstaged.status_code == 200
+    index = {change["path"]: change["index_status"] for change in unstaged.json()["changes"]}
+    assert index["notes.txt"] == "?"
+    assert index["main.py"] == "M"
+    assert (git_repo_path / "notes.txt").read_text() == "brand new\n"  # working tree untouched
+
+    committed = api_client.post(f"{base}/commit", json={"message": "feat: edit main and drop readme"})
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["commits"][0]["message"] == "feat: edit main and drop readme"
+    assert body["head_commit"] == repo.head.commit.hexsha
+    assert {change["path"] for change in body["changes"]} == {"notes.txt", "untracked.py"}
+    assert repo.head.commit.stats.files.keys() >= {"main.py", "README.md"}
+
+
+def test_commit_and_stage_are_validated(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    _configure_identity(git_repo_path)
+    nothing_staged = api_client.post(f"{base}/commit", json={"message": "nothing here"})
+    assert nothing_staged.status_code == 409
+    assert "Nothing is staged" in nothing_staged.json()["detail"]
+    assert api_client.post(f"{base}/commit", json={"message": "   "}).status_code == 409
+    assert api_client.post(f"{base}/commit", json={"message": ""}).status_code == 422
+    for path in ["../private.txt", "/etc/passwd", ".git/config", "README.md"]:
+        response = api_client.post(f"{base}/stage", json={"paths": [path]})
+        assert response.status_code == 409, path
+    assert api_client.post(f"{base}/unstage", json={"paths": ["untracked.py"]}).status_code == 409
+    assert api_client.post(f"{base}/stage", json={"paths": []}).status_code == 422
+    assert api_client.post("/api/repositories/999/git/stage", json={"paths": ["main.py"]}).status_code == 404
+
+
+def test_commit_surfaces_git_errors_and_blocks_conflicts(git_repo_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Isolate from the developer's global identity so the missing-identity path is exercised.
+    empty_config = tmp_path / "empty-gitconfig"
+    empty_config.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    repo = Repo(git_repo_path)
+    client = GitReviewClient()
+    (git_repo_path / "main.py").write_text("changed\n")
+    client.stage(str(git_repo_path), ["main.py"])
+    repo.git.config("user.useConfigOnly", "true")
+    with pytest.raises(GitCommandError) as missing_identity:
+        client.commit(str(git_repo_path), "no identity")
+    assert "identity" in str(missing_identity.value).lower() or "email" in str(missing_identity.value).lower()
+    repo.git.config("--unset", "user.useConfigOnly")
+    _configure_identity(git_repo_path)
+
+    original = repo.active_branch.name
+    repo.git.checkout("-b", "other")
+    actor = Actor("Test", "test@example.com")
+    (git_repo_path / "main.py").write_text("other\n")
+    repo.index.add(["main.py"])
+    repo.index.commit("other", author=actor, committer=actor)
+    repo.git.checkout(original)
+    (git_repo_path / "main.py").write_text("current\n")
+    repo.index.add(["main.py"])
+    repo.index.commit("current", author=actor, committer=actor)
+    repo.git.merge("other", with_exceptions=False)
+    with pytest.raises(GitCommandError) as conflict:
+        client.commit(str(git_repo_path), "merge attempt")
+    assert "conflict" in str(conflict.value).lower()
+
+
+def test_unborn_repository_can_stage_unstage_and_commit(tmp_path: Path) -> None:
+    empty = tmp_path / "fresh"
+    Repo.init(empty)
+    _configure_identity(empty)
+    (empty / "first.txt").write_text("first\n")
+    client = GitReviewClient()
+    client.stage(str(empty), ["first.txt"])
+    assert client.get_status(str(empty)).changes[0].index_status == "A"
+    client.unstage(str(empty), ["first.txt"])
+    assert client.get_status(str(empty)).changes[0].index_status == "?"
+    client.stage(str(empty), ["first.txt"])
+    commit = client.commit(str(empty), "Initial commit")
+    assert commit.message == "Initial commit"
+    status = client.get_status(str(empty))
+    assert status.head_commit == commit.sha
+    assert status.changes == []

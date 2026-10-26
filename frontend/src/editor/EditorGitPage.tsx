@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, Minus, Plus, RefreshCw, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
 import type { RepositoryInfo } from "../types/domain";
 import type { GitChange } from "../types/git";
 import { groupChanges, useGitReview, type ChangeGroup } from "./useGitReview";
@@ -30,6 +31,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder }: Pr
   const [lineLimit, setLineLimit] = useState(2000);
   const [copied, setCopied] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
   const status = review.status;
   const lines = useMemo(() => parseGitDiff(review.patch?.content ?? ""), [review.patch]);
   const visibleLines = useMemo(() => lines.slice(0, lineLimit), [lines, lineLimit]);
@@ -38,6 +40,18 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder }: Pr
   const removed = lines.filter(line => line.kind === "removed").length;
   const groups = (Object.keys(groupNames) as ChangeGroup[]).map(group => ({ group, changes: groupChanges(status?.changes ?? [], group) }));
   const branch = status?.branch ?? (status?.head_commit ? "Detached HEAD" : "No commits yet");
+  const stagedCount = groups.find(item => item.group === "staged")?.changes.length ?? 0;
+  const canCommit = Boolean(repository) && !review.busy && stagedCount > 0 && message.trim().length > 0;
+
+  const commit = async () => {
+    if (!canCommit) return;
+    const result = await review.commit(message.trim());
+    if (result) {
+      setMessage("");
+      setNotice(null);
+      toast.success(`Committed ${result.head_commit?.slice(0, 7) ?? ""}`.trim());
+    }
+  };
 
   const copyCommit = async (sha: string) => {
     try {
@@ -64,16 +78,30 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder }: Pr
       <aside className="editor-git-sidebar" aria-label="Source Control">
         <header className="editor-git-sidebar-heading"><h2>SOURCE CONTROL</h2><button type="button" aria-label="Refresh Git status" title="Refresh Git status" disabled={!repository || review.loading} onClick={review.refresh}><RefreshCw size={15} className={review.loading ? "editor-git-spin" : undefined} /></button></header>
         {repository && <div className="editor-git-project"><GitBranch size={17} /><div><strong>{repository.name}</strong><span>{status ? branch : review.loading ? "Reading Git repository…" : "Git unavailable"}</span></div><span className="editor-git-count">{status?.changes.length ?? "—"}</span></div>}
+        {repository && status && <form className="editor-git-commit-box" onSubmit={event => { event.preventDefault(); void commit(); }}>
+          <textarea aria-label="Commit message" rows={2} value={message} disabled={review.busy} placeholder={stagedCount ? "Message (Ctrl/Cmd+Enter to commit)" : "Stage changes to commit"} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void commit(); } }} />
+          <button type="submit" className="editor-git-primary editor-git-commit-button" disabled={!canCommit} title={stagedCount ? "Commit staged changes" : "Stage changes first"}>{review.busy ? <LoaderCircle size={13} className="editor-git-spin" /> : <Check size={13} />}<span>Commit{stagedCount ? ` (${stagedCount})` : ""}</span></button>
+        </form>}
         <button type="button" className={`editor-git-overview-link ${!review.selection ? "is-selected" : ""}`} onClick={() => review.select(null)}><History size={15} /><span>Repository overview</span></button>
         <div className="editor-git-change-list">
           {groups.map(({ group, changes }) => changes.length > 0 && <div className="editor-git-change-group" key={group}>
-            <button type="button" className="editor-git-group-heading" aria-expanded={expanded[group]} onClick={() => setExpanded(value => ({ ...value, [group]: !value[group] }))}>{expanded[group] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>{groupNames[group]}</span><span className="editor-git-count">{changes.length}</span></button>
+            <div className="editor-git-group">
+              <button type="button" className="editor-git-group-heading" aria-expanded={expanded[group]} onClick={() => setExpanded(value => ({ ...value, [group]: !value[group] }))}>{expanded[group] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>{groupNames[group]}</span><span className="editor-git-count">{changes.length}</span></button>
+              {group === "staged"
+                ? <button type="button" className="editor-git-group-action" aria-label="Unstage all changes" title="Unstage all" disabled={review.busy} onClick={() => void review.unstage(changes.map(change => change.path))}><Minus size={13} /></button>
+                : <button type="button" className="editor-git-group-action" aria-label={group === "conflicts" ? "Stage all resolved conflicts" : "Stage all changes"} title={group === "conflicts" ? "Mark all as resolved" : "Stage all"} disabled={review.busy} onClick={() => void review.stage(changes.map(change => change.path))}><Plus size={13} /></button>}
+            </div>
             {expanded[group] && changes.map(change => {
               const code = changeCode(change, group);
               const selected = review.selection?.path === change.path && review.selection.group === group;
-              return <button type="button" key={change.path} className={`editor-git-change ${selected ? "is-selected" : ""}`} aria-label={`${groupNames[group]}: ${change.path}`} aria-pressed={selected} title={`${change.path}${change.original_path ? ` (from ${change.original_path})` : ""}`} onClick={() => { setLineLimit(2000); review.select({ path: change.path, group }); }}>
-                <FileCode2 size={14} /><span className="editor-git-change-path"><span>{fileName(change.path)}</span><small>{change.path.includes("/") ? change.path.slice(0, change.path.lastIndexOf("/")) : ""}</small></span><span className={`editor-git-change-code code-${code === "?" ? "untracked" : code}`} title={changeNames[code] ?? code}>{code}</span>
-              </button>;
+              return <div className={`editor-git-change-row ${selected ? "is-selected" : ""}`} key={change.path}>
+                <button type="button" className={`editor-git-change ${selected ? "is-selected" : ""}`} aria-label={`${groupNames[group]}: ${change.path}`} aria-pressed={selected} title={`${change.path}${change.original_path ? ` (from ${change.original_path})` : ""}`} onClick={() => { setLineLimit(2000); review.select({ path: change.path, group }); }}>
+                  <FileCode2 size={14} /><span className="editor-git-change-path"><span>{fileName(change.path)}</span><small>{change.path.includes("/") ? change.path.slice(0, change.path.lastIndexOf("/")) : ""}</small></span><span className={`editor-git-change-code code-${code === "?" ? "untracked" : code}`} title={changeNames[code] ?? code}>{code}</span>
+                </button>
+                {group === "staged"
+                  ? <button type="button" className="editor-git-change-action" aria-label={`Unstage ${change.path}`} title="Unstage" disabled={review.busy} onClick={() => void review.unstage([change.path])}><Minus size={13} /></button>
+                  : <button type="button" className="editor-git-change-action" aria-label={`Stage ${change.path}`} title={group === "conflicts" ? "Mark as resolved" : "Stage"} disabled={review.busy} onClick={() => void review.stage([change.path])}><Plus size={13} /></button>}
+              </div>;
             })}
           </div>)}
           {status && !status.changes.length && <div className="editor-git-sidebar-clean"><CheckCircle2 size={22} /><span>Working tree clean</span></div>}
@@ -84,6 +112,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder }: Pr
       <div className="editor-git-main">
         <header className="editor-git-header"><div className="editor-git-tab"><GitBranch size={15} /><span>{review.selection ? fileName(review.selection.path) : "Git Repository"}</span></div><div className="editor-git-header-actions">{status?.remote_url && <button type="button" title={status.remote_url} onClick={() => void openRemote()}><ExternalLink size={14} /><span>Open remote</span></button>}<button type="button" onClick={onReturn}><ArrowLeft size={14} /><span>Back to code</span></button></div></header>
         {review.error && <div className="editor-git-error" role="alert"><TriangleAlert size={15} /><span>{review.error}</span><button type="button" onClick={review.refresh}>Retry</button></div>}
+        {review.actionError && <div className="editor-git-error" role="alert"><TriangleAlert size={15} /><span>{review.actionError}</span><button type="button" onClick={review.clearActionError}>Dismiss</button></div>}
         {notice && <div className="editor-git-error" role="alert">{notice}</div>}
         {!repository ? <div className="editor-git-empty"><GitBranch size={50} /><h1>Open a project to review Git</h1><p>Choose a local folder to see its repository and changes.</p><button type="button" className="editor-git-primary" onClick={onOpenFolder}>Open Folder</button></div>
           : !status ? <div className="editor-git-empty">{review.loading ? <><LoaderCircle className="editor-git-spin" size={28} /><p>Reading repository status…</p></> : <><GitBranch size={42} /><h1>Git is unavailable for this folder</h1><p>Open a folder inside a Git repository to review changes.</p><button type="button" className="editor-git-primary" onClick={onOpenFolder}>Open Folder</button></>}</div>
@@ -95,7 +124,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder }: Pr
             </div>}
           </> : <div className="editor-git-overview">
             <div className="editor-git-hero"><div className="editor-git-hero-mark"><GitBranch size={25} /></div><div><p>REPOSITORY</p><h1>{status.remote_url?.split("/").pop() ?? repository.name}</h1><span title={repository.root_path}>{repository.root_path}</span></div><span className="editor-git-branch"><GitBranch size={13} />{branch}</span></div>
-            <div className="editor-git-metrics"><div><span>Working tree</span><strong>{status.changes.length ? `${status.changes.length} changed ${status.changes.length === 1 ? "file" : "files"}` : "Working tree clean"}</strong><small>{groupChanges(status.changes, "staged").length} staged · {groupChanges(status.changes, "changes").length} unstaged{groupChanges(status.changes, "conflicts").length ? ` · ${groupChanges(status.changes, "conflicts").length} conflicts` : ""}</small></div><div><span>Upstream</span><strong>{status.upstream ?? "No upstream configured"}</strong><small><ArrowUp size={12} />{status.ahead ?? "—"} ahead <ArrowDown size={12} />{status.behind ?? "—"} behind</small></div><div><span>Latest commit</span><strong className="editor-git-mono">{status.head_commit?.slice(0, 7) ?? "No commits yet"}</strong><small>{status.commits[0]?.message ?? "Make your first commit from the terminal."}</small></div></div>
+            <div className="editor-git-metrics"><div><span>Working tree</span><strong>{status.changes.length ? `${status.changes.length} changed ${status.changes.length === 1 ? "file" : "files"}` : "Working tree clean"}</strong><small>{groupChanges(status.changes, "staged").length} staged · {groupChanges(status.changes, "changes").length} unstaged{groupChanges(status.changes, "conflicts").length ? ` · ${groupChanges(status.changes, "conflicts").length} conflicts` : ""}</small></div><div><span>Upstream</span><strong>{status.upstream ?? "No upstream configured"}</strong><small><ArrowUp size={12} />{status.ahead ?? "—"} ahead <ArrowDown size={12} />{status.behind ?? "—"} behind</small></div><div><span>Latest commit</span><strong className="editor-git-mono">{status.head_commit?.slice(0, 7) ?? "No commits yet"}</strong><small>{status.commits[0]?.message ?? "Stage changes and commit from the sidebar."}</small></div></div>
             <div className="editor-git-history-heading"><div><History size={16} /><h2>Commit history</h2></div><span>{status.commits.length ? `Latest ${status.commits.length} commits` : ""}</span></div>
             {status.commits.length ? <ol className="editor-git-history">{status.commits.map(commit => <li key={commit.sha}><span className="editor-git-history-dot"><GitCommitHorizontal size={17} /></span><div><strong>{commit.message}</strong><span>{commit.author}<span>·</span><time dateTime={commit.committed_at} title={new Date(commit.committed_at).toLocaleString()}>{shortDate(commit.committed_at)}</time></span></div><button type="button" className="editor-git-commit-hash" aria-label={`Copy commit ${commit.sha.slice(0, 7)}`} title={commit.sha} onClick={() => void copyCommit(commit.sha)}><code>{commit.sha.slice(0, 7)}</code>{copied === commit.sha ? <Check size={13} /> : <Copy size={13} />}</button></li>)}</ol> : <div className="editor-git-no-history"><GitCommitHorizontal size={25} /><p>No commits in this repository yet.</p></div>}
           </div>}

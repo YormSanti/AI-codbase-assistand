@@ -5,7 +5,7 @@ import type { GitDiff, GitStatus } from "../types/git";
 import { EditorGitPage } from "./EditorGitPage";
 import { parseGitDiff, splitGitDiff } from "./gitDiff";
 
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), commit: vi.fn() } }));
 const repository = { id: 1, name: "project", root_path: "/project", current_branch: "santi", head_commit: "abc1234", opened_at: null, file_count: 4 };
 const status: GitStatus = {
   branch: "santi", head_commit: "abc1234", upstream: "origin/santi", ahead: 2, behind: 0, remote_url: null,
@@ -103,4 +103,48 @@ it("preserves hunk line numbers and pairs changed lines without counting file he
   expect(changedRow?.right?.newLine).toBe(20);
   const merge = parseGitDiff("diff --cc merge.ts\n@@@ -1,1 -1,1 +1,1 @@@\n++<<<<<<< HEAD\n");
   expect(merge.at(-1)).toEqual({ kind: "meta", oldLine: null, newLine: null, text: "++<<<<<<< HEAD" });
+});
+
+it("stages, unstages, and commits from the sidebar using the returned status", async () => {
+  const afterStage: GitStatus = { ...status, changes: status.changes.map(change => change.path === "README.md" ? { ...change, index_status: "A", worktree_status: " " } : change) };
+  const afterUnstage: GitStatus = { ...afterStage, changes: afterStage.changes.map(change => change.path === "src/main.ts" ? { ...change, index_status: " " } : change) };
+  const afterCommit: GitStatus = { ...status, head_commit: "def5678abcdef", changes: [status.changes[2]], commits: [{ sha: "def5678abcdef", message: "feat: stage from UI", author: "KSK", committed_at: "2026-10-26T01:00:00Z" }, ...status.commits] };
+  vi.mocked(gitApi.stage).mockResolvedValue(afterStage);
+  vi.mocked(gitApi.unstage).mockResolvedValue(afterUnstage);
+  vi.mocked(gitApi.commit).mockResolvedValue(afterCommit);
+  render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  expect(screen.getByRole("button", { name: /^Commit/ })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Stage README.md" }));
+  expect(gitApi.stage).toHaveBeenCalledWith(1, ["README.md"]);
+  expect(await screen.findByRole("button", { name: "Staged Changes: README.md" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Changes: README.md" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Unstage src/main.ts" }));
+  expect(gitApi.unstage).toHaveBeenCalledWith(1, ["src/main.ts"]);
+  expect(await screen.findByRole("button", { name: "Changes: src/main.ts" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Staged Changes: src/main.ts" })).toBeNull();
+
+  const message = screen.getByRole("textbox", { name: "Commit message" });
+  fireEvent.change(message, { target: { value: "feat: stage from UI" } });
+  expect(screen.getByRole("button", { name: "Commit (1)" })).toBeEnabled();
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true });
+  expect(gitApi.commit).toHaveBeenCalledWith(1, "feat: stage from UI");
+  expect((await screen.findAllByText("feat: stage from UI")).length).toBeGreaterThan(0);
+  expect(message).toHaveValue("");
+  expect(screen.getByText("1 changed file")).toBeVisible();
+});
+
+it("stages a whole group and shows Git's error when an action is rejected", async () => {
+  vi.mocked(gitApi.stage).mockRejectedValueOnce(new Error("'README.md' is no longer changed. Refresh the Git status."));
+  render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Stage all changes" }));
+  expect(gitApi.stage).toHaveBeenCalledWith(1, ["src/main.ts", "README.md"]);
+  expect(await screen.findByRole("alert")).toHaveTextContent("no longer changed");
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Unstage all changes" }));
+  expect(gitApi.unstage).toHaveBeenCalledWith(1, ["src/main.ts"]);
 });

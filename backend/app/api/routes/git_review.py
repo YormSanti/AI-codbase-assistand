@@ -1,10 +1,11 @@
-"""Live, read-only Git status and diff endpoints."""
+"""Live Git status and diff endpoints, plus explicit stage, unstage, and commit actions."""
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps import GitReviewServiceDep
-from app.domain.exceptions import GitReviewError, NotAGitRepositoryError, RepositoryNotFoundError
+from app.api.schemas import GitCommitRequest, GitPathsRequest
+from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError, RepositoryNotFoundError
 from app.domain.git_models import GitDiff, GitStatus
 
 router = APIRouter(prefix="/api/repositories", tags=["git"])
@@ -37,3 +38,29 @@ def get_git_diff(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except GitReviewError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _run_action(action):
+    try:
+        return action()
+    except RepositoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NotAGitRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (GitReviewError, GitCommandError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/{repository_id}/git/stage", response_model=GitStatus)
+def stage_changes(repository_id: int, request: GitPathsRequest, service: GitReviewServiceDep) -> GitStatus:
+    return _run_action(lambda: service.stage(repository_id, request.paths))
+
+
+@router.post("/{repository_id}/git/unstage", response_model=GitStatus)
+def unstage_changes(repository_id: int, request: GitPathsRequest, service: GitReviewServiceDep) -> GitStatus:
+    return _run_action(lambda: service.unstage(repository_id, request.paths))
+
+
+@router.post("/{repository_id}/git/commit", response_model=GitStatus)
+def commit_changes(repository_id: int, request: GitCommitRequest, service: GitReviewServiceDep) -> GitStatus:
+    return _run_action(lambda: service.commit(repository_id, request.message))

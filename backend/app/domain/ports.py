@@ -14,13 +14,30 @@ from app.domain.models import CodeSymbol, FileMetadata, FileSyncResult, Language
 
 
 class GitReviewPort(ABC):
-    """Read live status and diffs without changing the working tree or index."""
+    """Read live status and diffs, and apply explicit index/commit actions.
+
+    Reads never touch the working tree or index. Writes are limited to the
+    three actions below, always on paths the user picked from the current
+    status; nothing fetches, pushes, or rewrites history.
+    """
 
     @abstractmethod
     def get_status(self, path: str) -> GitStatus: ...
 
     @abstractmethod
     def get_diff(self, root_path: str, path: str, staged: bool) -> GitDiff: ...
+
+    @abstractmethod
+    def stage(self, root_path: str, paths: list[str]) -> None:
+        """Add the given changed paths (including deletions) to the index."""
+
+    @abstractmethod
+    def unstage(self, root_path: str, paths: list[str]) -> None:
+        """Remove the given paths from the index, keeping working tree edits."""
+
+    @abstractmethod
+    def commit(self, root_path: str, message: str) -> GitCommit:
+        """Commit the index with `message`; hooks and identity rules apply as in the CLI."""
 
 
 class GitClientPort(ABC):

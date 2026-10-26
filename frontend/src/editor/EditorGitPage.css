@@ -112,3 +112,20 @@
 @media (max-width: 1000px) { .editor-git-sidebar { width: 240px; } .editor-git-overview { padding: 24px; } .editor-git-metrics { grid-template-columns: 1fr; } .editor-git-metrics > div + div { border-left: 0; border-top: 1px solid var(--git-border); } .editor-git-hero { flex-wrap: wrap; } .editor-git-diff-toolbar small { display: none; } }
 @media (max-width: 700px) { .editor-git-sidebar { width: 185px; } .editor-git-change-path { display: block; } .editor-git-change-path > span { max-width: 100%; display: block; } .editor-git-change-path small { display: none; } .editor-git-project { padding: 10px; } .editor-git-header-actions button span { display: none; } .editor-git-history li { flex-wrap: wrap; } .editor-git-diff-toolbar { padding: 8px; gap: 5px; } }
 @media (prefers-reduced-motion: reduce) { .editor-git-spin { animation: none; } }
+
+/* Stage / unstage / commit controls */
+.editor-git-commit-box { display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 10px; border-bottom: 1px solid var(--git-border); }
+.editor-git-commit-box textarea { width: 100%; resize: vertical; min-height: 44px; padding: 6px 8px; border: 1px solid var(--git-border); border-radius: 4px; background: var(--git-bg); color: var(--git-text, inherit); font: 12px/1.45 var(--font-body, inherit); }
+.editor-git-commit-box textarea:focus { outline: 1px solid #23a9f2; outline-offset: -1px; }
+.editor-git-commit-box textarea:disabled { opacity: .6; }
+.editor-git .editor-git-commit-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin-top: 0; width: 100%; font-size: 12px; }
+.editor-git .editor-git-commit-button:disabled { opacity: .45; cursor: not-allowed; }
+.editor-git-group { display: flex; align-items: center; }
+.editor-git-group > .editor-git-group-heading { flex: 1; min-width: 0; }
+.editor-git-group-action, .editor-git-change-action { display: grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; margin-right: 8px; border-radius: 4px; color: var(--git-muted); opacity: 0; transition: opacity .12s ease, background .12s ease; }
+.editor-git-group:hover .editor-git-group-action, .editor-git-group:focus-within .editor-git-group-action, .editor-git-change-row:hover .editor-git-change-action, .editor-git-change-row:focus-within .editor-git-change-action { opacity: 1; }
+.editor-git-group-action:hover, .editor-git-change-action:hover { background: var(--git-hover); color: inherit; }
+.editor-git-group-action:disabled, .editor-git-change-action:disabled { opacity: .35; cursor: progress; }
+.editor-git-change-row { display: flex; align-items: center; }
+.editor-git-change-row > .editor-git-change { flex: 1; min-width: 0; }
+.editor-git-change-row.is-selected { background: var(--git-hover); }

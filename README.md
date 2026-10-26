@@ -159,8 +159,21 @@ merge conflicts. Select a file for a split or unified diff; staged and
 working-tree versions are reviewed separately. Refresh reloads status and
 diffs after Git commands in the terminal. Open files, drafts, undo history,
 and the terminal stay available while reviewing Git. **Back to code** or
-**Ctrl/Cmd+P** returns to the file workspace. Use the terminal to stage,
-commit, and push changes.
+**Ctrl/Cmd+P** returns to the file workspace.
+
+Stage and commit without leaving the view: hover a changed file for its
+**+** (stage) or **−** (unstage) button, use the group buttons to stage or
+unstage everything in a section, and mark a resolved merge conflict with
+**+**. Type a message in the commit box and press **Commit** or
+**Ctrl/Cmd+Enter**; the button shows how many files are staged and stays
+disabled until there is a message and something staged. Git's own error text
+is shown when a commit is rejected, for example when no identity is
+configured or a hook fails. Pushing and pulling still happen in the terminal.
+
+API: `POST /api/repositories/{id}/git/stage` and `.../git/unstage` take
+`{ "paths": [...] }` limited to currently changed files;
+`POST /api/repositories/{id}/git/commit` takes `{ "message": "..." }`. Each
+returns the refreshed Git status.
 
 Use **Terminal** or **Ctrl/Cmd+\`** to show a resizable terminal below the
 editor. It starts in the opened project folder and keeps its session when
