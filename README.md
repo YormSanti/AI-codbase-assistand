@@ -65,8 +65,12 @@ To point the frontend at a backend running on a different port, set
 ## Desktop app (Tauri)
 
 The Tauri app bundles the React frontend and a PyInstaller-built FastAPI
-sidecar. It starts the backend automatically on an available loopback port and
-stores SQLite data in the operating system's application-data directory.
+backend. The backend is a directory bundle (`npm run desktop:backend` writes
+it to `frontend/src-tauri/resources/backend`, shipped as a Tauri resource), so
+it starts immediately instead of unpacking a single-file executable on every
+launch. The app starts it on an available loopback port, waits for its
+`/health` check before the first request, and stores SQLite data in the
+operating system's application-data directory.
 
 Install the desktop dependencies once:
 

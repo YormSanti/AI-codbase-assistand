@@ -1,19 +1,17 @@
 use std::env;
 use std::ffi::OsString;
 use std::fs;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use tauri_plugin_shell::ShellExt;
 
 struct BackendState {
     port: u16,
-    child: Mutex<Option<CommandChild>>,
+    child: Mutex<Option<Child>>,
 }
 
 #[tauri::command]
@@ -348,7 +346,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -358,30 +355,45 @@ pub fn run() {
             fs::create_dir_all(&data_dir)?;
             let database_path = data_dir.join("devpilot.db");
 
-            let sidecar = app
-                .shell()
-                .sidecar("devpilot-backend")?
-                .env("DEVPILOT_PORT", port.to_string())
-                .env("DEVPILOT_DATABASE_PATH", database_path);
-            let (mut events, child) = sidecar.spawn()?;
+            // The backend ships as a PyInstaller directory bundle under the app's
+            // resource directory (see bundle.resources in tauri.conf.json), so it
+            // starts without unpacking anything first.
+            let backend = app
+                .path()
+                .resource_dir()?
+                .join("backend")
+                .join(executable_name("devpilot-backend"));
+            if !backend.is_file() {
+                return Err(format!(
+                    "The backend executable is missing at {}. Run `npm run desktop:backend` to build it.",
+                    backend.display()
+                )
+                .into());
+            }
 
-            tauri::async_runtime::spawn(async move {
-                while let Some(event) = events.recv().await {
-                    match event {
-                        CommandEvent::Stdout(line) => {
-                            println!("[backend] {}", String::from_utf8_lossy(&line));
-                        }
-                        CommandEvent::Stderr(line) => {
-                            eprintln!("[backend] {}", String::from_utf8_lossy(&line));
-                        }
-                        CommandEvent::Error(error) => eprintln!("[backend] {error}"),
-                        CommandEvent::Terminated(status) => {
-                            eprintln!("[backend] exited with code {:?}", status.code);
-                        }
-                        _ => {}
+            let mut child = Command::new(&backend)
+                .env("DEVPILOT_PORT", port.to_string())
+                .env("DEVPILOT_DATABASE_PATH", &database_path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|error| format!("Could not start the backend at {}: {error}", backend.display()))?;
+
+            if let Some(stdout) = child.stdout.take() {
+                std::thread::spawn(move || {
+                    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                        println!("[backend] {line}");
                     }
-                }
-            });
+                });
+            }
+            if let Some(stderr) = child.stderr.take() {
+                std::thread::spawn(move || {
+                    for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                        eprintln!("[backend] {line}");
+                    }
+                });
+            }
 
             app.manage(BackendState {
                 port,
@@ -401,8 +413,9 @@ pub fn run() {
             if matches!(event, WindowEvent::Destroyed) {
                 let state = window.state::<BackendState>();
                 let child = state.child.lock().expect("backend state lock").take();
-                if let Some(child) = child {
+                if let Some(mut child) = child {
                     let _ = child.kill();
+                    let _ = child.wait();
                 }
             }
         })

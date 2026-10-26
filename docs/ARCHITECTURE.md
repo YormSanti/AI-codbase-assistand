@@ -103,9 +103,13 @@ frontend/src/
 
 The same React frontend runs either as a web app (`npm run dev`) or in a Tauri
 2 desktop shell (`npm run desktop:dev`). In desktop mode, Rust selects an
-available loopback port, starts a PyInstaller-packaged FastAPI sidecar, exposes
-the backend URL through a Tauri command, and terminates the sidecar with the
-window. The database path is supplied through `DEVPILOT_DATABASE_PATH` so
+available loopback port, starts the PyInstaller-packaged FastAPI backend from
+the app's resource directory (`bundle.resources` maps
+`src-tauri/resources/backend/` to `backend/`; a `--onedir` build, so nothing
+is unpacked at launch), exposes the backend URL through a Tauri command, and
+kills the process when the window is destroyed. The frontend's API client
+polls `/health` once before its first request so a slow cold start never
+surfaces as a failed session restore. The database path is supplied through `DEVPILOT_DATABASE_PATH` so
 desktop data lives in the operating system's application-data directory.
 
 The repository picker uses Tauri's native folder dialog when running on the

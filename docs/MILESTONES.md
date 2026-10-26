@@ -82,8 +82,12 @@ setup when this phase starts.*
   re-index, and theme
 - [x] Dismissible global error; hidden terminal pages and AI threads capped
   to the most recently used
-- [ ] Ship the sidecar as a PyInstaller `--onedir` bundle (no per-launch
-  extraction of the 31 MB executable)
+- [x] Backend ships as a PyInstaller `--onedir` bundle under the app's
+  resource directory (no per-launch extraction of a 31 MB executable);
+  the Tauri shell plugin is no longer needed
+- [x] Reopening a project costs one `stat` per unchanged file (size + mtime
+  shortcut); `migrate_schema` upgrades existing SQLite files
+- [x] Project-wide **Search in files** (Ctrl/Cmd+Shift+F) with jump-to-line
 - [ ] Replace native `window.confirm` prompts with in-app dialogs
 
 ## Environment notes
