@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -208,6 +208,26 @@ const QUICK_PROMPTS = [
 
 const speechSupported = typeof window !== "undefined" && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
+const COLLAPSE_CHARS = 1200;
+const COLLAPSE_LINES = 14;
+
+function UserMessage({ content }: { content: string }) {
+  const long = content.length > COLLAPSE_CHARS || content.split("\n").length > COLLAPSE_LINES;
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <div className={`whitespace-pre-wrap break-words font-normal ${long && !expanded ? "max-h-72 overflow-hidden [mask-image:linear-gradient(to_bottom,black_75%,transparent)]" : ""}`}>
+        {content}
+      </div>
+      {long && (
+        <button type="button" onClick={() => setExpanded(value => !value)} className="mt-1.5 text-xs font-medium text-primary hover:underline">
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </>
+  );
+}
+
 export function AIThreadStartHero({
   repository,
   onSubmitPrompt,
@@ -220,7 +240,7 @@ export function AIThreadStartHero({
 }: AIThreadStartHeroProps) {
   const { settings } = useAppSettings();
   const conversationEnd = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
 
@@ -234,11 +254,9 @@ export function AIThreadStartHero({
   const [model, setModelState] = useState(settings.defaultProvider === "codex" ? "Codex" : "Gemini");
   const [showModelMenu, setShowModelMenu] = useState(false);
   const setModel = (next: string | ((current: string) => string)) => {
-    setModelState(current => {
-      const value = typeof next === "function" ? next(current) : next;
-      if (value !== current) onModelChange?.(value);
-      return value;
-    });
+    const value = typeof next === "function" ? next(model) : next;
+    if (value !== model) onModelChange?.(value);
+    setModelState(value);
   };
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -248,7 +266,16 @@ export function AIThreadStartHero({
     if (!initialPrompt) return;
     setPrompt(initialPrompt);
     onInitialPromptConsumed?.();
+    requestAnimationFrame(() => inputRef.current?.focus());
   }, [initialPrompt, onInitialPromptConsumed]);
+
+  // Grow the composer with its content up to about eight lines, then scroll.
+  useLayoutEffect(() => {
+    const element = inputRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    if (element.scrollHeight) element.style.height = `${Math.min(element.scrollHeight, 192)}px`;
+  }, [prompt]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -387,9 +414,7 @@ export function AIThreadStartHero({
                   >
                     <div className="max-w-[78%] rounded-[22px] bg-muted px-5 py-2.5 text-[15px] leading-relaxed text-foreground shadow-sm sm:max-w-[70%]">
                       <p className="sr-only">You</p>
-                      <div className="whitespace-pre-wrap break-words font-normal">
-                        {message.content}
-                      </div>
+                      <UserMessage content={message.content} />
                     </div>
                   </article>
                 );
@@ -455,7 +480,7 @@ export function AIThreadStartHero({
         {/* Input Pill / Capsule */}
         <form
           onSubmit={handleSubmit}
-          className="relative flex h-[54px] w-full items-center rounded-full border border-border bg-card px-4 shadow-lg transition-colors focus-within:border-ring hover:bg-accent/40"
+          className="relative flex min-h-[54px] w-full items-end gap-1 rounded-[27px] border border-border bg-card px-3 py-[9px] shadow-lg transition-colors focus-within:border-ring hover:bg-accent/40"
         >
           {/* Plus Button */}
           <div className="relative" ref={plusMenuRef}>
@@ -511,21 +536,22 @@ export function AIThreadStartHero({
             )}
           </div>
 
-          {/* Text Input */}
-          <input
+          {/* Text Input: Enter sends, Shift+Enter adds a line */}
+          <textarea
             ref={inputRef}
-            type="text"
+            rows={1}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 handleSubmit();
               }
             }}
             placeholder="Ask anything"
+            aria-label="Message"
             disabled={isLoading}
-            className="min-w-0 flex-1 bg-transparent px-3 text-[15px] font-normal text-foreground placeholder:text-muted-foreground outline-none"
+            className="max-h-48 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-[7px] text-[15px] font-normal leading-[22px] text-foreground placeholder:text-muted-foreground outline-none"
             autoFocus
           />
 

@@ -129,3 +129,5 @@
 .editor-git-change-row { display: flex; align-items: center; }
 .editor-git-change-row > .editor-git-change { flex: 1; min-width: 0; }
 .editor-git-change-row.is-selected { background: var(--git-hover); }
+.editor-git .editor-git-ai-review { display: inline-flex; align-items: center; gap: 6px; width: auto !important; padding: 0 9px; margin-right: 4px; font-size: 12px; color: #23a9f2; }
+.editor-git .editor-git-ai-review:disabled { opacity: .45; cursor: not-allowed; }

@@ -179,6 +179,14 @@ diffs after Git commands in the terminal. Open files, drafts, undo history,
 and the terminal stay available while reviewing Git. **Back to code** or
 **Ctrl/Cmd+P** returns to the file workspace.
 
+**Review with AI** in a diff's toolbar drafts a review request for that file
+(staged, working tree, or merge conflict) and opens the editor's AI
+Assistant with the draft in the composer, ready to edit and send. Diffs are
+clipped to 20,000 characters and the draft says when that happened. The
+composer is multi-line (**Shift+Enter** adds a line, **Enter** sends), long
+messages in the conversation collapse behind **Show more**, and follow-ups
+replay only as many recent turns as fit the CLI's prompt limit.
+
 Stage and commit without leaving the view: hover a changed file for its
 **+** (stage) or **−** (unstage) button, use the group buttons to stage or
 unstage everything in a section, and mark a resolved merge conflict with

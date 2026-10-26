@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, Minus, Plus, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, Minus, Plus, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import type { RepositoryInfo } from "../types/domain";
 import type { GitChange } from "../types/git";
 import { groupChanges, useGitReview, type ChangeGroup } from "./useGitReview";
 import { parseGitDiff, splitGitDiff, type DiffLine } from "./gitDiff";
+import { diffReviewPrompt, type DiffScope } from "../lib/agent";
 import "./EditorGitPage.css";
 
 interface Props {
@@ -12,7 +13,11 @@ interface Props {
   active: boolean;
   onReturn: () => void;
   onOpenFolder: () => void;
+  /** Hands a drafted prompt to the editor's AI Assistant. */
+  onAskAI?: (prompt: string) => void;
 }
+
+const diffScopes: Record<ChangeGroup, DiffScope> = { staged: "staged", changes: "working tree", conflicts: "merge conflict" };
 
 const groupNames: Record<ChangeGroup, string> = { conflicts: "Merge Changes", staged: "Staged Changes", changes: "Changes" };
 const changeNames: Record<string, string> = { M: "Modified", A: "Added", D: "Deleted", R: "Renamed", C: "Copied", "?": "Untracked", U: "Conflict" };
@@ -24,7 +29,7 @@ function DiffCell({ line, side }: { line: DiffLine | null; side: "old" | "new" }
   return <div className={`editor-git-diff-cell ${line ? `is-${line.kind}` : "is-empty"}`}><span className="editor-git-line-number">{line?.[side === "old" ? "oldLine" : "newLine"]}</span><code>{line?.text ?? " "}</code></div>;
 }
 
-export function EditorGitPage({ repository, active, onReturn, onOpenFolder }: Props) {
+export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAskAI }: Props) {
   const review = useGitReview(repository?.id ?? null, active);
   const [expanded, setExpanded] = useState<Record<ChangeGroup, boolean>>({ conflicts: true, staged: true, changes: true });
   const [layout, setLayout] = useState<"split" | "unified">("split");
@@ -117,7 +122,7 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder }: Pr
         {!repository ? <div className="editor-git-empty"><GitBranch size={50} /><h1>Open a project to review Git</h1><p>Choose a local folder to see its repository and changes.</p><button type="button" className="editor-git-primary" onClick={onOpenFolder}>Open Folder</button></div>
           : !status ? <div className="editor-git-empty">{review.loading ? <><LoaderCircle className="editor-git-spin" size={28} /><p>Reading repository status…</p></> : <><GitBranch size={42} /><h1>Git is unavailable for this folder</h1><p>Open a folder inside a Git repository to review changes.</p><button type="button" className="editor-git-primary" onClick={onOpenFolder}>Open Folder</button></>}</div>
           : review.selection ? <>
-            <div className="editor-git-diff-toolbar"><div><span title={review.selection.path}>{review.selection.path}</span><small>{review.selection.group === "staged" ? "HEAD → Index" : review.selection.group === "conflicts" ? "Merge conflict" : "Index → Working tree"}</small></div><div className="editor-git-diff-controls">{review.patch && <span className="editor-git-diff-stats"><b>+{added}</b><b>−{removed}</b></span>}<button type="button" aria-label="Split diff" aria-pressed={layout === "split" && review.selection.group !== "conflicts"} title={review.selection.group === "conflicts" ? "Merge conflicts use a unified diff" : "Side by side diff"} disabled={review.selection.group === "conflicts"} onClick={() => setLayout("split")}><Columns2 size={15} /></button><button type="button" aria-label="Unified diff" aria-pressed={layout === "unified" || review.selection.group === "conflicts"} title="Unified diff" onClick={() => setLayout("unified")}><List size={15} /></button></div></div>
+            <div className="editor-git-diff-toolbar"><div><span title={review.selection.path}>{review.selection.path}</span><small>{review.selection.group === "staged" ? "HEAD → Index" : review.selection.group === "conflicts" ? "Merge conflict" : "Index → Working tree"}</small></div><div className="editor-git-diff-controls">{review.patch && <span className="editor-git-diff-stats"><b>+{added}</b><b>−{removed}</b></span>}{onAskAI && <button type="button" className="editor-git-ai-review" title="Draft an AI review of this diff" disabled={!review.patch || review.patch.is_binary || !lines.length} onClick={() => { if (review.patch && review.selection) onAskAI(diffReviewPrompt(review.selection.path, diffScopes[review.selection.group], review.patch.content)); }}><Sparkles size={14} /><span>Review with AI</span></button>}<button type="button" aria-label="Split diff" aria-pressed={layout === "split" && review.selection.group !== "conflicts"} title={review.selection.group === "conflicts" ? "Merge conflicts use a unified diff" : "Side by side diff"} disabled={review.selection.group === "conflicts"} onClick={() => setLayout("split")}><Columns2 size={15} /></button><button type="button" aria-label="Unified diff" aria-pressed={layout === "unified" || review.selection.group === "conflicts"} title="Unified diff" onClick={() => setLayout("unified")}><List size={15} /></button></div></div>
             {review.diffLoading ? <div className="editor-git-empty"><LoaderCircle className="editor-git-spin" size={24} /><p>Loading diff…</p></div> : review.diffError ? <div className="editor-git-empty" role="alert"><TriangleAlert size={26} /><p>{review.diffError}</p><button type="button" className="editor-git-primary" onClick={review.refresh}>Retry diff</button></div> : review.patch?.is_binary ? <div className="editor-git-empty"><FileCode2 size={35} /><h2>Binary file</h2><p>A text diff is unavailable for this file.</p></div> : !lines.length ? <div className="editor-git-empty"><CheckCircle2 size={28} /><p>No text changes in this diff.</p><button type="button" onClick={review.refresh}>Refresh Git status</button></div> : <div className="editor-git-diff-scroll" role="region" aria-label="File diff" tabIndex={0}>
               {layout === "split" && review.selection.group !== "conflicts" ? <div className="editor-git-split"><div className="editor-git-pane-label">{review.selection.group === "staged" ? "HEAD" : "Index"}</div><div className="editor-git-pane-label">{review.selection.group === "staged" ? "Index" : "Working tree"}</div>{splitLines.map((row, index) => row.note ? <div key={index} className={`editor-git-diff-note is-${row.note.kind}`}>{row.note.text}</div> : <div key={index} className="editor-git-split-row"><DiffCell line={row.left} side="old" /><DiffCell line={row.right} side="new" /></div>)}</div> : <div className="editor-git-unified">{visibleLines.map((line, index) => <div key={index} className={`editor-git-unified-line is-${line.kind}`}><span className="editor-git-line-number">{line.oldLine}</span><span className="editor-git-line-number">{line.newLine}</span><span className="editor-git-line-sign">{line.kind === "added" ? "+" : line.kind === "removed" ? "−" : " "}</span><code>{line.text}</code></div>)}</div>}
               {(review.patch?.truncated || lines.length > lineLimit) && <div className="editor-git-diff-limit">{lines.length > lineLimit ? <><span>Showing {lineLimit.toLocaleString()} of {lines.length.toLocaleString()} diff lines</span><button type="button" onClick={() => setLineLimit(value => value + 2000)}>Show more</button></> : <span>This diff was truncated by Git preview limits.</span>}</div>}

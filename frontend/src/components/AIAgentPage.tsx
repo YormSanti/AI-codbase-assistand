@@ -4,16 +4,13 @@ import type { RepositoryInfo } from "../types/domain";
 import { AIThreadStartHero } from "./AIThreadStartHero";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { describeProvider, getProviderStatuses, PROVIDER_NAMES, type ProviderId, type ProviderStatus } from "../lib/providers";
+import { buildConversationPrompt, MAX_AGENT_PROMPT_CHARS, runAgent } from "../lib/agent";
 
 interface AgentLog {
   id: string;
   timestamp: string;
   type: "thought" | "result" | "warning";
   title: string;
-  content: string;
-}
-
-interface AgentResponse {
   content: string;
 }
 
@@ -112,47 +109,41 @@ export function AIAgentPage({
       appendLog({ type: "warning", title: "Desktop app required", content: DESKTOP_ONLY_MESSAGE });
       return;
     }
+    if (targetPrompt.length > MAX_AGENT_PROMPT_CHARS) {
+      appendLog({ type: "warning", title: "Message too long", content: `This message has ${targetPrompt.length.toLocaleString("en-US")} characters. Keep it under ${MAX_AGENT_PROMPT_CHARS.toLocaleString("en-US")} so the CLI accepts it.` });
+      return;
+    }
 
-    const priorConversation = chatHistory
-      .filter(turn => turn.provider === currentProvider)
-      .slice(-8)
-      .map(turn => `${turn.role === "user" ? "User" : currentProviderName}: ${turn.content}`)
-      .join("\n\n");
-    const agentPrompt = priorConversation
-      ? `Continue this conversation about the current repository.\n\n${priorConversation}\n\nUser: ${targetPrompt}\n\nRespond to the latest user message.`
-      : targetPrompt;
+    // The CLIs are stateless: replay the newest turns with this provider that fit the prompt budget.
+    const agentPrompt = buildConversationPrompt(
+      chatHistory.filter(turn => turn.provider === currentProvider),
+      targetPrompt,
+      currentProviderName,
+    );
 
     setIsRunning(true);
     setConnectionError("");
 
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const { listen } = await import("@tauri-apps/api/event");
-
       // A live log entry receives streamed chunks until the process exits.
-      const streamId = crypto.randomUUID();
       const logId = crypto.randomUUID();
       setLogs(previous => [...previous, { id: logId, timestamp: nowLabel(), type: "result", title: `${currentProviderName} response`, content: "" }]);
 
-      const unlisten = await listen<{ streamId: string; chunk: string }>("agent-stream", event => {
-        if (event.payload.streamId !== streamId || !settings.streamOutput) return;
-        setLogs(previous => previous.map(log => log.id === logId ? { ...log, content: log.content + event.payload.chunk } : log));
+      const content = await runAgent({
+        provider: currentProvider,
+        prompt: agentPrompt,
+        workingDirectory: repository?.root_path ?? null,
+        onChunk: chunk => {
+          if (!settings.streamOutput) return;
+          setLogs(previous => previous.map(log => log.id === logId ? { ...log, content: log.content + chunk } : log));
+        },
       });
 
-      let response: AgentResponse;
-      try {
-        response = await invoke<AgentResponse>("run_agent", {
-          request: { provider: currentProvider, prompt: agentPrompt, workingDirectory: repository?.root_path ?? null, streamId },
-        });
-      } finally {
-        unlisten();
-      }
-
-      setLogs(previous => previous.map(log => log.id === logId ? { ...log, content: response.content } : log));
+      setLogs(previous => previous.map(log => log.id === logId ? { ...log, content } : log));
       setChatHistory(previous => [
         ...previous,
         { role: "user", content: targetPrompt, provider: currentProvider },
-        { role: "assistant", content: response.content, provider: currentProvider },
+        { role: "assistant", content, provider: currentProvider },
       ]);
     } catch (error) {
       appendLog({ type: "warning", title: `${currentProviderName} error`, content: error instanceof Error ? error.message : String(error) });

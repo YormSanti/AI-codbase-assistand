@@ -148,3 +148,28 @@ it("stages a whole group and shows Git's error when an action is rejected", asyn
   fireEvent.click(screen.getByRole("button", { name: "Unstage all changes" }));
   expect(gitApi.unstage).toHaveBeenCalledWith(1, ["src/main.ts"]);
 });
+
+it("drafts an AI review of the selected diff with its scope", async () => {
+  const onAskAI = vi.fn();
+  render(<EditorGitPage {...props} onAskAI={onAskAI} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Staged Changes: src/main.ts" }));
+  await screen.findByRole("region", { name: "File diff" });
+  fireEvent.click(screen.getByRole("button", { name: "Review with AI" }));
+  const prompt = onAskAI.mock.calls[0][0] as string;
+  expect(prompt).toContain("Review the staged changes to `src/main.ts`");
+  expect(prompt).toContain("```diff\ndiff --git a/src/main.ts b/src/main.ts");
+  expect(prompt).toContain("+new");
+});
+
+it("hides the AI review without a handler and disables it for binary diffs", async () => {
+  const view = render(<EditorGitPage {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Changes: src/main.ts" }));
+  await screen.findByRole("region", { name: "File diff" });
+  expect(screen.queryByRole("button", { name: "Review with AI" })).toBeNull();
+  view.unmount();
+  vi.mocked(gitApi.getDiff).mockResolvedValue({ ...patch(), is_binary: true, content: "" });
+  render(<EditorGitPage {...props} onAskAI={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Changes: README.md" }));
+  expect(await screen.findByText("Binary file")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Review with AI" })).toBeDisabled();
+});

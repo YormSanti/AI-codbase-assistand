@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { AIAgentPage } from "./AIAgentPage";
@@ -61,4 +61,15 @@ it("keeps replies, follow-ups, and errors in the original composer page", async 
   expect(invoke).toHaveBeenLastCalledWith("run_agent", expect.objectContaining({
     request: expect.objectContaining({ prompt: expect.stringContaining("This is the project explanation.") }),
   }));
+});
+
+it("refuses a message over the CLI limit without starting the provider", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  invoke.mockImplementation(() => Promise.resolve({ installed: true, authenticated: true }));
+  render(<AIAgentPage repository={{ id: 1, name: "repo", root_path: "/repo", current_branch: "main", head_commit: null, opened_at: null, file_count: 1 }} initialPrompt={"x".repeat(60_001)} />);
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => expect(composer).toHaveValue("x".repeat(60_001)));
+  fireEvent.keyDown(composer, { key: "Enter" });
+  expect(await screen.findByText("Message too long")).toBeInTheDocument();
+  expect(invoke.mock.calls.some(([command]) => command === "run_agent")).toBe(false);
 });

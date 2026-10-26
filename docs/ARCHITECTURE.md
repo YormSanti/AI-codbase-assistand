@@ -152,8 +152,13 @@ they would from the CLI; nothing pushes, fetches, or rewrites history.
 
 The Git page keeps staged and unstaged selections distinct, ignores late
 responses after selection changes, and is keyed by project id in `App`.
-Selected diffs become AI drafts through the existing `initialPrompt` flow;
-AI previews are limited to 20,000 characters and disclose truncation.
+Selected diffs become AI drafts through the existing `initialPrompt` flow
+(Source Control's **Review with AI**); AI previews are limited to 20,000
+characters and disclose truncation. `src/lib/agent.ts` wraps the desktop
+`run_agent` command and its stream events. The CLIs are stateless, so a
+follow-up replays the newest turns with the same provider that fit a
+60,000-character budget (the Rust command rejects prompts over 64,000), and
+an over-long message is refused before a CLI process starts.
 
 ## Data model (SQLite)
 

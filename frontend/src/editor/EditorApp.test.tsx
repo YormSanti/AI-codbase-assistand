@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import type { RepositoryInfo } from "../types/domain";
 import { EditorApp } from "./EditorApp";
+import { gitApi } from "../api/gitApi";
 
 const shells = vi.hoisted(() => ({ start: vi.fn(), close: vi.fn() }));
 vi.mock("../components/ThemeToggle", () => ({ ThemeToggle: () => null }));
@@ -223,4 +224,21 @@ it("opens a requested tool view once it is active and reports it handled", async
   expect(await screen.findByRole("searchbox", { name: "Search in files" }, { timeout: 5000 })).toBeInTheDocument();
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
   expect(onRequestedViewHandled).toHaveBeenCalledTimes(1);
+});
+
+it("hands a Source Control diff review to the AI Assistant as an editable draft", async () => {
+  vi.mocked(gitApi.getStatus).mockResolvedValueOnce({ branch: "main", head_commit: "abc", upstream: null, ahead: null, behind: null, remote_url: null, commits: [],
+    changes: [{ path: "src/a.ts", index_status: " ", worktree_status: "M", original_path: null }] });
+  vi.mocked(gitApi.getDiff).mockResolvedValueOnce({ path: "src/a.ts", staged: false, is_binary: false, truncated: false, content: "diff --git a/src/a.ts b/src/a.ts\n@@ -1 +1 @@\n-old line\n+new line\n" });
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Changes: src/a.ts" }));
+  await screen.findByRole("region", { name: "File diff" });
+  fireEvent.click(screen.getByRole("button", { name: "Review with AI" }));
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => expect((composer as HTMLTextAreaElement).value).toContain("Review the working tree changes to `src/a.ts`"));
+  expect((composer as HTMLTextAreaElement).value).toContain("+new line");
+  expect(screen.getByRole("button", { name: "AI Assistant" })).toHaveAttribute("aria-pressed", "true");
 });

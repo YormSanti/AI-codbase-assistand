@@ -64,6 +64,27 @@ describe("AIThreadStartHero", () => {
     expect(onSubmitPrompt).toHaveBeenCalledWith("Hello", "Codex");
   });
 
+  it("keeps multi-line drafts: Shift+Enter adds a line and Enter sends", async () => {
+    const user = userEvent.setup();
+    const onSubmitPrompt = vi.fn();
+    render(<AIThreadStartHero repository={mockRepo} onSubmitPrompt={onSubmitPrompt} initialPrompt={"Review this:\n+added line"} />);
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    expect(composer).toHaveValue("Review this:\n+added line");
+    await user.type(composer, "{Shift>}{Enter}{/Shift}second");
+    expect(composer).toHaveValue("Review this:\n+added line\nsecond");
+    expect(onSubmitPrompt).not.toHaveBeenCalled();
+    await user.type(composer, "{Enter}");
+    expect(onSubmitPrompt).toHaveBeenCalledWith("Review this:\n+added line\nsecond", "Gemini");
+  });
+
+  it("collapses long user messages until expanded", async () => {
+    const user = userEvent.setup();
+    const long = Array.from({ length: 40 }, (_, index) => `+line ${index}`).join("\n");
+    render(<AIThreadStartHero repository={mockRepo} onSubmitPrompt={vi.fn()} messages={[{ id: "1", title: "You", content: long, type: "thought" }]} />);
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument();
+  });
+
   it("fills the composer from a quick prompt without sending", async () => {
     const user = userEvent.setup();
     const onSubmitPrompt = vi.fn();

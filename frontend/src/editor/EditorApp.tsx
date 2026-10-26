@@ -47,6 +47,8 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   const [showGit, setShowGit] = useState(false);
   const gitVisible = active && showGit && gitRoot === (repository?.root_path ?? "");
   const [aiRoot, setAiRoot] = useState<string | null>(null);
+  // Prompts drafted inside the editor (for example "Review with AI" on a diff).
+  const [localAiPrompt, setLocalAiPrompt] = useState<string | null>(null);
   const [showAi, setShowAi] = useState(false);
   const aiVisible = active && showAi && aiRoot === (repository?.root_path ?? "");
   const [showExtensions, setShowExtensions] = useState(false);
@@ -267,7 +269,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
             {typeof children === "function" ? children(!toolVisible) : children}
           </div>
 
-          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><Suspense fallback={<PageFallback />}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} /></Suspense></div>}
+          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><Suspense fallback={<PageFallback />}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} onAskAI={prompt => { setLocalAiPrompt(prompt); openAi(); }} /></Suspense></div>}
 
           {aiRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-ai-view" hidden={!aiVisible}>
             <header className="editor-git-header">
@@ -280,8 +282,8 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
               <Suspense fallback={<PageFallback />}>
                 <AIAgentPage
                   repository={repository}
-                  initialPrompt={aiPrompt}
-                  onInitialPromptConsumed={onAiPromptConsumed}
+                  initialPrompt={aiPrompt ?? localAiPrompt}
+                  onInitialPromptConsumed={() => { setLocalAiPrompt(null); onAiPromptConsumed?.(); }}
                 />
               </Suspense>
             </div>
