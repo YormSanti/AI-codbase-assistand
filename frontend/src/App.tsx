@@ -28,6 +28,19 @@ import { CommandPalette, type PaletteCommand } from "@/components/CommandPalette
 import { useAutoUpdater } from "./hooks/useAutoUpdater";
 import { useAppearance } from "./hooks/useAppearance";
 
+// Hidden views stay mounted so their state survives switching, but only for
+// the most recently used projects and threads; older ones are released so
+// shells and conversations do not pile up for the whole session.
+const MAX_TERMINAL_PAGES = 3;
+const MAX_AI_THREADS = 6;
+
+function mostRecent<T>(items: T[], item: T, limit: number, same: (a: T, b: T) => boolean): T[] {
+  const index = items.findIndex(existing => same(existing, item));
+  if (index === items.length - 1 && index !== -1) return items;
+  const next = [...items.filter(existing => !same(existing, item)), index === -1 ? item : items[index]];
+  return next.length > limit ? next.slice(next.length - limit) : next;
+}
+
 export default function App() {
   const { settings, resolvedTheme, updateSettings } = useAppearance();
   useAutoUpdater();
@@ -84,16 +97,15 @@ export default function App() {
     if (!canLeaveEditor()) return;
     setAiDraft(null);
     setActiveThread(threadId);
-    setVisitedThreads(current => current.includes(threadId) ? current : [...current, threadId]);
+    setVisitedThreads(current => mostRecent(current, threadId, MAX_AI_THREADS, (a, b) => a === b));
     setActiveTab("ai");
   }
 
   useEffect(() => {
     if (activeTab !== "terminal" || !isSessionRestored || isLoading) return;
-    // Keep each project's terminal page mounted with its original working directory.
-    setTerminalRepositories(current => current.some(item => item?.root_path === repository?.root_path)
-      ? current
-      : [...current, repository]);
+    // Keep each project's terminal page mounted with its original working directory,
+    // most recently used last; the oldest beyond the cap unmounts and closes its shells.
+    setTerminalRepositories(current => mostRecent(current, repository, MAX_TERMINAL_PAGES, (a, b) => a?.root_path === b?.root_path));
   }, [activeTab, isSessionRestored, isLoading, repository]);
 
   useEffect(() => {

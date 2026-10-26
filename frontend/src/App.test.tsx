@@ -409,6 +409,33 @@ describe("project terminals", () => {
     expect(TerminalSocket.instances).toHaveLength(2);
   });
 
+  it("keeps only the three most recently used terminal pages mounted", async () => {
+    render(<App />);
+    await openTerminal("/a");
+    await openTerminal("/b");
+    await openTerminal("/c");
+    const [first, second, third] = TerminalSocket.instances;
+    expect(first.close).not.toHaveBeenCalled();
+    await openTerminal("/a"); // already mounted: becomes most recent, nothing closes
+    expect(TerminalSocket.instances).toHaveLength(3);
+    expect(first.close).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Show explorer"));
+    fireEvent.click(screen.getByText("Open /b"));
+    await waitFor(() => expect(localStorage.getItem("ifrog_repo_path")).toBe("/b"));
+    fireEvent.click(screen.getByText("Show terminal"));
+    expect(second.close).not.toHaveBeenCalled();
+    // A fourth distinct terminal page evicts the least recently used one (/c).
+    fireEvent.click(screen.getByText("Show explorer"));
+    vi.mocked(repositoryApi.open).mockResolvedValueOnce({ ...repo(4), root_path: "/d", name: "d" });
+    fireEvent.click(screen.getByText("Open /a"));
+    await waitFor(() => expect(localStorage.getItem("ifrog_repo_path")).toBe("/d"));
+    fireEvent.click(screen.getByText("Show terminal"));
+    await waitFor(() => expect(TerminalSocket.instances.some(socket => socket.url.searchParams.get("cwd") === "/d")).toBe(true));
+    await waitFor(() => expect(third.close).toHaveBeenCalledTimes(1));
+    expect(first.close).not.toHaveBeenCalled();
+    expect(second.close).not.toHaveBeenCalled();
+  });
+
   it("closes only the deleted project's terminals and cleans up on exit", async () => {
     const { unmount } = render(<App />);
     await openTerminal("/a");
