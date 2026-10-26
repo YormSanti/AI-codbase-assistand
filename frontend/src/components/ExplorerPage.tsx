@@ -147,7 +147,7 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
   useEffect(() => { if (showQuickOpen) quickInputRef.current?.focus(); }, [showQuickOpen]);
 
   const openFromSearch = (file: TreeNode) => { onSelectFile(file); setShowQuickOpen(false); };
-  const cardStyle: CSSProperties = { borderRadius: 20, backgroundColor: 'rgba(18, 18, 24, 0.9)', border: '1.5px solid rgba(255, 255, 255, 0.08)', padding: '24px 28px', boxShadow: '0 8px 32px -8px rgba(0, 0, 0, 0.4)' };
+  const cardStyle: CSSProperties = { borderRadius: 20, backgroundColor: 'var(--card)', border: '1px solid var(--border)', padding: '24px 28px', boxShadow: '0 8px 32px -8px var(--shadow-strong)' };
 
   return (
     <div ref={workspaceRef} className={isEditor ? 'vscode-workspace' : 'explorer-page'} style={isEditor ? undefined : { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, width: '100%', boxSizing: 'border-box' }}>
@@ -164,7 +164,7 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
         </> : <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <Files size={32} color="#60a5fa" />
-            <div><h1 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 600, color: 'white' }}>File Explorer</h1><p style={{ margin: 0, fontSize: 15, color: 'rgba(255,255,255,0.6)' }}>Browse, inspect, and edit your workspace files</p></div>
+            <div><h1 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 600, color: 'var(--foreground)' }}>File Explorer</h1><p style={{ margin: 0, fontSize: 15, color: 'var(--muted-foreground)' }}>Browse, inspect, and edit your workspace files</p></div>
           </div>
           <div style={{ minWidth: 300 }}><RepositoryPicker isLoading={isLoading} onOpen={onOpen} /></div>
         </>}

@@ -465,7 +465,7 @@ export function FileInspector({
                 >
                   {settings.lineNumbers && <button
                     type="button"
-                    className="w-14 shrink-0 select-none pr-3 text-right text-zinc-600 hover:text-zinc-300"
+                    className="w-14 shrink-0 select-none pr-3 text-right text-muted-foreground/60 hover:text-foreground"
                     onClick={() => setActiveLine(lineNumber)}
                     aria-label={`Line ${lineNumber}`}
                   >

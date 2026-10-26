@@ -464,10 +464,10 @@ function TerminalSession({
             top: contextMenu.y,
             left: contextMenu.x,
             zIndex: 9999,
-            background: "#18181b",
-            border: "1px solid rgba(255, 255, 255, 0.15)",
+            background: "var(--popover)",
+            border: "1px solid var(--border)",
             borderRadius: "8px",
-            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.6)",
+            boxShadow: "0 10px 30px var(--shadow-strong)",
             padding: "5px",
             minWidth: "190px",
             display: "flex",
@@ -489,7 +489,7 @@ function TerminalSession({
               background: "transparent",
               border: "none",
               borderRadius: "4px",
-              color: contextMenu.hasSelection ? "#e4e4e7" : "#52525b",
+              color: contextMenu.hasSelection ? "var(--popover-foreground)" : "var(--muted-foreground)",
               fontSize: "12px",
               cursor: contextMenu.hasSelection ? "pointer" : "default",
               textAlign: "left",
@@ -504,7 +504,7 @@ function TerminalSession({
             <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <Copy size={13} /> Copy
             </span>
-            <span style={{ fontSize: "10px", color: "#71717a" }}>{isMac ? "⌘C" : "Ctrl+Shift+C"}</span>
+            <span style={{ fontSize: "10px", color: "var(--muted-foreground)" }}>{isMac ? "⌘C" : "Ctrl+Shift+C"}</span>
           </button>
 
           <button
@@ -518,7 +518,7 @@ function TerminalSession({
               background: "transparent",
               border: "none",
               borderRadius: "4px",
-              color: "#e4e4e7",
+              color: "var(--popover-foreground)",
               fontSize: "12px",
               cursor: "pointer",
               textAlign: "left",
@@ -529,7 +529,7 @@ function TerminalSession({
             <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <ClipboardPaste size={13} /> Paste
             </span>
-            <span style={{ fontSize: "10px", color: "#71717a" }}>{isMac ? "⌘V" : "Ctrl+V"}</span>
+            <span style={{ fontSize: "10px", color: "var(--muted-foreground)" }}>{isMac ? "⌘V" : "Ctrl+V"}</span>
           </button>
 
           <button
@@ -543,7 +543,7 @@ function TerminalSession({
               background: "transparent",
               border: "none",
               borderRadius: "4px",
-              color: "#e4e4e7",
+              color: "var(--popover-foreground)",
               fontSize: "12px",
               cursor: "pointer",
               textAlign: "left",
@@ -552,10 +552,10 @@ function TerminalSession({
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
             <span>Select All</span>
-            <span style={{ fontSize: "10px", color: "#71717a" }}>{isMac ? "⌘A" : "Ctrl+Shift+A"}</span>
+            <span style={{ fontSize: "10px", color: "var(--muted-foreground)" }}>{isMac ? "⌘A" : "Ctrl+Shift+A"}</span>
           </button>
 
-          <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "3px 0" }} />
+          <div style={{ height: "1px", background: "var(--overlay-2)", margin: "3px 0" }} />
 
           <button
             type="button"
@@ -568,7 +568,7 @@ function TerminalSession({
               background: "transparent",
               border: "none",
               borderRadius: "4px",
-              color: "#e4e4e7",
+              color: "var(--popover-foreground)",
               fontSize: "12px",
               cursor: "pointer",
               textAlign: "left",
@@ -579,7 +579,7 @@ function TerminalSession({
             <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <Trash2 size={13} /> Clear
             </span>
-            <span style={{ fontSize: "10px", color: "#71717a" }}>{isMac ? "⌘K" : "Ctrl+K"}</span>
+            <span style={{ fontSize: "10px", color: "var(--muted-foreground)" }}>{isMac ? "⌘K" : "Ctrl+K"}</span>
           </button>
 
           <button
@@ -593,7 +593,7 @@ function TerminalSession({
               background: "transparent",
               border: "none",
               borderRadius: "4px",
-              color: "#e4e4e7",
+              color: "var(--popover-foreground)",
               fontSize: "12px",
               cursor: "pointer",
               textAlign: "left",
@@ -751,7 +751,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
               height: "28px",
               borderRadius: "7px",
               background: "rgba(167,139,250,0.14)",
-              color: "#c4b5fd",
+              color: "var(--primary)",
               marginRight: "4px",
               flexShrink: 0,
             }}
@@ -772,8 +772,8 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                 alignItems: "center",
                 gap: "8px",
                 padding: "6px 13px",
-                background: activeTabId === tab.id ? "rgba(167,139,250,0.14)" : "rgba(255,255,255,0.03)",
-                border: activeTabId === tab.id ? "1px solid rgba(167,139,250,0.4)" : "1px solid rgba(255,255,255,0.06)",
+                background: activeTabId === tab.id ? "rgba(167,139,250,0.14)" : "var(--overlay-1)",
+                border: activeTabId === tab.id ? "1px solid rgba(167,139,250,0.4)" : "1px solid var(--overlay-2)",
                 borderRadius: "7px",
                 cursor: "pointer",
                 color: activeTabId === tab.id ? "#ddd6fe" : "var(--muted-foreground)",
@@ -836,19 +836,19 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
               justifyContent: "center",
               width: "32px",
               height: "32px",
-              border: "1px solid rgba(255,255,255,0.08)",
+              border: "1px solid var(--overlay-2)",
               borderRadius: "8px",
-              background: "rgba(255,255,255,0.04)",
+              background: "var(--overlay-1)",
               color: "var(--muted-foreground)",
               cursor: "pointer",
               transition: "all 0.15s ease",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+              e.currentTarget.style.background = "var(--overlay-2)";
               e.currentTarget.style.color = "var(--foreground)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+              e.currentTarget.style.background = "var(--overlay-1)";
               e.currentTarget.style.color = "var(--muted-foreground)";
             }}
           >
@@ -866,7 +866,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
               border: "1px solid rgba(167,139,250,0.35)",
               borderRadius: "8px",
               background: "rgba(167,139,250,0.12)",
-              color: "#c4b5fd",
+              color: "var(--primary)",
               cursor: "pointer",
               flexShrink: 0,
               fontSize: "12px",
@@ -918,7 +918,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                   border:
                     tab.activePaneId === pane.id
                       ? "1px solid rgba(167,139,250,0.5)"
-                      : "1px solid rgba(255,255,255,0.08)",
+                      : "1px solid var(--overlay-2)",
                   boxShadow:
                     tab.activePaneId === pane.id
                       ? "0 0 16px -4px rgba(167,139,250,0.18)"
@@ -938,8 +938,8 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                     background:
                       tab.activePaneId === pane.id
                         ? "linear-gradient(90deg, rgba(167,139,250,0.12) 0%, rgba(167,139,250,0.03) 100%)"
-                        : "rgba(255,255,255,0.02)",
-                    borderBottom: "1px solid rgba(255,255,255,0.07)",
+                        : "var(--overlay-1)",
+                    borderBottom: "1px solid var(--overlay-2)",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -955,14 +955,14 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                     >
                       <SquareTerminal
                         size={13}
-                        color={tab.activePaneId === pane.id ? "#c4b5fd" : "#71717a"}
+                        color={tab.activePaneId === pane.id ? "var(--primary)" : "var(--muted-foreground)"}
                       />
                       <span
                         style={{
                           fontSize: "11.5px",
                           fontWeight: 600,
                           letterSpacing: "0.2px",
-                          color: tab.activePaneId === pane.id ? "#f5f3ff" : "#a1a1aa",
+                          color: tab.activePaneId === pane.id ? "var(--foreground)" : "var(--muted-foreground)",
                         }}
                       >
                         Terminal {index + 1}
@@ -983,14 +983,14 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                     {/* Repository context: name + branch */}
                     {repository && (
                       <div style={{ display: "flex", alignItems: "center", gap: "5px", opacity: 0.65 }}>
-                        <span style={{ fontSize: "10.5px", color: "#a1a1aa" }}>
+                        <span style={{ fontSize: "10.5px", color: "var(--muted-foreground)" }}>
                           {repository.name}
                         </span>
                         {repository.current_branch && (
                           <>
-                            <span style={{ color: "#52525b", fontSize: "10px" }}>›</span>
+                            <span style={{ color: "var(--muted-foreground)", fontSize: "10px" }}>›</span>
                             <GitBranch size={10} color="#a78bfa" />
-                            <span style={{ fontSize: "10.5px", color: "#c4b5fd", fontWeight: 600 }}>
+                            <span style={{ fontSize: "10.5px", color: "var(--primary)", fontWeight: 600 }}>
                               {repository.current_branch}
                             </span>
                           </>
@@ -1015,17 +1015,17 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         border: "1px solid transparent",
                         borderRadius: "5px",
                         background: "transparent",
-                        color: "#a1a1aa",
+                        color: "var(--muted-foreground)",
                         cursor: "pointer",
                         transition: "all 0.15s ease",
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                        e.currentTarget.style.background = "var(--overlay-2)";
                         e.currentTarget.style.color = "#f4f4f5";
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = "transparent";
-                        e.currentTarget.style.color = "#a1a1aa";
+                        e.currentTarget.style.color = "var(--muted-foreground)";
                       }}
                     >
                       <Trash2 size={13} />
@@ -1046,17 +1046,17 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         border: "1px solid transparent",
                         borderRadius: "5px",
                         background: "transparent",
-                        color: "#a1a1aa",
+                        color: "var(--muted-foreground)",
                         cursor: "pointer",
                         transition: "all 0.15s ease",
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                        e.currentTarget.style.background = "var(--overlay-2)";
                         e.currentTarget.style.color = "#f4f4f5";
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = "transparent";
-                        e.currentTarget.style.color = "#a1a1aa";
+                        e.currentTarget.style.color = "var(--muted-foreground)";
                       }}
                     >
                       <RotateCw size={13} />
@@ -1077,17 +1077,17 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         border: "1px solid transparent",
                         borderRadius: "5px",
                         background: "transparent",
-                        color: "#a1a1aa",
+                        color: "var(--muted-foreground)",
                         cursor: "pointer",
                         transition: "all 0.15s ease",
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                        e.currentTarget.style.background = "var(--overlay-2)";
                         e.currentTarget.style.color = "#f4f4f5";
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = "transparent";
-                        e.currentTarget.style.color = "#a1a1aa";
+                        e.currentTarget.style.color = "var(--muted-foreground)";
                       }}
                     >
                       <PanelsLeftRight size={13} />
@@ -1109,7 +1109,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                           border: "1px solid transparent",
                           borderRadius: "5px",
                           background: "transparent",
-                          color: "#a1a1aa",
+                          color: "var(--muted-foreground)",
                           cursor: "pointer",
                           transition: "all 0.15s ease",
                         }}
@@ -1119,7 +1119,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.background = "transparent";
-                          e.currentTarget.style.color = "#a1a1aa";
+                          e.currentTarget.style.color = "var(--muted-foreground)";
                         }}
                       >
                         <X size={13} />

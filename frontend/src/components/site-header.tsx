@@ -62,21 +62,21 @@ export function SiteHeader({
           gap: "7px",
           padding: "6px 14px",
           borderRadius: "99px",
-          background: hasRepository ? "rgba(16,185,129,0.12)" : "rgba(255,255,255,0.05)",
-          border: `1.5px solid ${hasRepository ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.12)"}`,
+          background: hasRepository ? "rgba(16,185,129,0.12)" : "var(--overlay-1)",
+          border: `1.5px solid ${hasRepository ? "rgba(52,211,153,0.4)" : "var(--overlay-3)"}`,
         }}>
           <span style={{
             width: "7px",
             height: "7px",
             borderRadius: "50%",
-            background: hasRepository ? "#10b981" : "rgba(255,255,255,0.3)",
+            background: hasRepository ? "#10b981" : "var(--muted-foreground)",
             boxShadow: hasRepository ? "0 0 8px #10b981" : "none",
             flexShrink: 0,
           }} />
           <span style={{
             fontSize: "12px",
             fontWeight: "700",
-            color: hasRepository ? "#34d399" : "var(--muted-foreground)",
+            color: hasRepository ? "var(--status-ok)" : "var(--muted-foreground)",
             userSelect: "none",
           }}>
             {hasRepository ? "Repo Connected" : "Ready"}

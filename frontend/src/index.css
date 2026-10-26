@@ -34,6 +34,15 @@
     --sidebar-ring: #3b82f6;
     --radius: 0.75rem;
 
+    /* Translucent overlays for hover fills, hairlines, and badges. Light
+       mode swaps them for slate so the same rules read on white. */
+    --overlay-1: rgba(255, 255, 255, 0.04);
+    --overlay-2: rgba(255, 255, 255, 0.08);
+    --overlay-3: rgba(255, 255, 255, 0.12);
+    --overlay-4: rgba(255, 255, 255, 0.25);
+    --shadow-strong: rgba(0, 0, 0, 0.6);
+    --status-ok: #34d399;
+
     /* Local font stacks: no network fetch, consistent offline and in the
        desktop build (whose CSP never allowed remote fonts anyway). */
     --font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
@@ -69,6 +78,13 @@
     --sidebar-accent-foreground: #0f172a;
     --sidebar-border: #e2e8f0;
     --sidebar-ring: #2563eb;
+
+    --overlay-1: rgba(15, 23, 42, 0.04);
+    --overlay-2: rgba(15, 23, 42, 0.08);
+    --overlay-3: rgba(15, 23, 42, 0.14);
+    --overlay-4: rgba(15, 23, 42, 0.28);
+    --shadow-strong: rgba(15, 23, 42, 0.18);
+    --status-ok: #047857;
   }
 }
 
@@ -181,15 +197,15 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Glassmorphism Card Utilities */
 .glass-card {
-  background: rgba(18, 18, 21, 0.85);
+  background: color-mix(in srgb, var(--card) 85%, transparent);
   backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
 
 .glass-card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+  border-color: var(--overlay-4);
+  box-shadow: 0 10px 30px -10px var(--shadow-strong);
 }
 
 /* Pulsing Online Indicator */
@@ -227,11 +243,11 @@ h1, h2, h3, h4, h5, h6 {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--overlay-3);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--overlay-4);
 }
 
 /* XTerm Modern Styling */

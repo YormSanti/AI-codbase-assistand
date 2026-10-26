@@ -348,7 +348,7 @@ export function AnalyticsPage({ repository, tree, isLoading = false, onNavigate 
             label: 'Large Files (≥200 KB)',
             value: stats.hugeFilesCount,
             sub: stats.hugeFilesCount > 0 ? 'Review candidates' : 'No large files indexed',
-            icon: <AlertTriangle className={`h-5 w-5 ${stats.hugeFilesCount > 0 ? 'text-amber-400' : 'text-zinc-500'}`} />,
+            icon: <AlertTriangle className={`h-5 w-5 ${stats.hugeFilesCount > 0 ? 'text-amber-400' : 'text-muted-foreground'}`} />,
             border: stats.hugeFilesCount > 0 ? 'border-amber-500/30' : 'border-border',
             bg: stats.hugeFilesCount > 0 ? 'bg-amber-500/5' : 'bg-card',
           },
