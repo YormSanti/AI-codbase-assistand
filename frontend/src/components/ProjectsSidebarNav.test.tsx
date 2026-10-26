@@ -142,6 +142,18 @@ describe("ProjectsSidebarNav", () => {
     expect(JSON.parse(localStorage.getItem("threads_1") ?? "[]")).toEqual([]);
   });
 
+  it("removes a deleted thread's stored conversation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<ProjectsSidebarNav currentRepository={mockProjects[0]} />);
+    await user.click(screen.getByText("Start new session"));
+    const [thread] = JSON.parse(localStorage.getItem("threads_1")!);
+    localStorage.setItem(`ifrog_ai_conversation:1:${thread.id}`, JSON.stringify({ logs: [], chatHistory: [] }));
+    await user.click(screen.getByTitle("Delete Thread"));
+    expect(localStorage.getItem(`ifrog_ai_conversation:1:${thread.id}`)).toBeNull();
+  });
+
   it("removes a project after confirmation", async () => {
     const user = userEvent.setup();
     vi.mocked(repositoryApi.list).mockResolvedValue(mockProjects);
@@ -149,9 +161,13 @@ describe("ProjectsSidebarNav", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<ProjectsSidebarNav currentRepository={mockProjects[0]} />);
+    localStorage.setItem("ifrog_ai_conversation:1:default", "{}");
+    localStorage.setItem("ifrog_ai_conversation:2:default", "{}");
     await user.click(screen.getByLabelText("Remove pharmacy-mobile-v2"));
 
     expect(repositoryApi.remove).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(localStorage.getItem("ifrog_ai_conversation:1:default")).toBeNull());
+    expect(localStorage.getItem("ifrog_ai_conversation:2:default")).toBe("{}");
   });
 
   it("renders other projects with green status indicator", async () => {

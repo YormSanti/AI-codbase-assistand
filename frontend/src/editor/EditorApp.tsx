@@ -282,7 +282,9 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <Suspense fallback={<PageFallback />}>
                 <AIAgentPage
+                  key={repository?.id ?? "none"}
                   repository={repository}
+                  threadId="editor"
                   initialPrompt={aiPrompt ?? localAiPrompt}
                   onInitialPromptConsumed={() => { setLocalAiPrompt(null); onAiPromptConsumed?.(); }}
                 />

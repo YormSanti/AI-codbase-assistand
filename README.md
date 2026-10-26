@@ -236,6 +236,16 @@ The dedicated editor app lives in `frontend/src/editor/EditorApp.tsx` and
 `EditorApp.css`. It shares the file workspace, CodeMirror engine, file APIs,
 and save/conflict handling with the existing File Explorer.
 
+## AI conversations
+
+Conversations with Codex or Gemini are saved per project and thread on this
+device, so they survive restarts, project switches, and threads that were
+closed to save memory. The editor's AI view keeps its own conversation per
+project. A new sidebar thread is named after its first message. **New
+thread** or **Clear conversation** empties the current one, and removing a
+thread or a project deletes its saved conversations. The newest 120 messages
+(about 400 KB) per conversation are kept.
+
 ## Command palette
 
 Press **Ctrl/Cmd+K** (or **Ctrl/Cmd+Shift+P** anywhere, including the code

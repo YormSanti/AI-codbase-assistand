@@ -12,6 +12,7 @@ import { EditorApp } from "./editor/EditorApp";
 import type { EditorToolView, EditorWorkspaceHandle } from "./editor/editorCommands";
 import { PageFallback } from "@/components/PageFallback";
 import { Toaster } from "@/components/ui/sonner";
+import { renameThreadIfDefault } from "./hooks/useProjectSessions";
 import { toast } from "sonner";
 
 // Pages that are visited on demand load as separate chunks so the first paint
@@ -471,6 +472,8 @@ export default function App() {
               <Suspense fallback={<PageFallback />}>
                 <AIAgentPage
                   repository={repository}
+                  threadId={threadId}
+                  onFirstMessage={prompt => { if (repository) renameThreadIfDefault(repository.id, threadId, prompt); }}
                   initialPrompt={threadId === activeThread ? aiDraft : null}
                   onInitialPromptConsumed={() => setAiDraft(null)}
                 />

@@ -3,7 +3,8 @@ import type { RepositoryInfo } from "@/types/domain";
 import { repositoryApi } from "@/api/repositoryApi";
 import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 
-import { useProjectSessions, type ProjectThread } from "../hooks/useProjectSessions";
+import { DEFAULT_THREAD_TITLE_PREFIX, useProjectSessions, type ProjectThread } from "../hooks/useProjectSessions";
+import { conversationStorageKey, removeConversation, removeProjectConversations } from "../lib/conversations";
 export type { ProjectThread } from "../hooks/useProjectSessions";
 
 interface ProjectsSidebarNavProps {
@@ -209,7 +210,7 @@ export function ProjectsSidebarNav({
     const newThread: ProjectThread = {
       id: crypto.randomUUID(),
       projectId: projId,
-      title: `Session · ${new Date().toLocaleString()}`,
+      title: `${DEFAULT_THREAD_TITLE_PREFIX}${new Date().toLocaleString()}`,
       createdAt: new Date().toISOString(),
     };
     const updated = [newThread, ...threads];
@@ -230,6 +231,7 @@ export function ProjectsSidebarNav({
 
     const updated = threads.filter((item) => item.id !== thread.id);
     save(updated);
+    removeConversation(conversationStorageKey(thread.projectId, thread.id));
     if (activeThreadId === thread.id) setActiveThreadId(null);
 
   };
@@ -246,6 +248,7 @@ export function ProjectsSidebarNav({
         await repositoryApi.remove(project.id);
       }
       localStorage.removeItem(`threads_${project.id}`);
+      removeProjectConversations(project.id);
       setProjectsList((current) => current.filter((item) => item.id !== project.id));
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Could not remove this project.");

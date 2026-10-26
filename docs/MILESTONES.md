@@ -96,6 +96,8 @@ setup when this phase starts.*
 - [x] Project-wide **Search in files** (Ctrl/Cmd+Shift+F) with jump-to-line
 - [x] **Go to Symbol in Workspace** (Ctrl/Cmd+T or `#` in Go to File) over the
   Tree-sitter symbol index, ranked exact > prefix > substring
+- [x] AI conversations persist per project and thread; threads are titled
+  from their first message; deleting a thread or project removes them
 - [ ] Replace native `window.confirm` prompts with in-app dialogs
 
 ## Environment notes

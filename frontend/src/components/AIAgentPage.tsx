@@ -5,6 +5,7 @@ import { AIThreadStartHero } from "./AIThreadStartHero";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { describeProvider, getProviderStatuses, PROVIDER_NAMES, type ProviderId, type ProviderStatus } from "../lib/providers";
 import { buildConversationPrompt, MAX_AGENT_PROMPT_CHARS, runAgent } from "../lib/agent";
+import { conversationStorageKey, loadConversation, saveConversation } from "../lib/conversations";
 
 interface AgentLog {
   id: string;
@@ -38,10 +39,16 @@ export function AIAgentPage({
   repository,
   initialPrompt,
   onInitialPromptConsumed,
+  threadId,
+  onFirstMessage,
 }: {
   repository?: RepositoryInfo | null;
   initialPrompt?: string | null;
   onInitialPromptConsumed?: () => void;
+  /** Persist this conversation under the project and thread; remount the page when either changes. */
+  threadId?: string;
+  /** Called with the first message sent in an empty conversation (used to title the thread). */
+  onFirstMessage?: (prompt: string) => void;
 }) {
   const { settings } = useAppSettings();
   const isDesktop = "__TAURI_INTERNALS__" in window;
@@ -50,8 +57,15 @@ export function AIAgentPage({
   const [statuses, setStatuses] = useState<Record<ProviderId, ProviderStatus> | null | "checking">("checking");
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState("");
-  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
-  const [logs, setLogs] = useState<AgentLog[]>([]);
+  const storageKey = threadId ? conversationStorageKey(repository?.id ?? "none", threadId) : null;
+  const [restored] = useState(() => loadConversation(storageKey));
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>(restored.chatHistory);
+  const [logs, setLogs] = useState<AgentLog[]>(restored.logs);
+
+  // Save after each completed exchange rather than on every streamed chunk.
+  useEffect(() => {
+    if (storageKey && !isRunning) saveConversation(storageKey, { logs, chatHistory });
+  }, [storageKey, isRunning, logs, chatHistory]);
 
   const refreshStatuses = async () => {
     try {
@@ -103,6 +117,7 @@ export function AIAgentPage({
     const currentProviderName = PROVIDER_NAMES[currentProvider];
     if (providerOverride) setProvider(providerOverride);
 
+    if (!logs.some(log => log.title === "You")) onFirstMessage?.(targetPrompt);
     appendLog({ type: "thought", title: "You", content: targetPrompt });
 
     if (!isDesktop) {
