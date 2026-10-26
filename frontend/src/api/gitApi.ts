@@ -42,6 +42,18 @@ export const gitApi = {
   createBranch(repositoryId: number, name: string): Promise<GitStatus> {
     return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/branches`, { method: "POST", body: JSON.stringify({ name, checkout: true }) });
   },
+  /** Fetch every remote (with prune); the refreshed status carries the new behind count. */
+  fetch(repositoryId: number): Promise<GitStatus> {
+    return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/fetch`, { method: "POST" });
+  },
+  /** Fast-forward the current branch to its upstream; fails rather than merging diverged history. */
+  pull(repositoryId: number): Promise<GitStatus> {
+    return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/pull`, { method: "POST" });
+  },
+  /** Push the current branch, publishing it with an upstream on the first push. Never forces. */
+  push(repositoryId: number): Promise<GitStatus> {
+    return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/push`, { method: "POST" });
+  },
   /** Discard working-tree changes (untracked files are deleted); resolves with the refreshed status. */
   discard(repositoryId: number, paths: string[]): Promise<GitStatus> {
     return apiRequest<GitStatus>(`/api/repositories/${repositoryId}/git/discard`, { method: "POST", body: JSON.stringify({ paths }) });

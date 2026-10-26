@@ -187,6 +187,17 @@ diffs after Git commands in the terminal. Open files, drafts, undo history,
 and the terminal stay available while reviewing Git. **Back to code** or
 **Ctrl/Cmd+P** returns to the file workspace.
 
+Below the commit box, the sync row shows the upstream with **Fetch**,
+**Pull** (with the number of commits behind), and **Push** (with the number
+ahead). Pull only fast-forwards, so it never creates a merge commit and
+stops with Git's message when histories have diverged; it is refused while
+the editor has unsaved drafts, and afterwards open clean tabs and the index
+refresh. Push never forces; a branch without an upstream shows **Publish**,
+which pushes it and sets the upstream. These commands never wait on a
+hidden password prompt: credential helpers, SSH agents, and askpass programs
+work, anything else fails within two minutes with Git's own error. API:
+`POST /api/repositories/{id}/git/fetch`, `.../git/pull`, `.../git/push`.
+
 Click the branch name under the project in the Source Control sidebar to
 switch branches: the list shows local branches, most recent first, with
 their upstream. Typing a name that does not exist offers **Create branch …

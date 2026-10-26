@@ -153,7 +153,12 @@ a conservative pattern and `git check-ref-format --branch`, from HEAD), and
 `commit` (`git commit -m`). Paths are validated against the current
 status, including rename sources, and `GitCommandError` carries Git's own
 stderr (hook failures, missing identity) to the API as HTTP 409. Hooks run as
-they would from the CLI; nothing pushes, fetches, or rewrites history.
+they would from the CLI. `fetch` (`--all --prune`), `pull`
+(`--no-rebase --ff-only`), and `push` (to the tracked upstream, or
+`--set-upstream` to `origin` on first push, never forced) run with
+`GIT_TERMINAL_PROMPT=0`, stdin closed, a new session without a controlling
+terminal, and a 2-minute timeout, so they can fail but never hang on a
+prompt. Nothing rewrites history.
 
 The Git page keeps staged and unstaged selections distinct, ignores late
 responses after selection changes, and is keyed by project id in `App`.

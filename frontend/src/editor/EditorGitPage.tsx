@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, Minus, Plus, RefreshCw, Sparkles, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowDown, ArrowDownToLine, ArrowLeft, ArrowUp, ArrowUpFromLine, Check, CheckCircle2, ChevronDown, ChevronRight, Columns2, Copy, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, History, List, LoaderCircle, Minus, Plus, RefreshCcw, RefreshCw, Sparkles, TriangleAlert, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import type { RepositoryInfo } from "../types/domain";
 import type { GitChange } from "../types/git";
@@ -23,10 +23,10 @@ interface Props {
   onOpenFolder: () => void;
   /** Hands a drafted prompt to the editor's AI Assistant. */
   onAskAI?: (prompt: string) => void;
-  /** Returns a reason to refuse a branch switch (for example unsaved editor drafts), or null to allow it. */
-  branchSwitchBlocker?: () => string | null;
-  /** Called after the checked-out branch changed, so the app can refresh files and the index. */
-  onBranchChanged?: () => void;
+  /** Returns a reason to refuse an action that rewrites files (switching branches, pulling), or null to allow it. */
+  workingTreeGuard?: (action: string) => string | null;
+  /** Called after Git rewrote the working tree (branch switch, pull), so the app can refresh files and the index. */
+  onWorkingTreeChanged?: () => void;
 }
 
 const diffScopes: Record<ChangeGroup, DiffScope> = { staged: "staged", changes: "working tree", conflicts: "merge conflict" };
@@ -41,7 +41,7 @@ const commitStatusNames: Record<string, string> = { A: "Added", M: "Modified", D
 function subjectOf(message: string) { return message.split("\n", 1)[0]; }
 function bodyOf(message: string) { return message.split("\n").slice(1).join("\n").trim(); }
 
-export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAskAI, branchSwitchBlocker, onBranchChanged }: Props) {
+export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAskAI, workingTreeGuard, onWorkingTreeChanged }: Props) {
   const review = useGitReview(repository?.id ?? null, active);
   const [expanded, setExpanded] = useState<Record<ChangeGroup, boolean>>({ conflicts: true, staged: true, changes: true });
   const [layout, setLayout] = useState<"split" | "unified">("split");
@@ -101,16 +101,34 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
   };
 
   const changeBranch = async (name: string, create: boolean): Promise<boolean> => {
-    const blocked = branchSwitchBlocker?.();
+    const blocked = workingTreeGuard?.("switching branches");
     if (blocked) { setNotice(blocked); return false; }
     setNotice(null);
     const result = await (create ? review.createBranch(name) : review.switchBranch(name));
     if (!result) return false;
     setCommitSha(null);
     announceFilesChanged(["*"]);
-    onBranchChanged?.();
+    onWorkingTreeChanged?.();
     toast.success(create ? `Created and switched to ${name}` : `Switched to ${name}`);
     return true;
+  };
+
+  const sync = async (action: "fetch" | "pull" | "push") => {
+    if (!status || review.busy) return;
+    if (action === "pull") {
+      const blocked = workingTreeGuard?.("pulling");
+      if (blocked) { setNotice(blocked); return; }
+    }
+    setNotice(null);
+    const result = await review[action]();
+    if (!result) return;
+    if (action === "pull") {
+      announceFilesChanged(["*"]);
+      onWorkingTreeChanged?.();
+    }
+    toast.success(action === "fetch"
+      ? `Fetched${result.behind ? `: ${result.behind} new ${result.behind === 1 ? "commit" : "commits"} to pull` : ""}`
+      : action === "pull" ? `Pulled from ${result.upstream ?? "the upstream"}` : `Pushed to ${result.upstream ?? "the remote"}`);
   };
 
   const generateMessage = async () => {
@@ -186,6 +204,12 @@ export function EditorGitPage({ repository, active, onReturn, onOpenFolder, onAs
           </div>
           <button type="submit" className="editor-git-primary editor-git-commit-button" disabled={!canCommit} title={stagedCount ? "Commit staged changes" : "Stage changes first"}>{review.busy ? <LoaderCircle size={13} className="editor-git-spin" /> : <Check size={13} />}<span>Commit{stagedCount ? ` (${stagedCount})` : ""}</span></button>
         </form>}
+        {repository && status && <div className="editor-git-sync" role="group" aria-label="Sync with remote">
+          <span className="editor-git-sync-upstream" title={status.upstream ? `Upstream: ${status.upstream}` : "This branch is not published yet"}>{status.upstream ?? (status.branch ? "Not published" : "Detached HEAD")}</span>
+          <button type="button" aria-label="Fetch from remotes" title="Fetch from remotes" disabled={review.busy} onClick={() => void sync("fetch")}><RefreshCcw size={13} /></button>
+          <button type="button" aria-label={`Pull${status.behind ? ` ${status.behind} ${status.behind === 1 ? "commit" : "commits"}` : ""}`} title="Pull (fast-forward only)" disabled={review.busy || !status.upstream} onClick={() => void sync("pull")}><ArrowDownToLine size={13} /><span>{status.behind ?? 0}</span></button>
+          <button type="button" aria-label={status.upstream ? `Push${status.ahead ? ` ${status.ahead} ${status.ahead === 1 ? "commit" : "commits"}` : ""}` : "Publish branch"} title={status.upstream ? `Push to ${status.upstream}` : "Publish this branch to the remote"} disabled={review.busy || !status.branch || !status.head_commit} onClick={() => void sync("push")}><ArrowUpFromLine size={13} /><span>{status.upstream ? status.ahead ?? 0 : "Publish"}</span></button>
+        </div>}
         <button type="button" className={`editor-git-overview-link ${!review.selection && !commitSha ? "is-selected" : ""}`} onClick={showOverview}><History size={15} /><span>Repository overview</span></button>
         <div className="editor-git-change-list">
           {groups.map(({ group, changes }) => changes.length > 0 && <div className="editor-git-change-group" key={group}>

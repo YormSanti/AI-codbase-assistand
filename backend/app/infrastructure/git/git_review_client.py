@@ -266,6 +266,69 @@ class GitReviewClient(GitReviewPort):
             details = " ".join(details.split())[:600]
             raise GitCommandError(details or "Git rejected the command.")
 
+    def _run_network(self, root: str, *arguments: str) -> None:
+        """Run fetch/pull/push so they can never wait on a hidden prompt.
+
+        Terminal credential prompts are disabled and the process gets its own
+        session with no controlling terminal, so SSH cannot block on a
+        passphrase prompt either. Credential helpers, agents, and askpass
+        programs keep working.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "--no-pager", "-C", root, *arguments],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+                timeout=120,
+                check=False,
+                start_new_session=os.name == "posix",
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitCommandError("The remote did not answer within 2 minutes. Check the network and your credentials, then try again.") from exc
+        except OSError as exc:
+            raise GitCommandError("Git could not be started on this machine.") from exc
+        if result.returncode:
+            details = (result.stderr or result.stdout).decode("utf-8", errors="replace")
+            details = " ".join(details.split())[:600]
+            raise GitCommandError(details or "Git could not reach the remote.")
+
+    def _current_branch(self, repo: Repo, action: str):
+        if repo.head.is_detached:
+            raise GitCommandError(f"Check out a branch before you {action}.")
+        if not repo.head.is_valid():
+            raise GitCommandError(f"Make a first commit before you {action}.")
+        return repo.active_branch
+
+    def fetch(self, root_path: str) -> None:
+        repo = self._repository(root_path)
+        if not list(repo.remotes):
+            raise GitCommandError("This repository has no remote to fetch from.")
+        self._run_network(str(repo.working_tree_dir), "fetch", "--all", "--prune", "--quiet")
+
+    def pull(self, root_path: str) -> None:
+        repo = self._repository(root_path)
+        branch = self._current_branch(repo, "pull")
+        if branch.tracking_branch() is None:
+            raise GitCommandError(f"'{branch.name}' has no upstream branch to pull from. Push it first to publish it.")
+        # --no-rebase overrides pull.rebase so --ff-only always means "fast-forward or stop".
+        self._run_network(str(repo.working_tree_dir), "pull", "--no-rebase", "--ff-only", "--quiet")
+
+    def push(self, root_path: str) -> str:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        branch = self._current_branch(repo, "push")
+        tracking = branch.tracking_branch()
+        if tracking is not None:
+            self._run_network(root, "push", "--quiet", tracking.remote_name, f"HEAD:refs/heads/{tracking.remote_head}")
+            return tracking.name
+        remotes = [remote.name for remote in repo.remotes]
+        if not remotes:
+            raise GitCommandError("Add a remote before pushing this branch.")
+        remote = "origin" if "origin" in remotes else remotes[0]
+        self._run_network(root, "push", "--quiet", "--set-upstream", remote, "HEAD")
+        return f"{remote}/{branch.name}"
+
     def _changed_paths(self, root: str, paths: list[str], *, require_staged: bool) -> list[str]:
         """Validate that every path is a current change; include rename sources so Git sees both sides."""
         if not paths:

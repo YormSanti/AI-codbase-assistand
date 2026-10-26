@@ -534,3 +534,93 @@ def test_untracked_files_in_the_way_surface_gits_error(git_repo_path: Path) -> N
         GitReviewClient().switch_branch(str(git_repo_path), "adds-file")
     assert "untracked" in str(overwritten.value).lower()
     assert repo.active_branch.name == original
+
+
+def _with_remote(tmp_path: Path, git_repo_path: Path) -> tuple[Repo, Path]:
+    """Publish the fixture to a local bare repository and track it."""
+    repo = Repo(git_repo_path)
+    repo.git.config("user.name", "Test User")
+    repo.git.config("user.email", "test@example.com")
+    remote = tmp_path / "remote.git"
+    Repo.init(remote, bare=True)
+    repo.create_remote("origin", str(remote))
+    repo.git.push("-u", "origin", repo.active_branch.name)
+    return repo, remote
+
+
+def _remote_commit(tmp_path: Path, remote: Path, branch: str, name: str) -> None:
+    other = Repo.clone_from(str(remote), tmp_path / f"other-{name}", branch=branch)
+    other.git.config("user.name", "Other")
+    other.git.config("user.email", "other@example.com")
+    (Path(other.working_tree_dir) / name).write_text("from the remote\n")
+    other.git.add(name)
+    other.git.commit("-m", f"remote adds {name}")
+    other.git.push("origin", branch)
+
+
+def test_fetch_pull_and_push_with_a_tracked_remote(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo, remote = _with_remote(tmp_path, git_repo_path)
+    branch = repo.active_branch.name
+
+    _remote_commit(tmp_path, remote, branch, "remote.txt")
+    fetched = api_client.post(f"{base}/fetch").json()
+    assert (fetched["ahead"], fetched["behind"]) == (0, 1)
+    assert not (git_repo_path / "remote.txt").exists()
+
+    pulled = api_client.post(f"{base}/pull")
+    assert pulled.status_code == 200
+    assert (pulled.json()["ahead"], pulled.json()["behind"]) == (0, 0)
+    assert (git_repo_path / "remote.txt").read_text() == "from the remote\n"
+
+    (git_repo_path / "main.py").write_text("print('local work')\n")
+    repo.git.add("main.py")
+    repo.git.commit("-m", "local work")
+    assert api_client.get(base).json()["ahead"] == 1
+    pushed = api_client.post(f"{base}/push")
+    assert pushed.status_code == 200
+    assert (pushed.json()["ahead"], pushed.json()["behind"]) == (0, 0)
+    assert Repo(remote).commit(branch).message.strip() == "local work"
+
+
+def test_pull_refuses_to_merge_diverged_history(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo, remote = _with_remote(tmp_path, git_repo_path)
+    _remote_commit(tmp_path, remote, repo.active_branch.name, "theirs.txt")
+    (git_repo_path / "mine.txt").write_text("mine\n")
+    repo.git.add("mine.txt")
+    repo.git.commit("-m", "local diverges")
+    before = repo.head.commit.hexsha
+    response = api_client.post(f"{base}/pull")
+    assert response.status_code == 409
+    assert "fast-forward" in response.json()["detail"].lower()
+    assert repo.head.commit.hexsha == before  # nothing merged
+
+
+def test_push_publishes_a_new_branch_and_validates_preconditions(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    no_remote = api_client.post(f"{base}/push")
+    assert no_remote.status_code == 409 and "Add a remote" in no_remote.json()["detail"]
+    assert "no remote" in api_client.post(f"{base}/fetch").json()["detail"]
+
+    repo, remote = _with_remote(tmp_path, git_repo_path)
+    repo.git.checkout("-b", "topic")
+    unpublished = api_client.post(f"{base}/pull")
+    assert unpublished.status_code == 409 and "no upstream" in unpublished.json()["detail"]
+    published = api_client.post(f"{base}/push")
+    assert published.status_code == 200
+    assert published.json()["upstream"] == "origin/topic"
+    assert "topic" in [head.name for head in Repo(remote).heads]
+
+    repo.git.checkout("--detach")
+    detached = api_client.post(f"{base}/push")
+    assert detached.status_code == 409 and "Check out a branch" in detached.json()["detail"]
+
+
+def test_network_commands_do_not_wait_for_terminal_prompts(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    repo.create_remote("origin", "https://127.0.0.1:9/nothing-listens-here.git")
+    response = api_client.post(f"{base}/fetch")
+    assert response.status_code == 409  # fails fast with Git's message instead of hanging
+    assert response.json()["detail"]

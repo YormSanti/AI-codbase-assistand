@@ -108,9 +108,9 @@ export default function App() {
     }
   }
 
-  const branchSwitchBlocker = () => editorState.current.saving
-    ? "Wait for the file to finish saving before switching branches."
-    : editorState.current.dirty ? "Save or discard your unsaved edits before switching branches." : null;
+  const workingTreeGuard = (action: string) => editorState.current.saving
+    ? `Wait for the file to finish saving before ${action}.`
+    : editorState.current.dirty ? `Save or discard your unsaved edits before ${action}.` : null;
 
   /** Open `path` in the code editor with the cursor on `line`, from any page. */
   function openInEditor(path: string, line: number) {
@@ -441,8 +441,8 @@ export default function App() {
               onRevealLine={(path, line) => editorWorkspaceRef.current?.revealLine(path, line)}
               requestedView={editorView}
               onRequestedViewHandled={() => setEditorView(null)}
-              branchSwitchBlocker={branchSwitchBlocker}
-              onBranchChanged={() => void refreshRepository()}
+              workingTreeGuard={workingTreeGuard}
+              onWorkingTreeChanged={() => void refreshRepository()}
             >
               {workspaceVisible => <ExplorerPage
                 ref={editorWorkspaceRef}

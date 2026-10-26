@@ -259,13 +259,13 @@ it("refreshes the file tree and notifies the app after Source Control switches b
   ] });
   vi.mocked(gitApi.switchBranch).mockResolvedValue({ branch: "topic", head_commit: "def", upstream: null, ahead: null, behind: null, remote_url: null, commits: [], changes: [] });
   const onCommand = vi.fn();
-  const onBranchChanged = vi.fn();
-  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onCommand={onCommand} onBranchChanged={onBranchChanged} branchSwitchBlocker={() => null}>
+  const onWorkingTreeChanged = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onCommand={onCommand} onWorkingTreeChanged={onWorkingTreeChanged} workingTreeGuard={() => null}>
     <span>workspace</span>
   </EditorApp>);
   fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
   fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: main)" }));
   fireEvent.click(await screen.findByRole("option", { name: /^topic/ }));
-  await waitFor(() => expect(onBranchChanged).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(onWorkingTreeChanged).toHaveBeenCalledTimes(1));
   expect(onCommand).toHaveBeenCalledWith("refreshFiles");
 });

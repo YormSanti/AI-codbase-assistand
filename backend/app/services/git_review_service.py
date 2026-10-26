@@ -53,6 +53,21 @@ class GitReviewService:
         self._git.create_branch(root, name, checkout)
         return self._git.get_status(root)
 
+    def fetch(self, repository_id: int) -> GitStatus:
+        root = self._root(repository_id)
+        self._git.fetch(root)
+        return self._git.get_status(root)
+
+    def pull(self, repository_id: int) -> GitStatus:
+        root = self._root(repository_id)
+        self._git.pull(root)
+        return self._git.get_status(root)
+
+    def push(self, repository_id: int) -> GitStatus:
+        root = self._root(repository_id)
+        self._git.push(root)
+        return self._git.get_status(root)
+
     def discard(self, repository_id: int, paths: list[str]) -> GitStatus:
         root = self._root(repository_id)
         self._git.discard(root, paths)

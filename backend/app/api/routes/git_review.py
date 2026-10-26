@@ -102,6 +102,24 @@ def switch_branch(repository_id: int, request: GitSwitchBranchRequest, service: 
     return _run_action(lambda: service.switch_branch(repository_id, request.branch))
 
 
+@router.post("/{repository_id}/git/fetch", response_model=GitStatus)
+def fetch(repository_id: int, service: GitReviewServiceDep) -> GitStatus:
+    """Fetch all remotes (with prune) and return the refreshed status, including behind counts."""
+    return _run_action(lambda: service.fetch(repository_id))
+
+
+@router.post("/{repository_id}/git/pull", response_model=GitStatus)
+def pull(repository_id: int, service: GitReviewServiceDep) -> GitStatus:
+    """Fast-forward the current branch to its upstream; fails instead of merging diverged history."""
+    return _run_action(lambda: service.pull(repository_id))
+
+
+@router.post("/{repository_id}/git/push", response_model=GitStatus)
+def push(repository_id: int, service: GitReviewServiceDep) -> GitStatus:
+    """Push the current branch, setting its upstream on the first push. Never forces."""
+    return _run_action(lambda: service.push(repository_id))
+
+
 @router.post("/{repository_id}/git/discard", response_model=GitStatus)
 def discard_changes(repository_id: int, request: GitPathsRequest, service: GitReviewServiceDep) -> GitStatus:
     """Discard working-tree changes: tracked files return to their staged/committed version, untracked files are deleted."""

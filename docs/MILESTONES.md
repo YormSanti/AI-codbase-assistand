@@ -66,6 +66,8 @@ setup when this phase starts.*
   files with line counts, and per-file diffs (`GET .../git/commits/{sha}`)
 - [x] Branch picker: list, switch (guarded against uncommitted changes and
   unsaved drafts), and create from the current commit
+- [x] Fetch, fast-forward-only pull, and push/publish from Source Control,
+  without ever blocking on credential prompts
 - [x] Live Git data on the Dashboard and Git Repository page (branch,
   upstream ahead/behind, working tree summary, recent commits), honoring the
   Git refresh interval setting

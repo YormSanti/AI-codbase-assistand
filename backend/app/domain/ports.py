@@ -60,6 +60,18 @@ class GitReviewPort(ABC):
         """Create a branch at HEAD, optionally switching to it (working-tree changes come along)."""
 
     @abstractmethod
+    def fetch(self, root_path: str) -> None:
+        """Fetch every remote, pruning deleted remote branches."""
+
+    @abstractmethod
+    def pull(self, root_path: str) -> None:
+        """Fast-forward the current branch to its upstream; never creates a merge commit."""
+
+    @abstractmethod
+    def push(self, root_path: str) -> str:
+        """Push the current branch (setting an upstream on first push); never forces. Returns the target."""
+
+    @abstractmethod
     def discard(self, root_path: str, paths: list[str]) -> None:
         """Throw away working-tree changes: restore tracked files from the index, delete untracked ones."""
 

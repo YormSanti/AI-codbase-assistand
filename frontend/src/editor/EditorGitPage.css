@@ -166,3 +166,10 @@
 .editor-git-branch-popover small { flex-shrink: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 10px; }
 .editor-git-branch-note { display: flex; align-items: center; gap: 6px; padding: 8px; color: var(--muted-foreground); }
 .editor-git-branch-error { padding: 6px 8px; color: var(--destructive, #dc2626); }
+
+/* Sync with remote */
+.editor-git-sync { display: flex; align-items: center; gap: 2px; padding: 0 12px 8px; font-size: 11px; color: var(--git-muted); }
+.editor-git-sync-upstream { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-git .editor-git-sync button { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border-radius: 4px; color: var(--git-muted); font-size: 11px; }
+.editor-git .editor-git-sync button:hover:not(:disabled) { background: var(--git-hover); color: inherit; }
+.editor-git .editor-git-sync button:disabled { opacity: .45; cursor: not-allowed; }
