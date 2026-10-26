@@ -12,6 +12,7 @@ import { EditorApp } from "./editor/EditorApp";
 import type { EditorWorkspaceHandle } from "./editor/editorCommands";
 import { PageFallback } from "@/components/PageFallback";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 
 // Pages that are visited on demand load as separate chunks so the first paint
 // does not pay for the terminal emulator, charts, or the AI console.
@@ -229,6 +230,29 @@ export default function App() {
     }
   }
 
+  async function handleReindex() {
+    if (!repository) return;
+    const requestId = ++repositoryRequest.current;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const info = await repositoryApi.reindex(repository.id);
+      if (requestId !== repositoryRequest.current) return;
+      const treeData = await repositoryApi.getTree(info.id);
+      if (requestId !== repositoryRequest.current) return;
+      setRepository(info);
+      setTree(treeData);
+      toast.success(`Re-indexed ${info.file_count.toLocaleString()} files in ${info.name}.`);
+    } catch (err) {
+      if (requestId !== repositoryRequest.current) return;
+      const message = err instanceof ApiError ? err.message : "Failed to re-index repository";
+      setError(message);
+      toast.error(message);
+    } finally {
+      if (requestId === repositoryRequest.current) setIsLoading(false);
+    }
+  }
+
   function handleSelectFile(node: TreeNode) {
     if (!node.is_directory && (node.file_id !== selectedFile?.file_id || node.path !== selectedFile?.path)) {
       setSelectedFile(node);
@@ -293,6 +317,7 @@ export default function App() {
               tree={tree}
               isLoading={isLoading}
               onNavigate={handleSelectTab}
+              onReindex={handleReindex}
             />
           )}
 

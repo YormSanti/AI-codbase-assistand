@@ -173,6 +173,16 @@ The dedicated editor app lives in `frontend/src/editor/EditorApp.tsx` and
 `EditorApp.css`. It shares the file workspace, CodeMirror engine, file APIs,
 and save/conflict handling with the existing File Explorer.
 
+## Dashboard
+
+The Dashboard shows live state only: indexed file count and when the index
+was last built, the current branch and upstream, the working tree summary,
+language breakdown, the latest commits, and a system status panel that pings
+the backend `/health` endpoint and, in the desktop app, reports whether the
+Codex and Gemini CLIs are installed and signed in. **Re-index** rescans the
+working tree and rebuilds every symbol via `POST /api/repositories/{id}/reindex`.
+Quick actions link only to pages that exist.
+
 ## Git Repository dashboard
 
 Open a local repository and select **Git Repository** in the sidebar to see
@@ -196,7 +206,8 @@ theme (including system theme changes), interface scale, sidebar position,
 and accent color. Editor controls configure tabs, wrapping, and line numbers
 in the source preview. AI defaults select Gemini or Codex for new threads and
 control whether responses appear while streaming or after completion. The
-saved Git refresh preference is inactive on the original dashboard. Desktop
+Git refresh interval controls how often the Dashboard and Git Repository
+pages reload status; both also refresh when the window regains focus. Desktop
 update checks can be disabled. Reset preferences restores these defaults while preserving opened
 projects and conversation data.
 
