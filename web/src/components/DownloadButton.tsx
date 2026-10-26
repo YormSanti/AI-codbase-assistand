@@ -13,10 +13,10 @@ export default function DownloadButton() {
       const response = await fetch('https://api.github.com/repos/YormSanti/AI-codbase-assistand/releases/latest');
       if (!response.ok) throw new Error('Failed to fetch release');
       
-      const data = await response.json();
+      const data: { assets?: { name: string; browser_download_url: string }[] } = await response.json();
       
-      const debAsset = data.assets?.find((asset: any) => asset.name.endsWith('.deb'));
-      const appImageAsset = data.assets?.find((asset: any) => asset.name.endsWith('.AppImage'));
+      const debAsset = data.assets?.find(asset => asset.name.endsWith('.deb'));
+      const appImageAsset = data.assets?.find(asset => asset.name.endsWith('.AppImage'));
       
       const downloadUrl = debAsset?.browser_download_url || appImageAsset?.browser_download_url;
 
