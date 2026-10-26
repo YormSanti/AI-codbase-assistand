@@ -38,3 +38,31 @@ def test_scan_files_unknown_extension_defaults_to_other(tmp_path: Path) -> None:
 
     assert metadata.language == Language.OTHER
     assert metadata.is_binary is False
+
+
+def test_scan_files_reuses_known_hash_when_size_and_mtime_match(tmp_path: Path, monkeypatch) -> None:
+    import os
+    from app.infrastructure.parsing import file_scanner
+
+    (tmp_path / "main.py").write_text("print('hi')\n")
+    [first] = scan_files(str(tmp_path), ["main.py"])
+    assert first.mtime_ns is not None
+
+    calls: list[Path] = []
+    original = file_scanner._hash_and_sniff
+    monkeypatch.setattr(file_scanner, "_hash_and_sniff", lambda path: calls.append(path) or original(path))
+
+    [again] = scan_files(str(tmp_path), ["main.py"], {"main.py": first})
+    assert again.content_hash == first.content_hash
+    assert calls == []  # unchanged size + mtime: not read again
+
+    # Same size, newer timestamp: re-hashed (content may differ).
+    os.utime(tmp_path / "main.py", ns=(first.mtime_ns + 10_000_000, first.mtime_ns + 10_000_000))
+    [touched] = scan_files(str(tmp_path), ["main.py"], {"main.py": first})
+    assert len(calls) == 1
+    assert touched.content_hash == first.content_hash
+    assert touched.mtime_ns != first.mtime_ns
+
+    (tmp_path / "main.py").write_text("print('changed')\n")
+    [changed] = scan_files(str(tmp_path), ["main.py"], {"main.py": touched})
+    assert changed.content_hash != first.content_hash

@@ -41,6 +41,7 @@ class FileRecord(Base):
     language: Mapped[str] = mapped_column(String, nullable=False)
     content_hash: Mapped[str] = mapped_column(String, nullable=False)
     is_binary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    mtime_ns: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     repository: Mapped["RepositoryRecord"] = relationship(back_populates="files")
     symbols: Mapped[list["SymbolRecord"]] = relationship(

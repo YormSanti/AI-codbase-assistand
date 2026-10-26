@@ -35,6 +35,7 @@ def _to_file_metadata(record: FileRecord) -> FileMetadata:
         language=Language(record.language),
         content_hash=record.content_hash,
         is_binary=record.is_binary,
+        mtime_ns=record.mtime_ns,
     )
 
 
@@ -104,6 +105,7 @@ class SqlAlchemyFileMetadataRepository(FileMetadataRepositoryPort):
                     language=f.language.value,
                     content_hash=f.content_hash,
                     is_binary=f.is_binary,
+                    mtime_ns=f.mtime_ns,
                 )
                 self._session.add(record)
                 changed.append(record)
@@ -117,7 +119,10 @@ class SqlAlchemyFileMetadataRepository(FileMetadataRepositoryPort):
                 record.language = f.language.value
                 record.content_hash = f.content_hash
                 record.is_binary = f.is_binary
+                record.mtime_ns = f.mtime_ns
                 changed.append(record)
+            elif record.mtime_ns != f.mtime_ns:
+                record.mtime_ns = f.mtime_ns  # touched but identical: remember the new stamp
             kept.append(record)
 
         removed_ids = [record.id for record in existing.values()]
@@ -149,6 +154,7 @@ class SqlAlchemyFileMetadataRepository(FileMetadataRepositoryPort):
         record.size_bytes = file.size_bytes
         record.content_hash = file.content_hash
         record.is_binary = file.is_binary
+        record.mtime_ns = file.mtime_ns
         self._session.flush()
         return _to_file_metadata(record)
 

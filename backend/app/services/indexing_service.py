@@ -7,7 +7,7 @@ swapped onto different infrastructure later without changes here.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -22,7 +22,7 @@ from app.services.file_content_service import (
     FILE_EDIT_LOCK as _file_edit_lock, MAX_EDIT_BYTES, preview_file, save_file,
 )
 
-FileScanner = Callable[[str, list[str]], list[FileMetadata]]
+FileScanner = Callable[[str, list[str], Mapping[str, FileMetadata] | None], list[FileMetadata]]
 
 
 class IndexingService:
@@ -50,7 +50,8 @@ class IndexingService:
         saved = self._file_repository.save_repository(info)
 
         relative_paths = self._git_client.list_tracked_files(saved.root_path)
-        files = self._scan_files(saved.root_path, relative_paths)
+        known = {file.relative_path: file for file in self._file_repository.list_files(saved.id)}
+        files = self._scan_files(saved.root_path, relative_paths, known)
         synced = self._file_repository.sync_files(saved.id, files)
 
         for file in synced.files if reparse_all else synced.changed:
@@ -121,9 +122,13 @@ class IndexingService:
         with _file_edit_lock:
             file, root, absolute_path = self._get_file_path(file_id)
             saved = save_file(file, root, absolute_path, content, expected_hash)
+            try:
+                mtime_ns: int | None = absolute_path.stat().st_mtime_ns
+            except OSError:
+                mtime_ns = None
             updated = self._file_repository.update_file(replace(
                 file, size_bytes=saved.size_bytes, content_hash=saved.content_hash,
-                is_binary=False,
+                is_binary=False, mtime_ns=mtime_ns,
             ))
             self._symbol_extraction_service.extract_and_store(updated, str(root))
             return self._get_file_preview(file_id, MAX_EDIT_BYTES)

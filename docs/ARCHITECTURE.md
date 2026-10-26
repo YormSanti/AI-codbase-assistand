@@ -184,9 +184,15 @@ unrelated file could inherit a stale file's leftover symbols. Verified with
 a direct cascade test during Milestone 1.2.
 
 Opening an already-known `root_path` refreshes the index incrementally.
-`sync_files` hashes every file but only inserts new rows, updates rows whose
-content hash changed, and deletes rows (with their symbols) for files that
-disappeared; unchanged files keep their ids and stored symbols. Only the
-changed files are parsed again, so re-opening a large repository on app
-start is cheap. `POST /api/repositories/{id}/reindex` forces a full
-re-parse, for example after the parser gains a language.
+`scan_files` receives the previously indexed metadata and skips reading any
+file whose size and `mtime_ns` are unchanged, reusing the stored hash;
+everything else is hashed again. `sync_files` then inserts new rows, updates
+rows whose content hash changed, and deletes rows (with their symbols) for
+files that disappeared; unchanged files keep their ids and stored symbols.
+Only the changed files are parsed again, so re-opening a large repository on
+app start costs roughly one `stat` per file. `POST /api/repositories/{id}/reindex`
+forces a full re-parse, for example after the parser gains a language.
+
+Schema changes after a table first shipped are applied by `migrate_schema`
+in `database.py` (an `ALTER TABLE ... ADD COLUMN` per missing column) before
+`create_all` runs, so existing SQLite files upgrade in place on startup.

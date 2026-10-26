@@ -197,3 +197,35 @@ def _leaves(node):
         yield node
     for child in node.children:
         yield from _leaves(child)
+
+
+def test_reopen_does_not_rehash_unchanged_files(db_session, git_repo_path: Path, monkeypatch) -> None:
+    from app.infrastructure.parsing import file_scanner
+
+    service, _ = _counting_service(db_session)
+    service.open_repository(str(git_repo_path))
+    reads: list[Path] = []
+    original = file_scanner._hash_and_sniff
+    monkeypatch.setattr(file_scanner, "_hash_and_sniff", lambda path: reads.append(path) or original(path))
+
+    (git_repo_path / "main.py").write_text("def main():\n    return 1\n")
+    refreshed = service.open_repository(str(git_repo_path))
+
+    assert refreshed.file_count == 5
+    assert [path.name for path in reads] == ["main.py"]  # only the edited file was read
+
+
+def test_saving_records_the_new_mtime_so_the_next_open_skips_the_file(db_session, git_repo_path: Path, monkeypatch) -> None:
+    from app.infrastructure.parsing import file_scanner
+
+    service, _ = _counting_service(db_session)
+    info = service.open_repository(str(git_repo_path))
+    main_py = next(_find_file(service.get_tree(info.id), "main.py"))
+    preview = service.get_file_preview(main_py.file_id)
+    service.save_file_content(main_py.file_id, "def main():\n    return 'saved'\n", preview.content_hash)
+
+    reads: list[Path] = []
+    original = file_scanner._hash_and_sniff
+    monkeypatch.setattr(file_scanner, "_hash_and_sniff", lambda path: reads.append(path) or original(path))
+    service.open_repository(str(git_repo_path))
+    assert reads == []

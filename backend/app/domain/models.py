@@ -47,6 +47,8 @@ class FileMetadata:
     is_binary: bool
     id: int | None = None
     repository_id: int | None = None
+    mtime_ns: int | None = None
+    """Modification time at scan; with the size it lets a rescan skip re-hashing unchanged files."""
 
     @property
     def name(self) -> str:

@@ -41,9 +41,32 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
+# Columns added after a table first shipped. `create_all` only creates missing
+# tables, so existing databases get these through ALTER TABLE on startup.
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "files": {"mtime_ns": "INTEGER"},
+}
+
+
+def migrate_schema(target: Engine) -> list[str]:
+    """Add columns missing from an older database. Returns the columns added."""
+    added: list[str] = []
+    with target.begin() as connection:
+        for table, columns in _ADDED_COLUMNS.items():
+            existing = {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if not existing:
+                continue  # table does not exist yet; create_all handles it
+            for column, declaration in columns.items():
+                if column not in existing:
+                    connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+                    added.append(f"{table}.{column}")
+    return added
+
+
 def init_db() -> None:
     from app.infrastructure.db import orm_models  # noqa: F401  (register mappers)
 
+    migrate_schema(engine)
     Base.metadata.create_all(bind=engine)
 
 
