@@ -110,10 +110,10 @@ export function AppSidebar({
             <SidebarMenuButton
               isActive={activeTab === "editor"}
               onClick={() => onSelectTab?.("editor")}
-              tooltip="code"
+              tooltip="Code Editor"
             >
               <Code2 className="size-4" />
-              <span>code</span>
+              <span>Code Editor</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

@@ -10,10 +10,10 @@ const VIEW_LABELS: Record<string, string> = {
   editor: "Code Editor",
   terminal: "Terminal",
   git: "Git Repository",
-  ai: "AI Agent Studio",
-  analytics: "Code Analytics & Charts",
-  chart: "Code Analytics & Charts",
-  charts: "Code Analytics & Charts",
+  ai: "AI Assistant",
+  analytics: "Analytics",
+  chart: "Analytics",
+  charts: "Analytics",
   settings: "Settings",
 };
 

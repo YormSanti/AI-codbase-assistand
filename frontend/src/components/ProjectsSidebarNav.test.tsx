@@ -51,7 +51,7 @@ describe("ProjectsSidebarNav", () => {
     );
 
     expect(screen.getByText("Projects")).toBeInTheDocument();
-    expect(screen.getByTitle("AI Assistant")).toBeInTheDocument();
+    expect(screen.getByTitle("Open AI Assistant")).toBeInTheDocument();
     expect(screen.getByTitle("Refresh projects")).toBeInTheDocument();
     expect(screen.getByTitle("Add Project")).toBeInTheDocument();
     await waitFor(() => expect(repositoryApi.list).toHaveBeenCalled());
@@ -70,13 +70,13 @@ describe("ProjectsSidebarNav", () => {
 
     expect(screen.getByText("pharmacy-mobile-v2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open terminal for pharmacy-mobile-v2" })).toBeInTheDocument();
-    expect(screen.getByTitle("AI Agent Studio")).toBeInTheDocument();
+    expect(screen.getByTitle("AI Assistant")).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Open terminal for pharmacy-mobile-v2" }));
     expect(onSelectTab).toHaveBeenCalledWith("terminal");
 
-    await user.click(screen.getByTitle("AI Agent Studio"));
+    await user.click(screen.getByTitle("AI Assistant"));
     expect(onSelectTab).toHaveBeenCalledWith("ai");
   });
 

@@ -317,7 +317,7 @@ export function ProjectsSidebarNav({
             type="button"
             onClick={() => onSelectTab?.("ai")}
             className="p-1 rounded hover:bg-sidebar-accent text-muted-foreground hover:text-sidebar-foreground transition-colors"
-            title="AI Assistant"
+            title="Open AI Assistant"
           >
             <SparkleIcon className="w-4 h-4" />
           </button>
@@ -395,7 +395,7 @@ export function ProjectsSidebarNav({
                 onSelectTab?.("ai");
               }}
               className="flex items-center justify-center w-6 h-6 rounded-md bg-sidebar-accent/60 hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-              title="AI Agent Studio"
+              title="AI Assistant"
             >
               <SparklePlusIcon className="w-3.5 h-3.5" />
             </button>
