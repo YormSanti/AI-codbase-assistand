@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Blocks, Code2, Files, GitBranch, PanelLeft, PanelRight, SaveAll, Search, Settings, Sparkles, SquareTerminal, X } from "lucide-react";
 import { Dialog, Menubar } from "radix-ui";
 import type { RepositoryInfo } from "../types/domain";
-import { AIAgentPage } from "../components/AIAgentPage";
-import { TerminalPage } from "../components/TerminalPage";
+import { PageFallback } from "../components/PageFallback";
 import { ThemeToggle } from "../components/ThemeToggle";
 import type { EditorCommand } from "./editorCommands";
-import { EditorExtensionsPage } from "./EditorExtensionsPage";
-import { EditorGitPage } from "./EditorGitPage";
-import { EditorSettingsPage } from "./EditorSettingsPage";
 import "./EditorApp.css";
+
+// Tool views load on first use so opening the editor does not fetch the
+// terminal emulator, AI console, marketplace, or settings up front.
+const AIAgentPage = lazy(() => import("../components/AIAgentPage").then(m => ({ default: m.AIAgentPage })));
+const TerminalPage = lazy(() => import("../components/TerminalPage").then(m => ({ default: m.TerminalPage })));
+const EditorExtensionsPage = lazy(() => import("./EditorExtensionsPage").then(m => ({ default: m.EditorExtensionsPage })));
+const EditorGitPage = lazy(() => import("./EditorGitPage").then(m => ({ default: m.EditorGitPage })));
+const EditorSettingsPage = lazy(() => import("./EditorSettingsPage").then(m => ({ default: m.EditorSettingsPage })));
 
 interface Props {
   active: boolean;
@@ -43,6 +47,12 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   const extensionsVisible = active && showExtensions;
   const [showSettings, setShowSettings] = useState(false);
   const settingsVisible = active && showSettings;
+  // Mount these views on first open and keep them mounted afterwards so their
+  // state survives switching back to code.
+  const [extensionsOpened, setExtensionsOpened] = useState(false);
+  const [settingsOpened, setSettingsOpened] = useState(false);
+  useEffect(() => { if (showExtensions) setExtensionsOpened(true); }, [showExtensions]);
+  useEffect(() => { if (showSettings) setSettingsOpened(true); }, [showSettings]);
   const [explorerVisible, setExplorerVisible] = useState(true);
   const canOpenTerminal = Boolean(repository) && !isLoading;
   const terminalVisible = active && showTerminal && canOpenTerminal;
@@ -222,7 +232,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
             {typeof children === "function" ? children(!gitVisible && !aiVisible && !extensionsVisible && !settingsVisible) : children}
           </div>
 
-          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} /></div>}
+          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><Suspense fallback={<PageFallback />}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} /></Suspense></div>}
 
           {aiRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-ai-view" hidden={!aiVisible}>
             <header className="editor-git-header">
@@ -232,25 +242,31 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
               </div>
             </header>
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-              <AIAgentPage
-                repository={repository}
-                initialPrompt={aiPrompt}
-                onInitialPromptConsumed={onAiPromptConsumed}
-              />
+              <Suspense fallback={<PageFallback />}>
+                <AIAgentPage
+                  repository={repository}
+                  initialPrompt={aiPrompt}
+                  onInitialPromptConsumed={onAiPromptConsumed}
+                />
+              </Suspense>
             </div>
           </div>}
 
-          <div className="ifrog-editor-extensions-view" hidden={!extensionsVisible}>
-            <EditorExtensionsPage active={extensionsVisible} onReturn={returnToCode} />
-          </div>
+          {extensionsOpened && <div className="ifrog-editor-extensions-view" hidden={!extensionsVisible}>
+            <Suspense fallback={<PageFallback />}>
+              <EditorExtensionsPage active={extensionsVisible} onReturn={returnToCode} />
+            </Suspense>
+          </div>}
 
-          <div className="ifrog-editor-settings-view" hidden={!settingsVisible}>
-            <EditorSettingsPage
-              active={settingsVisible}
-              onReturn={returnToCode}
-              onNavigateToGlobalSettings={() => onNavigate("settings")}
-            />
-          </div>
+          {settingsOpened && <div className="ifrog-editor-settings-view" hidden={!settingsVisible}>
+            <Suspense fallback={<PageFallback />}>
+              <EditorSettingsPage
+                active={settingsVisible}
+                onReturn={returnToCode}
+                onNavigateToGlobalSettings={() => onNavigate("settings")}
+              />
+            </Suspense>
+          </div>}
 
           {repository && terminalRoot === repository.root_path && <section id="ifrog-editor-terminal" className="ifrog-editor-terminal" aria-label="Integrated terminal" hidden={!terminalVisible} style={{ height: terminalHeight }}>
             <div className="ifrog-editor-terminal-resizer" role="separator" aria-label="Resize integrated terminal" aria-orientation="horizontal" aria-valuenow={terminalHeight} aria-valuemin={160} tabIndex={0}
@@ -261,7 +277,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
               onKeyDown={event => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); resizeTerminal(terminalHeight + (event.key === "ArrowUp" ? 20 : -20)); } }}
             />
             <header className="ifrog-editor-panel-header"><span>TERMINAL</span><span title={repository.root_path}>{repository.root_path}</span><button type="button" aria-label="Hide integrated terminal" title="Hide terminal" onClick={() => setShowTerminal(false)}><X size={15} /></button></header>
-            <div className="ifrog-editor-terminal-session"><TerminalPage key={repository.root_path} repository={repository} isActive={terminalVisible} /></div>
+            <div className="ifrog-editor-terminal-session"><Suspense fallback={<PageFallback />}><TerminalPage key={repository.root_path} repository={repository} isActive={terminalVisible} /></Suspense></div>
           </section>}
         </div>
       </div>

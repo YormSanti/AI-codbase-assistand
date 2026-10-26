@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { RepositoryInfo } from "../types/domain";
 import { EditorApp } from "./EditorApp";
@@ -16,7 +16,7 @@ vi.mock("../components/TerminalPage", () => ({ TerminalPage: ({ repository }: { 
 const repository: RepositoryInfo = { id: 1, name: "project", root_path: "/project", current_branch: "main", head_commit: null, opened_at: null, file_count: 1 };
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
-it("keeps the file draft and shell when entering and leaving the editor through File Explorer", () => {
+it("keeps the file draft and shell when entering and leaving the editor through File Explorer", async () => {
   const props = { active: false, repository, isLoading: false, onNavigate: vi.fn() };
   const view = render(<EditorApp {...props}><input aria-label="File draft" defaultValue="saved" /></EditorApp>);
   fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "unsaved draft" } });
@@ -24,7 +24,7 @@ it("keeps the file draft and shell when entering and leaving the editor through 
   expect(screen.getByLabelText("File draft")).toHaveValue("unsaved draft");
   expect(shells.start).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  fireEvent.change(screen.getByLabelText("Shell input"), { target: { value: "npm run dev" } });
+  fireEvent.change(await screen.findByLabelText("Shell input"), { target: { value: "npm run dev" } });
   view.rerender(<EditorApp {...props}><input aria-label="File draft" defaultValue="saved" /></EditorApp>);
   expect(screen.getByLabelText("File draft")).toHaveValue("unsaved draft");
   expect(screen.getByLabelText("Shell input")).not.toBeVisible();
@@ -34,13 +34,13 @@ it("keeps the file draft and shell when entering and leaving the editor through 
   expect(shells.start).toHaveBeenCalledTimes(1);
 });
 
-it("switches a visible terminal to the new project and defers a hidden terminal until requested", () => {
+it("switches a visible terminal to the new project and defers a hidden terminal until requested", async () => {
   const props = { active: true, repository, isLoading: false, onNavigate: vi.fn() };
   const next = { ...repository, id: 2, name: "next", root_path: "/next" };
   const third = { ...repository, id: 3, name: "third", root_path: "/third" };
   const view = render(<EditorApp {...props}><span>workspace</span></EditorApp>);
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  expect(shells.start).toHaveBeenCalledWith("/project");
+  await waitFor(() => expect(shells.start).toHaveBeenCalledWith("/project"));
   view.rerender(<EditorApp {...props} repository={next}><span>workspace</span></EditorApp>);
   expect(shells.close).toHaveBeenCalledWith("/project");
   expect(shells.start).toHaveBeenLastCalledWith("/next");
@@ -59,7 +59,7 @@ it("keeps drafts and the terminal alive while reviewing Git inside the editor", 
   </EditorApp>);
   fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "unsaved" } });
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  fireEvent.change(screen.getByLabelText("Shell input"), { target: { value: "git status" } });
+  fireEvent.change(await screen.findByLabelText("Shell input"), { target: { value: "git status" } });
   fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
   expect((await screen.findAllByText("Working tree clean"))[0]).toBeVisible();
   expect(screen.getByLabelText("File draft")).not.toBeVisible();
@@ -107,7 +107,7 @@ it("opens extensions inside the editor without navigating away from code", async
 
   // The draft is hidden while extensions view is visible
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
-  expect(screen.getByText("Install from VSIX…")).toBeVisible();
+  expect(await screen.findByText("Install from VSIX…")).toBeVisible();
   expect(screen.getByText("Python")).toBeVisible();
 
   // Clicking "Back to code" returns to code
@@ -144,7 +144,7 @@ it("keeps the open file code visible and active when closing or toggling the exp
   expect(screen.getByLabelText("File draft")).toBeVisible();
 });
 
-it("opens dedicated editor settings inside the editor workspace without kicking user to global app settings", () => {
+it("opens dedicated editor settings inside the editor workspace without kicking user to global app settings", async () => {
   const onNavigate = vi.fn();
   render(
     <EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
@@ -163,7 +163,7 @@ it("opens dedicated editor settings inside the editor workspace without kicking 
 
   // The draft is safely hidden in the background while settings is visible
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
-  expect(screen.getByText("Editor Settings")).toBeVisible();
+  expect(await screen.findByText("Editor Settings")).toBeVisible();
   expect(screen.getByText("Editor: Font Size")).toBeVisible();
   expect(screen.getByText("Live Preview")).toBeVisible();
 
@@ -173,7 +173,7 @@ it("opens dedicated editor settings inside the editor workspace without kicking 
   expect(screen.getByLabelText("File draft")).toHaveValue("modified code buffer");
 });
 
-it("toggles editor settings with Ctrl+, shortcut without navigating away", () => {
+it("toggles editor settings with Ctrl+, shortcut without navigating away", async () => {
   const onNavigate = vi.fn();
   render(
     <EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
@@ -184,7 +184,7 @@ it("toggles editor settings with Ctrl+, shortcut without navigating away", () =>
   // Press Ctrl+,
   fireEvent.keyDown(window, { key: ",", ctrlKey: true });
   expect(onNavigate).not.toHaveBeenCalled();
-  expect(screen.getByText("Editor Settings")).toBeVisible();
+  expect(await screen.findByText("Editor Settings")).toBeVisible();
 
   // Press Ctrl+, again to toggle back
   fireEvent.keyDown(window, { key: ",", ctrlKey: true });

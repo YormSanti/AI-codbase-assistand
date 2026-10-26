@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import "./App.css";
 import { repositoryApi } from "./api/repositoryApi";
 import { editorApi } from "./api/editorApi";
@@ -6,16 +6,20 @@ import { ApiError } from "./api/client";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
-import { AIAgentPage } from "@/components/AIAgentPage";
 import { DashboardPage } from "@/components/DashboardPage";
 import { ExplorerPage } from "@/components/ExplorerPage";
 import { EditorApp } from "./editor/EditorApp";
 import type { EditorWorkspaceHandle } from "./editor/editorCommands";
-import { GitPage } from "@/components/GitPage";
-import { TerminalPage } from "@/components/TerminalPage";
-import { AnalyticsPage } from "@/components/AnalyticsPage";
-import { SettingsPage } from "@/components/SettingsPage";
+import { PageFallback } from "@/components/PageFallback";
 import { Toaster } from "@/components/ui/sonner";
+
+// Pages that are visited on demand load as separate chunks so the first paint
+// does not pay for the terminal emulator, charts, or the AI console.
+const AIAgentPage = lazy(() => import("@/components/AIAgentPage").then(m => ({ default: m.AIAgentPage })));
+const GitPage = lazy(() => import("@/components/GitPage").then(m => ({ default: m.GitPage })));
+const TerminalPage = lazy(() => import("@/components/TerminalPage").then(m => ({ default: m.TerminalPage })));
+const AnalyticsPage = lazy(() => import("@/components/AnalyticsPage").then(m => ({ default: m.AnalyticsPage })));
+const SettingsPage = lazy(() => import("@/components/SettingsPage").then(m => ({ default: m.SettingsPage })));
 
 import type { FilePreview, RepositoryInfo, TreeNode } from "./types/domain";
 import { AlertCircle } from "lucide-react";
@@ -329,18 +333,20 @@ export default function App() {
             const isActive = activeTab === "terminal" && terminalRepository?.root_path === repository?.root_path;
             return (
               <div key={terminalRepository?.root_path ?? "home"} style={{ display: isActive ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
-                <TerminalPage repository={terminalRepository} isActive={isActive} />
+                <Suspense fallback={<PageFallback />}><TerminalPage repository={terminalRepository} isActive={isActive} /></Suspense>
               </div>
             );
           })}
 
           {/* Git Repository */}
           {activeTab === "git" && (
-            <GitPage
-              key={repository?.id ?? "none"}
-              repository={repository}
-              onNavigate={handleSelectTab}
-            />
+            <Suspense fallback={<PageFallback />}>
+              <GitPage
+                key={repository?.id ?? "none"}
+                repository={repository}
+                onNavigate={handleSelectTab}
+              />
+            </Suspense>
           )}
 
           {/* AI Agent */}
@@ -348,11 +354,13 @@ export default function App() {
             <div style={{ display: (activeTab === "ai" || activeTab === "ai-agent") ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "#000000" }}>
               {visitedThreads.map(threadId => (
               <div key={`${repository?.id ?? "none"}:${threadId}`} style={{ display: threadId === activeThread ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "#000000" }}>
-              <AIAgentPage
-                repository={repository}
-                initialPrompt={threadId === activeThread ? aiDraft : null}
-                onInitialPromptConsumed={() => setAiDraft(null)}
-              />
+              <Suspense fallback={<PageFallback />}>
+                <AIAgentPage
+                  repository={repository}
+                  initialPrompt={threadId === activeThread ? aiDraft : null}
+                  onInitialPromptConsumed={() => setAiDraft(null)}
+                />
+              </Suspense>
               </div>
               ))}
             </div>
@@ -360,18 +368,22 @@ export default function App() {
 
           {/* Analytics & Code Charts */}
           {(activeTab === "analytics" || activeTab === "chart" || activeTab === "charts") && (
-            <AnalyticsPage
-              repository={repository}
-              tree={tree}
-              isLoading={isLoading}
-              onNavigate={handleSelectTab}
-              onOpen={handleOpen}
-            />
+            <Suspense fallback={<PageFallback />}>
+              <AnalyticsPage
+                repository={repository}
+                tree={tree}
+                isLoading={isLoading}
+                onNavigate={handleSelectTab}
+                onOpen={handleOpen}
+              />
+            </Suspense>
           )}
 
           {/* Settings */}
           {activeTab === "settings" && (
-            <SettingsPage />
+            <Suspense fallback={<PageFallback />}>
+              <SettingsPage />
+            </Suspense>
           )}
         </div>
       </SidebarInset>
