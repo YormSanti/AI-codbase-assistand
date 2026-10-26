@@ -1,13 +1,13 @@
 import {
-  IconChartBar,
-  IconCode,
-  IconDashboard,
-  IconFolder,
-  IconGitBranch,
-  IconRobot,
-  IconSettings,
-  IconTerminal2,
-} from "@tabler/icons-react";
+  BarChart3,
+  Bot,
+  Code2,
+  Folder,
+  GitBranch,
+  LayoutDashboard,
+  Settings,
+  SquareTerminal,
+} from "lucide-react";
 
 import {
   Sidebar,
@@ -40,12 +40,12 @@ export function AppSidebar({
   onSelectThread?: (threadId: string) => void;
 }) {
   const navItems = [
-    { title: "Dashboard", id: "dashboard", icon: IconDashboard },
-    { title: "File Explorer", id: "explorer", icon: IconFolder },
-    { title: "Terminal", id: "terminal", icon: IconTerminal2 },
-    { title: "Git Repository", id: "git", icon: IconGitBranch },
-    { title: "AI Assistant", id: "ai", icon: IconRobot },
-    { title: "Analytics", id: "analytics", icon: IconChartBar },
+    { title: "Dashboard", id: "dashboard", icon: LayoutDashboard },
+    { title: "File Explorer", id: "explorer", icon: Folder },
+    { title: "Terminal", id: "terminal", icon: SquareTerminal },
+    { title: "Git Repository", id: "git", icon: GitBranch },
+    { title: "AI Assistant", id: "ai", icon: Bot },
+    { title: "Analytics", id: "analytics", icon: BarChart3 },
   ];
 
   return (
@@ -112,7 +112,7 @@ export function AppSidebar({
               onClick={() => onSelectTab?.("editor")}
               tooltip="code"
             >
-              <IconCode className="size-4" />
+              <Code2 className="size-4" />
               <span>code</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -122,7 +122,7 @@ export function AppSidebar({
               onClick={() => onSelectTab?.("settings")}
               tooltip="Settings"
             >
-              <IconSettings className="size-4" />
+              <Settings className="size-4" />
               <span>Settings</span>
             </SidebarMenuButton>
           </SidebarMenuItem>

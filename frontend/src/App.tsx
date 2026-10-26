@@ -15,6 +15,7 @@ import { GitPage } from "@/components/GitPage";
 import { TerminalPage } from "@/components/TerminalPage";
 import { AnalyticsPage } from "@/components/AnalyticsPage";
 import { SettingsPage } from "@/components/SettingsPage";
+import { Toaster } from "@/components/ui/sonner";
 
 import type { FilePreview, RepositoryInfo, TreeNode } from "./types/domain";
 import { AlertCircle } from "lucide-react";
@@ -22,7 +23,7 @@ import { useAutoUpdater } from "./hooks/useAutoUpdater";
 import { useAppearance } from "./hooks/useAppearance";
 
 export default function App() {
-  const { settings } = useAppearance();
+  const { settings, resolvedTheme } = useAppearance();
   useAutoUpdater();
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
@@ -374,6 +375,7 @@ export default function App() {
           )}
         </div>
       </SidebarInset>
+      <Toaster theme={resolvedTheme} position="bottom-right" closeButton />
     </SidebarProvider>
   );
 }
