@@ -46,6 +46,19 @@ RISK_RULES: tuple[PatternRule, ...] = (
     PatternRule("inner-html", "Assigning innerHTML can inject unsanitized HTML", "low", re.compile(r"\.innerHTML\s*=(?!=)"), frozenset({"javascript", "typescript", "jsx", "tsx", "html"})),
     PatternRule("new-function", "new Function() compiles code from strings", "medium", re.compile(r"\bnew\s+Function\s*\("), frozenset({"javascript", "typescript", "jsx", "tsx"})),
     PatternRule("curl-pipe-shell", "Piping a download straight into a shell", "medium", re.compile(r"\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z)?sh\b")),
+    PatternRule("sql-string-format", "SQL built with string formatting; use query parameters", "medium",
+                re.compile(r"\.(execute|executemany|executescript)\s*\(\s*(f[\"']|[\"'][^\"']*[\"']\s*(%|\.format\s*\())"), frozenset({"python"})),
+    PatternRule("shell-template", "Shell command built from a template string", "medium",
+                re.compile(r"(?<!\w)(exec|execSync)\s*\(\s*`[^`]*\$\{"), frozenset({"javascript", "typescript", "jsx", "tsx"})),
+    PatternRule("unverified-ssl-context", "SSL context that skips certificate checks", "medium",
+                re.compile(r"\bssl\._create_unverified_context\s*\("), frozenset({"python"})),
+    PatternRule("marshal", "Unmarshalling can execute code from untrusted data", "medium", re.compile(r"\bmarshal\.loads?\s*\("), frozenset({"python"})),
+    PatternRule("mktemp", "tempfile.mktemp() is open to race conditions; use mkstemp()", "low", re.compile(r"\btempfile\.mktemp\s*\("), frozenset({"python"})),
+    PatternRule("os-popen", "os.popen() passes a string to the shell", "low", re.compile(r"\bos\.popen\s*\("), frozenset({"python"})),
+    PatternRule("flask-debug", "Flask debug mode exposes an interactive debugger", "low", re.compile(r"\.run\s*\([^)]*\bdebug\s*=\s*True"), frozenset({"python"})),
+    PatternRule("document-write", "document.write() can inject unsanitized HTML", "low",
+                re.compile(r"\bdocument\.write(ln)?\s*\("), frozenset({"javascript", "typescript", "jsx", "tsx", "html"})),
+    PatternRule("world-writable", "World-writable file permissions", "low", re.compile(r"\bchmod\s+(-R\s+)?0?777\b|\bchmod\s*\([^)]*\b0o?777\b")),
 )
 
 SECRET_RULES: tuple[PatternRule, ...] = (

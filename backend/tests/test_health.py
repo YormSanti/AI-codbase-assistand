@@ -163,6 +163,40 @@ def test_health_scan_reports_more_token_formats_and_connection_string_passwords(
     assert not any(token in str(report) for token in MORE_TOKENS.values())
 
 
+def test_health_scan_reports_more_risky_patterns(api_client: TestClient, tmp_path: Path) -> None:
+    root = tmp_path / "risky"
+    (root / "web").mkdir(parents=True)
+    (root / "db.py").write_text(
+        "cursor.execute(f\"SELECT * FROM users WHERE id = {user_id}\")\n"      # 1 sql-string-format
+        "cursor.execute(\"DELETE FROM t WHERE id = %s\" % ident)\n"            # 2 sql-string-format
+        "cursor.execute(\"SELECT 1 WHERE a = {}\".format(a))\n"                # 3 sql-string-format
+        "cursor.execute(\"SELECT * FROM t WHERE id = %s\", (ident,))\n"        # 4 parameterized: fine
+        "context = ssl._create_unverified_context()\n"                         # 5
+        "code = marshal.loads(blob)\n"                                         # 6
+        "path = tempfile.mktemp()\n"                                           # 7
+        "out = os.popen('ls').read()\n"                                        # 8
+        "app.run(host='0.0.0.0', debug=True)\n"                                # 9
+        "os.chmod(path, 0o777)\n"                                              # 10
+    )
+    (root / "web" / "run.ts").write_text(
+        "execSync(`git checkout ${branch}`);\n"                                # 1 shell-template
+        "execSync('git status');\n"                                           # 2 fine
+        "const match = pattern.exec(text);\n"                                  # 3 fine
+        "document.write(html);\n"                                             # 4
+    )
+    (root / "setup.sh").write_text("chmod -R 777 /srv/app\n")
+
+    found = {(f["rule"], f["path"], f["line"]) for f in _scan(api_client, root)["findings"] if f["category"] == "risk"}
+
+    assert found == {
+        ("sql-string-format", "db.py", 1), ("sql-string-format", "db.py", 2), ("sql-string-format", "db.py", 3),
+        ("unverified-ssl-context", "db.py", 5), ("marshal", "db.py", 6), ("mktemp", "db.py", 7),
+        ("os-popen", "db.py", 8), ("flask-debug", "db.py", 9), ("world-writable", "db.py", 10),
+        ("shell-template", "web/run.ts", 1), ("document-write", "web/run.ts", 4),
+        ("world-writable", "setup.sh", 1),
+    }
+
+
 def test_health_scan_caps_each_category(api_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(health_service, "MAX_FINDINGS_PER_CATEGORY", 1)
     report = _scan(api_client, _project(tmp_path))
