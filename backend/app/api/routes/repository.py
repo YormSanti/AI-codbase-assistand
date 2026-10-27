@@ -1,6 +1,7 @@
 """Repository indexing endpoints."""
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -13,10 +14,26 @@ from app.domain.models import SymbolMatch
 router = APIRouter(prefix="/api/repositories", tags=["repositories"])
 
 
+def _project_path(raw: str) -> str:
+    """Trim the whitespace and quotes that "Copy as path" adds, and insist on a full path.
+
+    A relative path would resolve against the backend's own working folder,
+    which means nothing to the person typing it.
+    """
+    path = raw.strip()
+    if len(path) >= 2 and path[0] == path[-1] and path[0] in "'\"":
+        path = path[1:-1].strip()
+    if not path:
+        raise HTTPException(status_code=400, detail="Enter the folder to open.")
+    if not os.path.isabs(os.path.expanduser(path)):
+        raise HTTPException(status_code=400, detail=f"Enter the full path to the folder, for example {os.path.expanduser('~')}/projects/app, not '{path}'.")
+    return path
+
+
 @router.post("/open", response_model=RepositoryResponse)
 def open_repository(request: OpenRepositoryRequest, service: IndexingServiceDep) -> RepositoryResponse:
     try:
-        info = service.open_repository(request.path)
+        info = service.open_repository(_project_path(request.path))
     except NotAGitRepositoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RepositoryResponse.from_domain(info)

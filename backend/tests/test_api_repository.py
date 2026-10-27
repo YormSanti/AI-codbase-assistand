@@ -146,3 +146,17 @@ def test_tree_reports_symbol_counts_per_file(api_client: TestClient, tmp_path: P
     assert children["models.py"]["symbol_count"] == 3  # Order, total, build; the import is not counted
     assert children["empty.py"]["symbol_count"] is None
     assert children["notes.md"]["symbol_count"] is None
+
+
+def test_open_repository_requires_a_full_path(api_client: TestClient) -> None:
+    for path in ("sample_repo", "./src", "", "   "):
+        response = api_client.post("/api/repositories/open", json={"path": path})
+        assert response.status_code == 400, path
+    assert "full path" in api_client.post("/api/repositories/open", json={"path": "sample_repo"}).json()["detail"]
+
+
+def test_open_repository_trims_whitespace_and_quotes(api_client: TestClient, git_repo_path: Path) -> None:
+    for path in (f"  {git_repo_path}\n", f'"{git_repo_path}"', f"'{git_repo_path}'"):
+        response = api_client.post("/api/repositories/open", json={"path": path})
+        assert response.status_code == 200, path
+        assert response.json()["root_path"] == str(git_repo_path.resolve())
