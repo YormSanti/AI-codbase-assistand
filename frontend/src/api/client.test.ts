@@ -44,3 +44,47 @@ describe("apiRequest readiness", () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain("/api/repositories");
   });
 });
+
+describe("apiRequest errors and headers", () => {
+  const failure = (status: number, body: unknown, statusText = "") =>
+    vi.fn().mockResolvedValue({ ok: false, status, statusText, json: async () => body });
+
+  it("joins validation error messages instead of showing [object Object]", async () => {
+    vi.stubGlobal("fetch", failure(422, { detail: [{ loc: ["body", "path"], msg: "Field required" }, { msg: "Too long" }] }));
+    const { apiRequest, ApiError } = await import("./client");
+
+    const error = await apiRequest("/api/repositories/open", { method: "POST" }).catch(caught => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 422, message: "Field required; Too long" });
+  });
+
+  it("uses the string detail, then the status text, then the status code", async () => {
+    vi.stubGlobal("fetch", failure(404, { detail: "No repository with id=9" }));
+    let { apiRequest } = await import("./client");
+    await expect(apiRequest("/api/repositories/9")).rejects.toMatchObject({ message: "No repository with id=9" });
+
+    vi.resetModules();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 502, statusText: "Bad Gateway", json: async () => { throw new SyntaxError("not json"); } }));
+    ({ apiRequest } = await import("./client"));
+    await expect(apiRequest("/api/repositories")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" });
+
+    vi.resetModules();
+    vi.stubGlobal("fetch", failure(500, {}));
+    ({ apiRequest } = await import("./client"));
+    await expect(apiRequest("/api/repositories")).rejects.toMatchObject({ message: "Request failed (500)." });
+  });
+
+  it("keeps the JSON content type when the caller passes its own headers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { apiRequest } = await import("./client");
+
+    await apiRequest("/api/repositories/open", { method: "POST", body: "{}", headers: { "X-Trace": "1" } });
+
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("X-Trace")).toBe("1");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+  });
+});

@@ -54,18 +54,33 @@ export function ensureBackendReady(): Promise<void> {
   return backendReady;
 }
 
+/**
+ * The error message for a failed response. FastAPI sends `detail` as a string
+ * for HTTP errors and as a list of `{ msg }` objects for validation errors.
+ */
+async function errorFromResponse(response: Response): Promise<ApiError> {
+  const body = await response.json().catch(() => null);
+  const detail: unknown = body?.detail;
+  let message: string | undefined;
+  if (typeof detail === "string") message = detail;
+  else if (Array.isArray(detail)) {
+    message = detail
+      .map(item => (typeof item === "string" ? item : typeof item?.msg === "string" ? item.msg : null))
+      .filter(Boolean)
+      .join("; ");
+  }
+  return new ApiError(response.status, message || response.statusText || `Request failed (${response.status}).`);
+}
+
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   await ensureBackendReady();
   const backendUrl = await getBackendUrl();
-  const response = await fetch(`${backendUrl}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  // Merge rather than replace, so a caller's own headers keep the JSON content type.
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const response = await fetch(`${backendUrl}${path}`, { ...init, headers });
 
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new ApiError(response.status, body.detail ?? response.statusText);
-  }
+  if (!response.ok) throw await errorFromResponse(response);
 
   if (response.status === 204) {
     return undefined as T;
@@ -86,11 +101,7 @@ export async function apiStream<E>(path: string, body: unknown, onEvent: (event:
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => ({ detail: response.statusText }));
-    const message = Array.isArray(detail.detail) ? detail.detail.map((item: { msg?: string }) => item.msg).join("; ") : detail.detail;
-    throw new ApiError(response.status, message ?? response.statusText);
-  }
+  if (!response.ok) throw await errorFromResponse(response);
   if (!response.body) throw new ApiError(response.status, "The server sent an empty stream.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
