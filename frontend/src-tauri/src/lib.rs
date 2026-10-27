@@ -272,7 +272,9 @@ async fn run_agent(app: AppHandle, request: AgentRequest) -> Result<AgentRespons
                 let mut command = Command::new(binary);
                 // Dropped `--approval-mode plan`: plain answers are shorter and
                 // faster than planning-style responses for chat.
-                command.args(["--prompt", &prompt, "--output-format", "text"]);
+                // A single `--prompt=` argument, so a prompt starting with "-" is not parsed as flags.
+                command.arg(format!("--prompt={prompt}"));
+                command.args(["--output-format", "text"]);
                 command
             }
             _ => return Err("Choose Codex or Gemini before sending a message.".to_string()),

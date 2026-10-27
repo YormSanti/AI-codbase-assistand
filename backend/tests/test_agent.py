@@ -87,3 +87,10 @@ def test_run_stops_a_cli_that_hangs_without_output(api_client: TestClient, tmp_p
     assert time.monotonic() - started < 10
     assert len(events) == 1 and events[0]["type"] == "error"
     assert events[0]["message"].startswith("Codex did not finish within")
+
+
+def test_gemini_receives_a_prompt_that_starts_with_a_dash_as_one_argument(api_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    binary = _fake_cli(tmp_path, 'printf "%s\\n" "$1"\n')
+    monkeypatch.setattr(agent_service, "find_binary", lambda name: binary)
+    events = _events(api_client.post("/api/agent/run", json={"provider": "gemini", "prompt": "- fix the bug"}))
+    assert events[-1] == {"type": "done", "content": "--prompt=- fix the bug"}

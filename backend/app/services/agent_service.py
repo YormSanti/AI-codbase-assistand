@@ -61,7 +61,9 @@ def provider_status(provider: str) -> ProviderStatus:
 def _command(provider: str, binary: str, prompt: str) -> list[str]:
     if provider == "codex":
         return [binary, "exec", "--ephemeral", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "--", prompt]
-    return [binary, "--prompt", prompt, "--output-format", "text"]
+    # One `--prompt=` argument: as a separate value, a prompt starting with "-" (a pasted list item, say)
+    # is parsed by Gemini's option parser as flags and the prompt arrives empty.
+    return [binary, f"--prompt={prompt}", "--output-format", "text"]
 
 
 def _kill(process: subprocess.Popen[bytes]) -> None:
