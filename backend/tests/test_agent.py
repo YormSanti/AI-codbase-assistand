@@ -65,3 +65,12 @@ def test_provider_status(api_client: TestClient, tmp_path: Path, monkeypatch: py
     monkeypatch.setattr(agent_service, "find_binary", lambda name: signed_in)
     monkeypatch.setenv("GEMINI_API_KEY", "set")
     assert api_client.get("/api/agent/providers").json()["gemini"] == {"installed": True, "authenticated": True}
+
+
+def test_run_keeps_multibyte_characters_split_across_reads(api_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # "é" is two bytes in UTF-8; the pause makes the reader see them in separate reads.
+    binary = _fake_cli(tmp_path, "printf 'caf\\303'\nsleep 0.2\nprintf '\\251 ok\\n'\n")
+    monkeypatch.setattr(agent_service, "find_binary", lambda name: binary)
+    events = _events(api_client.post("/api/agent/run", json={"provider": "codex", "prompt": "hi"}))
+    assert events[-1] == {"type": "done", "content": "café ok"}
+    assert "\ufffd" not in "".join(event.get("text", "") for event in events)

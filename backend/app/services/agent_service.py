@@ -6,6 +6,7 @@ Codex runs in its read-only sandbox, Gemini in non-interactive prompt mode.
 """
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import shutil
@@ -82,13 +83,20 @@ def stream_agent(provider: str, prompt: str, working_directory: Path) -> Iterato
         yield _event("error", message=f"Could not run {name}: {exc.strerror or exc}")
         return
     content: list[str] = []
+    # A read can end inside a multi-byte character; the incremental decoder
+    # holds the partial bytes until the rest arrives instead of emitting U+FFFD.
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
     try:
         assert process.stdout is not None
-        while chunk := os.read(process.stdout.fileno(), 4096):
-            text = chunk.decode("utf-8", errors="replace")
-            content.append(text)
-            yield _event("chunk", text=text)
+        while True:
+            chunk = os.read(process.stdout.fileno(), 4096)
+            text = decoder.decode(chunk, final=not chunk)
+            if text:
+                content.append(text)
+                yield _event("chunk", text=text)
+            if not chunk:
+                break
             if time.monotonic() > deadline:
                 process.kill()
                 yield _event("error", message=f"{name} did not finish within {RUN_TIMEOUT_SECONDS // 60} minutes.")
