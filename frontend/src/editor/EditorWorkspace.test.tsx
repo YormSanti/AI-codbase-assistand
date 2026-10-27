@@ -104,7 +104,7 @@ it("guards closing an inactive dirty tab and switches to a neighbor when the act
   expect(screen.getByRole("tab", { name: "app.ts" })).toBeInTheDocument();
   confirm.mockReturnValue(true);
   fireEvent.click(screen.getByRole("button", { name: "Close app.ts" }));
-  expect(screen.queryByRole("tab", { name: "app.ts" })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole("tab", { name: "app.ts" })).not.toBeInTheDocument());
   expect(screen.getByRole("textbox", { name: "Edit .env" })).toHaveValue("MODE=dev");
   expect(onStateChange).toHaveBeenLastCalledWith({ dirty: false, saving: false });
   fireEvent.click(screen.getByRole("treeitem", { name: "app.ts" }));

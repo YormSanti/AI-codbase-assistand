@@ -25,6 +25,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useAppSettings } from "../hooks/useAppSettings";
+import { useConfirm } from "../hooks/useConfirm";
 import { affectsPath, FILES_CHANGED_EVENT, type FilesChangedDetail } from "../lib/fileEvents";
 import type { CodeEditorHandle } from "./CodeEditorSurface";
 import type { EditorCommand } from "../editor/editorCommands";
@@ -112,6 +113,7 @@ export function FileInspector({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const confirm = useConfirm();
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<HTMLDivElement>(null);
@@ -285,16 +287,20 @@ export function FileInspector({
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  const discardEdits = () => {
-    if (savingRef.current || (isDirty && !window.confirm("Discard your unsaved changes?"))) return;
+  const discardEdits = async () => {
+    if (savingRef.current) return;
+    if (isDirty && !(await confirm({ title: `Discard your changes to ${file.name}?`, description: "The file goes back to its saved version.", confirmLabel: "Discard changes", destructive: true }))) return;
+    if (savingRef.current) return; // a save started while the dialog was open
     setDraft(baseline);
     setIsEditing(autoEdit);
     setSaveError(null);
     setSaveNotice(null);
   };
 
-  const closeFile = () => {
-    if (savingRef.current || (isDirty && !window.confirm("Discard your unsaved changes and close this file?"))) return;
+  const closeFile = async () => {
+    if (savingRef.current) return;
+    if (isDirty && !(await confirm({ title: `Close ${file.name} without saving?`, description: "Your unsaved changes are lost.", confirmLabel: "Close without saving", destructive: true }))) return;
+    if (savingRef.current) return;
     onEditorStateChange?.({ dirty: false, saving: false });
     onClose();
   };

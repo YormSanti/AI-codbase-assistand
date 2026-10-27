@@ -3,6 +3,7 @@ import type { TreeNode } from "../types/domain";
 import type { FileInspectorHandle } from "../components/FileInspector";
 import { useWorkspaceCloseGuard, type EditorStatus } from "./useWorkspaceCloseGuard";
 import type { EditorCommand } from "./editorCommands";
+import { useConfirm } from "../hooks/useConfirm";
 
 interface Props {
   selectedFile: TreeNode | null;
@@ -20,6 +21,7 @@ export function useEditorDocuments({ selectedFile, onSelectFile, onCloseFile, on
   const handles = useRef(new Map<string, FileInspectorHandle>());
   const handleRefs = useRef(new Map<string, (handle: FileInspectorHandle | null) => void>());
   const savingAll = useRef(false);
+  const confirm = useConfirm();
   const stateChange = useRef(onStateChange);
   stateChange.current = onStateChange;
   const openFiles = useMemo(() => selectedFile && !opened.some(file => file.path === selectedFile.path)
@@ -68,7 +70,12 @@ export function useEditorDocuments({ selectedFile, onSelectFile, onCloseFile, on
   const closeFile = (file: TreeNode, confirmed = false) => {
     const state = statusRef.current[file.path];
     if (state?.saving || savingAll.current) return;
-    if (!confirmed && state?.dirty && !window.confirm(`Discard unsaved changes in ${file.name} and close this file?`)) return;
+    if (!confirmed && state?.dirty) {
+      // Close through the latest closeFile once answered: tabs may have changed while the dialog was open.
+      void confirm({ title: `Close ${file.name} without saving?`, description: "Your unsaved changes are lost.", confirmLabel: "Close without saving", destructive: true })
+        .then(ok => { if (ok) latestCloseFile.current(file, true); });
+      return;
+    }
     const index = openFiles.findIndex(open => open.path === file.path);
     const remaining = openFiles.filter(open => open.path !== file.path);
     setOpened(remaining);
@@ -80,6 +87,9 @@ export function useEditorDocuments({ selectedFile, onSelectFile, onCloseFile, on
       if (next) onSelectFile(next); else onCloseFile();
     }
   };
+
+  const latestCloseFile = useRef(closeFile);
+  latestCloseFile.current = closeFile;
 
   const saveAll = async () => {
     if (savingAll.current || saving) return;
