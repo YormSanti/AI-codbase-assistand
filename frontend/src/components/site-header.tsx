@@ -14,7 +14,6 @@ const VIEW_LABELS: Record<string, string> = {
   analytics: "Analytics",
   chart: "Analytics",
   charts: "Analytics",
-  health: "Code Health",
   settings: "Settings",
 };
 
