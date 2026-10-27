@@ -89,7 +89,7 @@ class IndexingService:
     def get_tree(self, repository_id: int) -> TreeNode:
         info = self.get_repository(repository_id)
         files = self._file_repository.list_files(repository_id)
-        return build_tree(info.name, files)
+        return build_tree(info.name, files, self._symbol_extraction_service.count_by_file(repository_id))
 
     def search_symbols(self, repository_id: int, query: str, limit: int = 50) -> list[SymbolMatch]:
         """Workspace symbol search over the indexed classes, functions, and methods."""

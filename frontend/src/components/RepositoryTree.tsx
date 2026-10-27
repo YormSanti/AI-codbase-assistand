@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Folder, FolderOpen, FileCode, Search, X, ChevronRight, ChevronDown, FileJson, FileText, Code2, FileSpreadsheet } from "lucide-react";
+import { Braces, Folder, FolderOpen, FileCode, Search, X, ChevronRight, ChevronDown, FileJson, FileText, Code2, FileSpreadsheet } from "lucide-react";
 import type { TreeNode } from "../types/domain";
 import { Input } from "./ui/input";
 
@@ -8,6 +8,10 @@ function formatBytes(bytes: number | null): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function symbolSummary(count: number): string {
+  return `${count} ${count === 1 ? "class, function, or method" : "classes, functions, and methods"}`;
 }
 
 function getFileIcon(filename: string, language?: string | null) {
@@ -60,6 +64,11 @@ function TreeNodeItem({
       >
         {getFileIcon(node.name, node.language)}
         <span className="tree-name font-mono">{node.name}</span>
+        {!!node.symbol_count && (
+          <span className="tree-symbols" title={symbolSummary(node.symbol_count)} aria-label={symbolSummary(node.symbol_count)}>
+            <Braces className="h-3 w-3" aria-hidden />{node.symbol_count}
+          </span>
+        )}
         {node.size_bytes !== null && (
           <span className="tree-size">{formatBytes(node.size_bytes)}</span>
         )}

@@ -362,6 +362,15 @@
   color: var(--muted-foreground);
 }
 
+.tree-symbols {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+}
+
 .tree-language {
   margin-left: 0.4rem;
   padding: 0.15rem 0.5rem;

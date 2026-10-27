@@ -47,6 +47,7 @@ class TreeNodeResponse(BaseModel):
     language: Language | None = None
     size_bytes: int | None = None
     file_id: int | None = None
+    symbol_count: int | None = None
     children: list["TreeNodeResponse"] = Field(default_factory=list)
 
     @classmethod
@@ -58,6 +59,7 @@ class TreeNodeResponse(BaseModel):
             language=node.language,
             size_bytes=node.size_bytes,
             file_id=node.file_id,
+            symbol_count=node.symbol_count,
             children=[cls.from_domain(child) for child in node.children],
         )
 

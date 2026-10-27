@@ -167,6 +167,8 @@ class TreeNode:
     language: Language | None = None
     size_bytes: int | None = None
     file_id: int | None = None
+    symbol_count: int | None = None
+    """Classes, functions, and methods found in a file; None when none are stored."""
     children: list["TreeNode"] = field(default_factory=list)
 
 

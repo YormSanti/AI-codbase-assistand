@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from app.domain.models import FileMetadata, Language
 from app.domain.tree_builder import build_tree
 
@@ -38,3 +40,15 @@ def test_build_tree_empty_repository() -> None:
     tree = build_tree("empty", [])
 
     assert tree.children == []
+
+
+def test_build_tree_attaches_symbol_counts_by_file_id() -> None:
+    files = [replace(_file("main.py"), id=1), replace(_file("src/app.py"), id=2)]
+
+    tree = build_tree("repo", files, {1: 4})
+
+    main = next(c for c in tree.children if c.name == "main.py")
+    app = next(c for c in tree.children if c.name == "src").children[0]
+    assert main.symbol_count == 4
+    assert app.symbol_count is None
+    assert tree.symbol_count is None

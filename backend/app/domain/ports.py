@@ -165,3 +165,7 @@ class SymbolRepositoryPort(ABC):
     @abstractmethod
     def search_symbols(self, repository_id: int, query: str, limit: int) -> list[SymbolMatch]:
         """Classes, functions, and methods whose name contains `query`, best matches first."""
+
+    @abstractmethod
+    def count_symbols_by_file(self, repository_id: int) -> dict[int, int]:
+        """Number of classes, functions, and methods per file id; files without any are left out."""

@@ -42,6 +42,8 @@ export interface TreeNode {
   language: Language | null;
   size_bytes: number | null;
   file_id: number | null;
+  /** Classes, functions, and methods in a file; absent or null when none are indexed. */
+  symbol_count?: number | null;
   children: TreeNode[];
 }
 

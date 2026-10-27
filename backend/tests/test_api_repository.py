@@ -131,3 +131,18 @@ def test_workspace_symbol_search_ranks_exact_then_prefix_then_substring(api_clie
     assert len(api_client.get(f"/api/repositories/{repo_id}/symbols", params={"q": "o", "limit": 2}).json()) == 2
     assert api_client.get(f"/api/repositories/{repo_id}/symbols", params={"q": ""}).status_code == 422
     assert api_client.get("/api/repositories/999/symbols", params={"q": "x"}).status_code == 404
+
+
+def test_tree_reports_symbol_counts_per_file(api_client: TestClient, tmp_path: Path) -> None:
+    root = tmp_path / "counts"
+    root.mkdir()
+    (root / "models.py").write_text("import os\n\nclass Order:\n    def total(self):\n        return 0\n\ndef build():\n    pass\n")
+    (root / "notes.md").write_text("# Notes\n")
+    (root / "empty.py").write_text("VALUE = 1\n")
+    repo_id = api_client.post("/api/repositories/open", json={"path": str(root)}).json()["id"]
+
+    children = {child["name"]: child for child in api_client.get(f"/api/repositories/{repo_id}/tree").json()["children"]}
+
+    assert children["models.py"]["symbol_count"] == 3  # Order, total, build; the import is not counted
+    assert children["empty.py"]["symbol_count"] is None
+    assert children["notes.md"]["symbol_count"] is None

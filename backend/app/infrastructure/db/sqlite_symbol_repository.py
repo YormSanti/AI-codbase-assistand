@@ -49,6 +49,15 @@ class SqlAlchemySymbolRepository(SymbolRepositoryPort):
         ).all()
         return [_to_code_symbol(r) for r in records]
 
+    def count_symbols_by_file(self, repository_id: int) -> dict[int, int]:
+        rows = self._session.execute(
+            select(SymbolRecord.file_id, func.count())
+            .join(FileRecord, FileRecord.id == SymbolRecord.file_id)
+            .where(FileRecord.repository_id == repository_id, SymbolRecord.kind != SymbolKind.IMPORT.value)
+            .group_by(SymbolRecord.file_id)
+        ).all()
+        return {file_id: count for file_id, count in rows}
+
     def search_symbols(self, repository_id: int, query: str, limit: int) -> list[SymbolMatch]:
         needle = query.strip().lower()
         if not needle:
