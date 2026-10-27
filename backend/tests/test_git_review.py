@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from git import Actor, Repo
 
 from app.domain.exceptions import GitCommandError, GitReviewError
-from app.infrastructure.git.git_review_client import GitReviewClient, MAX_DIFF_BYTES, remote_web_url
+from app.infrastructure.git.git_review_client import GitReviewClient, MAX_DIFF_BYTES, is_repository_path, remote_web_url
 
 
 def open_project(client: TestClient, path: Path) -> str:
@@ -657,3 +657,11 @@ def test_file_history_of_a_repository_without_commits(tmp_path: Path) -> None:
     (fresh / "a.txt").write_text("a\n")
     history = GitReviewClient().get_file_history(str(fresh), "a.txt", 50)
     assert history.commits == []
+
+
+def test_is_repository_path_keeps_paths_inside_the_working_tree() -> None:
+    for path in ("src/app.py", "README.md", ".github/workflows/ci.yml", "docs/.gitkeep", "a/b/.gitignore"):
+        assert is_repository_path(path), path
+    for path in ("", "/etc/passwd", "../outside.txt", "src/../../outside", ".git/config", ".GIT/config",
+                 "sub/.Git/hooks/pre-commit", "bad\0name"):
+        assert not is_repository_path(path), path

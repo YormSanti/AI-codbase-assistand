@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 import tempfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit
 
 from git import GitError, Repo
@@ -21,6 +21,21 @@ MAX_COMMIT_MESSAGE_CHARS = 10_000
 _SHA = re.compile(r"[0-9a-fA-F]{4,64}")
 # Conservative branch names; git check-ref-format then applies Git's own rules.
 _BRANCH_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/\-]{0,199}")
+
+
+def is_repository_path(path: str) -> bool:
+    """Whether `path` is a non-empty relative path that stays inside the working tree and out of `.git`.
+
+    `.git` is matched in any letter case, as Git itself does, because `.GIT` is
+    the same folder on case-insensitive volumes (the macOS and Windows
+    defaults). On Windows, backslashes and drive letters count too.
+    """
+    if not path or "\0" in path:
+        return False
+    relative = PureWindowsPath(path) if os.name == "nt" else PurePosixPath(path)
+    if relative.is_absolute() or relative.anchor:
+        return False
+    return not any(part == ".." or part.lower() == ".git" for part in relative.parts)
 
 
 def remote_web_url(remote: str) -> str | None:
@@ -126,8 +141,7 @@ class GitReviewClient(GitReviewPort):
     def get_diff(self, root_path: str, path: str, staged: bool) -> GitDiff:
         repo = self._repository(root_path)
         root_path = str(repo.working_tree_dir)
-        relative = PurePosixPath(path)
-        if not path or relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
+        if not is_repository_path(path):
             raise GitReviewError("Select a changed file inside the repository.")
         change = next((item for item in self._changes(root_path) if item.path == path), None)
         if change is None:
@@ -231,8 +245,7 @@ class GitReviewClient(GitReviewPort):
     def get_file_history(self, root_path: str, path: str, limit: int) -> FileHistory:
         repo = self._repository(root_path)
         git_root = Path(str(repo.working_tree_dir)).resolve()
-        relative = PurePosixPath(path)
-        if not path or relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
+        if not is_repository_path(path):
             raise GitReviewError("Choose a file inside the project.")
         # Editor paths are relative to the opened folder, which may be a subfolder of the repository.
         folder = Path(root_path).resolve()
@@ -360,8 +373,7 @@ class GitReviewClient(GitReviewPort):
         changes = {change.path: change for change in self._changes(root)}
         pathspecs: list[str] = []
         for path in dict.fromkeys(paths):
-            relative = PurePosixPath(path)
-            if not path or relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
+            if not is_repository_path(path):
                 raise GitCommandError(f"'{path}' is not a changed file inside the repository.")
             change = changes.get(path)
             if change is None:
@@ -451,8 +463,7 @@ class GitReviewClient(GitReviewPort):
         tracked: list[str] = []
         untracked: list[Path] = []
         for path in dict.fromkeys(paths):
-            relative = PurePosixPath(path)
-            if not path or relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
+            if not is_repository_path(path):
                 raise GitCommandError(f"'{path}' is not a changed file inside the repository.")
             change = changes.get(path)
             if change is None:
