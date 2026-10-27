@@ -10,12 +10,13 @@ const repository = { id: 5, name: "shop", root_path: "/shop", current_branch: "m
 const report: HealthReport = {
   files_scanned: 38,
   truncated: false,
-  counts: { secret: 1, risk: 2, marker: 1 },
+  counts: { secret: 1, risk: 2, complexity: 1, marker: 1 },
   large_files: [{ path: "assets/data.json", size_bytes: 2_621_440 }],
   findings: [
     { category: "secret", rule: "aws-access-key", severity: "high", title: "AWS access key ID", path: "config/settings.py", line: 12, snippet: "AWS = 'AKIA…[redacted]'" },
     { category: "risk", rule: "shell-true", severity: "medium", title: "subprocess call with shell=True", path: "tools/run.py", line: 4, snippet: "subprocess.run(cmd, shell=True)" },
     { category: "risk", rule: "weak-hash", severity: "low", title: "MD5 or SHA-1 is too weak for security uses", path: "app/hash.py", line: 9, snippet: "hashlib.md5(data)" },
+    { category: "complexity", rule: "cyclomatic-complexity", severity: "medium", title: "checkout has a cyclomatic complexity of 27", path: "app/cart.ts", line: 12, snippet: "export function checkout(cart) {" },
     { category: "marker", rule: "TODO", severity: "info", title: "TODO: remove legacy checkout", path: "app/cart.ts", line: 30, snippet: "// TODO: remove legacy checkout" },
   ],
 };
@@ -42,6 +43,10 @@ describe("CodeHealthPage", () => {
     expect(within(risks).getByText("subprocess call with shell=True")).toBeInTheDocument();
     expect(within(risks).queryByText("MD5 or SHA-1 is too weak for security uses")).toBeNull();
 
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter findings" }), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Complex functions/ }));
+    expect(within(screen.getByRole("region", { name: "Complex functions" })).getByText("checkout has a cyclomatic complexity of 27")).toBeInTheDocument();
+
     expect(screen.getByRole("region", { name: "Large files" })).toHaveTextContent("assets/data.json2.5 MB");
   });
 
@@ -54,7 +59,7 @@ describe("CodeHealthPage", () => {
 
   it("rescans, reports failures with a retry, and explains empty categories", async () => {
     vi.mocked(healthApi.scan)
-      .mockResolvedValueOnce({ ...report, counts: { secret: 0, risk: 0, marker: 0 }, findings: [], large_files: [] })
+      .mockResolvedValueOnce({ ...report, counts: { secret: 0, risk: 0, complexity: 0, marker: 0 }, findings: [], large_files: [] })
       .mockRejectedValueOnce(new Error("No repository with id=5"))
       .mockResolvedValueOnce(report);
     render(<CodeHealthPage repository={repository} onNavigate={vi.fn()} onOpenInEditor={vi.fn()} />);

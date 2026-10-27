@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileWarning, FolderOpen, KeyRound, ListTodo, LoaderCircle, RefreshCw, Search, ShieldAlert, ShieldCheck, TriangleAlert } from "lucide-react";
+import { FileWarning, FolderOpen, KeyRound, ListTodo, LoaderCircle, RefreshCw, Search, ShieldAlert, ShieldCheck, Split, TriangleAlert } from "lucide-react";
 import type { HealthCategory, HealthFinding, HealthReport, RepositoryInfo } from "../types/domain";
 import { healthApi } from "../api/healthApi";
 import { formatRelativeTime } from "../lib/time";
@@ -14,6 +14,7 @@ interface Props {
 const CATEGORIES: { id: HealthCategory; label: string; empty: string; icon: typeof KeyRound; tone: string }[] = [
   { id: "secret", label: "Possible secrets", empty: "No hardcoded keys or credentials found.", icon: KeyRound, tone: "text-red-600 dark:text-red-400" },
   { id: "risk", label: "Risky patterns", empty: "No risky calls found.", icon: ShieldAlert, tone: "text-amber-600 dark:text-amber-400" },
+  { id: "complexity", label: "Complex functions", empty: "No Python, JavaScript, or TypeScript function has a cyclomatic complexity of 15 or more.", icon: Split, tone: "text-violet-600 dark:text-violet-400" },
   { id: "marker", label: "TODO and FIXME", empty: "No TODO, FIXME, or HACK comments.", icon: ListTodo, tone: "text-sky-600 dark:text-sky-400" },
 ];
 
@@ -68,7 +69,7 @@ export function CodeHealthPage({ repository, onNavigate, onOpenInEditor }: Props
         <div className="flex max-w-md flex-col items-center gap-4 rounded-2xl border border-border bg-card p-10 text-center">
           <ShieldCheck size={48} className="text-emerald-500" />
           <h2 className="text-xl font-semibold">Code Health</h2>
-          <p className="text-sm text-muted-foreground">Open a project to scan it for possible secrets, risky code, TODO comments, and large files.</p>
+          <p className="text-sm text-muted-foreground">Open a project to scan it for possible secrets, risky code, complex functions, TODO comments, and large files.</p>
           <button type="button" className={buttonClass} onClick={() => onNavigate("explorer")}><FolderOpen size={15} />Open a project</button>
         </div>
       </div>
@@ -105,7 +106,7 @@ export function CodeHealthPage({ repository, onNavigate, onOpenInEditor }: Props
         </p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {CATEGORIES.map(item => {
           const Icon = item.icon;
           const count = data?.counts[item.id];
@@ -151,7 +152,7 @@ export function CodeHealthPage({ repository, onNavigate, onOpenInEditor }: Props
           </ul>
         )}
         <p className="text-xs text-muted-foreground">
-          These are heuristics to review, not proof of a problem. Secrets are shown redacted. Add <code className="rounded bg-muted px-1">ifrog-ignore</code> to a line, or <code className="rounded bg-muted px-1">ifrog-ignore-file</code> near the top of a file, to silence it. Files ignored by Git are not scanned.
+          These are heuristics to review, not proof of a problem. Complexity counts 1 plus each branch (if, loop, catch, case, ternary, and/or) in a function. Secrets are shown redacted. Add <code className="rounded bg-muted px-1">ifrog-ignore</code> to a line, or <code className="rounded bg-muted px-1">ifrog-ignore-file</code> near the top of a file, to silence it. Files ignored by Git are not scanned.
         </p>
       </section>
 

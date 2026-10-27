@@ -1,4 +1,4 @@
-"""Code health scan: TODO markers, risky patterns, likely secrets, and large files."""
+"""Code health scan: TODO markers, risky patterns, likely secrets, complex functions, and large files."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException

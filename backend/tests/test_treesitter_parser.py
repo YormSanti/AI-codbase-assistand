@@ -115,3 +115,68 @@ const obj = {
     nested_arrow = next(s for s in symbols if s.name == "nestedObjArrow")
     assert nested_arrow.kind == SymbolKind.FUNCTION
     assert nested_arrow.parent_name is None
+
+
+def test_complexity_counts_python_branch_points_per_function() -> None:
+    parser = TreeSitterCodeParser()
+    source = b"""def check(x):
+    if x and y or z:
+        pass
+    elif q:
+        pass
+    for a in b:
+        pass
+    while c:
+        pass
+    try:
+        pass
+    except ValueError:
+        pass
+    v = 1 if x else 2
+    w = [i for i in r if i]
+    match x:
+        case 1:
+            pass
+        case _:
+            pass
+    def inner():
+        if a:
+            pass
+
+class Greeter:
+    def greet(self):
+        return 1
+"""
+    scores = {(item.name, item.start_line): item.complexity for item in parser.complexity(source, Language.PYTHON)}
+
+    # if, and, or, elif, for, while, except, conditional, comprehension for + if, case 1 (not `case _`);
+    # the nested function is scored on its own.
+    assert scores == {("check", 1): 12, ("inner", 21): 2, ("greet", 26): 1}
+
+
+def test_complexity_counts_javascript_branches_and_names_function_expressions() -> None:
+    parser = TreeSitterCodeParser()
+    source = b"""function run(x) {
+  if (a && b || c ?? d) {}
+  for (;;) {}
+  for (const item of items) {}
+  while (x) {}
+  do {} while (y);
+  try {} catch (error) {}
+  const v = a ? 1 : 2;
+  switch (x) { case 1: break; default: break; }
+  const total = a + b;
+  items.map(item => item ? 1 : 2);
+}
+const handlers = { onSave: function () { return x || y; } };
+class Store { load = () => 1; save() {} }
+"""
+    scores = [(item.name, item.start_line, item.complexity) for item in parser.complexity(source, Language.JAVASCRIPT)]
+
+    assert scores == [
+        ("run", 1, 12),
+        ("anonymous function", 11, 2),
+        ("onSave", 13, 2),
+        ("load", 14, 1),
+        ("save", 14, 1),
+    ]

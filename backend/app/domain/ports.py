@@ -147,6 +147,10 @@ class CodeParserPort(ABC):
     def parse(self, source: bytes, language: Language) -> list[CodeSymbol]:
         """Extract symbols from `source`. Caller guarantees `supports(language)`."""
 
+    @abstractmethod
+    def complexity(self, source: bytes, language: Language) -> list[FunctionComplexity]:
+        """Cyclomatic complexity of each function in `source`. Caller guarantees `supports(language)`."""
+
 
 class SymbolRepositoryPort(ABC):
     """Persists the symbols extracted from a single file."""

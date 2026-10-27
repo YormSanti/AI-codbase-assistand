@@ -96,7 +96,7 @@ class CodeSymbol:
 @dataclass(frozen=True, slots=True)
 class HealthFinding:
     category: str
-    """secret, risk, or marker."""
+    """secret, risk, complexity, or marker."""
     rule: str
     severity: str
     """high, medium, low, or info."""
@@ -105,6 +105,15 @@ class HealthFinding:
     line: int
     snippet: str
     """The source line, with any detected secret redacted."""
+
+
+@dataclass(frozen=True, slots=True)
+class FunctionComplexity:
+    """Cyclomatic complexity of one function: 1 plus its branch points, not counting nested functions."""
+
+    name: str
+    start_line: int
+    complexity: int
 
 
 @dataclass(frozen=True, slots=True)

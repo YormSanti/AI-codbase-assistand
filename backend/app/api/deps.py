@@ -68,7 +68,7 @@ LocalEditorServiceDep = Annotated[LocalEditorService, Depends(get_local_editor_s
 
 
 def get_health_service(session: DbSession) -> HealthService:
-    return HealthService(SqlAlchemyFileMetadataRepository(session))
+    return HealthService(SqlAlchemyFileMetadataRepository(session), _code_parser)
 
 
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]

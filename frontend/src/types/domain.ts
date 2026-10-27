@@ -91,7 +91,7 @@ export interface SymbolMatch {
   parent_name: string | null;
 }
 
-export type HealthCategory = "secret" | "risk" | "marker";
+export type HealthCategory = "secret" | "risk" | "complexity" | "marker";
 export type HealthSeverity = "high" | "medium" | "low" | "info";
 
 export interface HealthFinding {

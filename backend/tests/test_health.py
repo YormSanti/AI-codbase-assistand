@@ -49,6 +49,14 @@ def _project(tmp_path: Path) -> Path:
     (root / "install.sh").write_text("curl -fsSL https://example.com/install | sudo bash\n")
     (root / "big.txt").write_text("plain text line\n" * 40_000)
     (root / "logo.png").write_bytes(b"\x89PNG\x00\x00binary")
+    branches = "".join(f"    if x == {n}:\n        return {n}\n" for n in range(15))
+    (root / "complex.py").write_text(
+        f"def branchy(x):\n{branches}"                                # 1: 1 + 15 branches = 16
+        f"def quiet(x):  # ifrog-ignore\n{branches}"                  # suppressed on its def line
+        "def simple(x):\n    return x and 1\n"                       # 2, below the threshold
+    )
+    conditions = " || ".join(f"x === {n}" for n in range(25))
+    (root / "web" / "rules.js").write_text(f"export const check = (x) => {{ if ({conditions}) return 1; }};\n")  # 1 + 1 + 24 = 26
     return root
 
 
@@ -100,20 +108,27 @@ def test_health_scan_reports_markers_risks_secrets_and_large_files(api_client: T
 
     # Secrets first, most severe first.
     categories = [f["category"] for f in report["findings"]]
-    assert categories == sorted(categories, key=["secret", "risk", "marker"].index)
+    assert categories == sorted(categories, key=["secret", "risk", "complexity", "marker"].index)
     secrets = [f for f in report["findings"] if f["category"] == "secret"]
     assert [f["severity"] for f in secrets] == sorted((f["severity"] for f in secrets), key=["high", "medium", "low", "info"].index)
+
+    complexity = {(f["path"], f["line"]): (f["severity"], f["title"]) for f in report["findings"] if f["category"] == "complexity"}
+    assert complexity == {
+        ("web/rules.js", 1): ("medium", "check has a cyclomatic complexity of 26"),
+        ("complex.py", 1): ("low", "branchy has a cyclomatic complexity of 16"),
+    }
 
     assert report["large_files"] == [{"path": "big.txt", "size_bytes": 640_000}]
     assert report["counts"] == {
         "secret": sum(c == "secret" for c in categories),
         "risk": sum(c == "risk" for c in categories),
+        "complexity": 2,
         "marker": sum(c == "marker" for c in categories),
     }
     assert report["truncated"] is False
-    # app.py, view.tsx, README.md, id_rsa.pem, install.sh, big.txt, vendored.py, settings.py;
-    # the lock file and the PNG are skipped.
-    assert report["files_scanned"] == 8
+    # app.py, view.tsx, README.md, id_rsa.pem, install.sh, big.txt, vendored.py, settings.py,
+    # complex.py, rules.js; the lock file and the PNG are skipped.
+    assert report["files_scanned"] == 10
 
 
 def test_health_scan_caps_each_category(api_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

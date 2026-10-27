@@ -6,8 +6,8 @@ import time
 from pathlib import Path
 
 from app.domain.exceptions import RepositoryNotFoundError
-from app.domain.models import HealthFinding, HealthReport, LargeFile
-from app.domain.ports import FileMetadataRepositoryPort
+from app.domain.models import HealthFinding, HealthReport, Language, LargeFile
+from app.domain.ports import CodeParserPort, FileMetadataRepositoryPort
 from app.services.health_rules import (
     COMMENT_TOKEN, FILE_SUPPRESSION, FILE_SUPPRESSION_LINES, GENERIC_SECRET, MARKER, MARKER_SEVERITY,
     PLACEHOLDER, RISK_RULES, SECRET_RULES, SUPPRESSION, redact,
@@ -20,12 +20,16 @@ TIME_BUDGET_SECONDS = 15.0
 MAX_LINE_CHARS = 4_000
 SNIPPET_CHARS = 200
 LARGE_FILE_BYTES = 512_000
+# Functions at or above these cyclomatic complexities are reported as low and medium severity.
+COMPLEXITY_LOW = 15
+COMPLEXITY_MEDIUM = 25
 MAX_LARGE_FILES = 20
 SKIPPED_NAMES = frozenset({
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "Cargo.lock", "poetry.lock", "Pipfile.lock",
     "composer.lock", "Gemfile.lock", "go.sum", "uv.lock", "bun.lockb",
 })
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
+CATEGORIES = ("secret", "risk", "complexity", "marker")
 _MARKER_LEAD = re.compile(r"^\s*(\([^)]*\))?\s*[:\-–]?\s*")
 _COMMENT_CLOSE = re.compile(r"\s*(\*/|-->)\s*$")
 
@@ -36,8 +40,9 @@ def _snippet(line: str) -> str:
 
 
 class HealthService:
-    def __init__(self, files: FileMetadataRepositoryPort) -> None:
+    def __init__(self, files: FileMetadataRepositoryPort, parser: CodeParserPort | None = None) -> None:
         self._files = files
+        self._parser = parser
 
     def scan(self, repository_id: int) -> HealthReport:
         repository = self._files.get_repository(repository_id)
@@ -51,7 +56,7 @@ class HealthService:
             key=lambda item: -item.size_bytes,
         )[:MAX_LARGE_FILES]
 
-        findings: dict[str, list[HealthFinding]] = {"secret": [], "risk": [], "marker": []}
+        findings: dict[str, list[HealthFinding]] = {category: [] for category in CATEGORIES}
         scanned = 0
         truncated = False
         deadline = time.monotonic() + TIME_BUDGET_SECONDS
@@ -68,18 +73,22 @@ class HealthService:
             if not target.is_relative_to(root):
                 continue
             try:
-                text = target.read_text(encoding="utf-8", errors="replace")
+                raw = target.read_bytes()
             except OSError:
                 continue
+            text = raw.decode("utf-8", errors="replace")
             scanned += 1
             if FILE_SUPPRESSION.search("\n".join(text.splitlines()[:FILE_SUPPRESSION_LINES])):
                 continue
             if self._scan_text(file.relative_path, file.language.value, text, findings):
                 truncated = True
+            if self._parser is not None and self._parser.supports(file.language):
+                if self._scan_complexity(file.relative_path, file.language, raw, text, findings):
+                    truncated = True
 
         ordered = [
             finding
-            for category in ("secret", "risk", "marker")
+            for category in CATEGORIES
             for finding in sorted(findings[category], key=lambda f: (SEVERITY_ORDER[f.severity], f.path, f.line))
         ]
         return HealthReport(
@@ -89,6 +98,27 @@ class HealthService:
             truncated=truncated,
             counts={category: len(items) for category, items in findings.items()},
         )
+
+    def _scan_complexity(self, path: str, language: Language, raw: bytes, text: str,
+                         findings: dict[str, list[HealthFinding]]) -> bool:
+        """Report functions whose cyclomatic complexity reaches COMPLEXITY_LOW; True if the category is full."""
+        assert self._parser is not None
+        lines = text.splitlines()
+        for function in self._parser.complexity(raw, language):
+            if function.complexity < COMPLEXITY_LOW:
+                continue
+            line = lines[function.start_line - 1] if function.start_line <= len(lines) else ""
+            if SUPPRESSION.search(line):
+                continue
+            if len(findings["complexity"]) >= MAX_FINDINGS_PER_CATEGORY:
+                return True
+            severity = "medium" if function.complexity >= COMPLEXITY_MEDIUM else "low"
+            findings["complexity"].append(HealthFinding(
+                "complexity", "cyclomatic-complexity", severity,
+                f"{function.name} has a cyclomatic complexity of {function.complexity}",
+                path, function.start_line, _snippet(line[:MAX_LINE_CHARS]),
+            ))
+        return False
 
     @staticmethod
     def _scan_text(path: str, language: str, text: str, findings: dict[str, list[HealthFinding]]) -> bool:
