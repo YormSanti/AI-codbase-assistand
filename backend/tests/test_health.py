@@ -10,6 +10,14 @@ from app.services import health_service
 AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP"
 PRIVATE_KEY_HEADER = "-----BEGIN " + "RSA PRIVATE KEY-----"
 GITHUB_TOKEN = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+# Split so the fixtures themselves never look like real tokens to secret scanners.
+MORE_TOKENS = {
+    "gitlab-token": "glpat-" + "x1Y2z3A4b5C6d7E8f9G0",
+    "npm-token": "npm_" + "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
+    "huggingface-token": "hf_" + "AbCdEfGhIjKlMnOpQrStUvWxYz01234567",
+    "sendgrid-key": "SG." + "abcdefghijklmnopqrstuv" + "." + "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+    "slack-webhook": "https://hooks.slack.com/services/" + "T00000000/B00000000/" + "XXXXXXXXXXXXXXXXXXXXXXXX",
+}
 
 
 def _project(tmp_path: Path) -> Path:
@@ -129,6 +137,30 @@ def test_health_scan_reports_markers_risks_secrets_and_large_files(api_client: T
     # app.py, view.tsx, README.md, id_rsa.pem, install.sh, big.txt, vendored.py, settings.py,
     # complex.py, rules.js; the lock file and the PNG are skipped.
     assert report["files_scanned"] == 10
+
+
+def test_health_scan_reports_more_token_formats_and_connection_string_passwords(api_client: TestClient, tmp_path: Path) -> None:
+    root = tmp_path / "tokens"
+    root.mkdir()
+    lines = [f"{rule.replace('-', '_')} = '{token}'" for rule, token in MORE_TOKENS.items()]
+    lines += [
+        "DATABASE_URL = 'postgres://app:" + "hunter2x" + "@db.internal:5432/prod'",
+        "LOCAL_URL = 'postgres://app:changeme@localhost/dev'",
+        "TEMPLATE_URL = 'mongodb+srv://user:${DB_PASSWORD}@cluster0/app'",
+        "PLAIN_URL = 'postgres://localhost/dev'",
+    ]
+    (root / "config.py").write_text("\n".join(lines) + "\n")
+
+    report = _scan(api_client, root)
+    secrets = {f["line"]: f for f in report["findings"] if f["category"] == "secret"}
+
+    for line, rule in enumerate(MORE_TOKENS, start=1):
+        assert secrets[line]["rule"] == rule
+    connection = secrets[len(MORE_TOKENS) + 1]
+    assert (connection["rule"], connection["severity"]) == ("connection-string-password", "medium")
+    assert "hunter2x" not in connection["snippet"] and "hunt…[redacted]" in connection["snippet"]
+    assert set(secrets) == set(range(1, len(MORE_TOKENS) + 2))  # placeholders and password-less URLs pass
+    assert not any(token in str(report) for token in MORE_TOKENS.values())
 
 
 def test_health_scan_caps_each_category(api_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

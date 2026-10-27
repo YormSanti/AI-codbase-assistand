@@ -57,6 +57,17 @@ SECRET_RULES: tuple[PatternRule, ...] = (
     PatternRule("stripe-live-key", "Stripe live secret key", "high", re.compile(r"\b(sk|rk)_live_[0-9A-Za-z]{24,}\b")),
     PatternRule("anthropic-key", "Anthropic API key", "high", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}")),
     PatternRule("openai-key", "OpenAI API key", "high", re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_\-]{40,}")),
+    PatternRule("gitlab-token", "GitLab personal access token", "high", re.compile(r"\bglpat-[A-Za-z0-9_\-]{20,}")),
+    PatternRule("npm-token", "npm access token", "high", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
+    PatternRule("pypi-token", "PyPI upload token", "high", re.compile(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,}")),
+    PatternRule("huggingface-token", "Hugging Face token", "high", re.compile(r"\bhf_[A-Za-z0-9]{34,}\b")),
+    PatternRule("sendgrid-key", "SendGrid API key", "high", re.compile(r"\bSG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}\b")),
+    PatternRule("slack-webhook", "Slack incoming webhook URL", "medium", re.compile(r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]{16,}")),
+)
+
+# A database or broker URL with a password in it, e.g. postgres://app:hunter2@db/prod. Group 2 is the password.
+CONNECTION_STRING = re.compile(
+    r"\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql)://[^\s:/@'\"]+:([^\s@'\"/]{3,})@"
 )
 
 GENERIC_SECRET = re.compile(

@@ -9,7 +9,7 @@ from app.domain.exceptions import RepositoryNotFoundError
 from app.domain.models import HealthFinding, HealthReport, Language, LargeFile
 from app.domain.ports import CodeParserPort, FileMetadataRepositoryPort
 from app.services.health_rules import (
-    COMMENT_TOKEN, FILE_SUPPRESSION, FILE_SUPPRESSION_LINES, GENERIC_SECRET, MARKER, MARKER_SEVERITY,
+    COMMENT_TOKEN, CONNECTION_STRING, FILE_SUPPRESSION, FILE_SUPPRESSION_LINES, GENERIC_SECRET, MARKER, MARKER_SEVERITY,
     PLACEHOLDER, RISK_RULES, SECRET_RULES, SUPPRESSION, redact,
 )
 
@@ -145,6 +145,14 @@ class HealthService:
                     add("secret", HealthFinding("secret", rule.rule, rule.severity, rule.title, path, number,
                                                 _snippet(line.replace(match.group(0), redact(match.group(0))))))
                     break
+            if not secret_hit:
+                connection = CONNECTION_STRING.search(line)
+                if connection and not PLACEHOLDER.match(connection.group(2)):
+                    secret_hit = True
+                    password = connection.group(2)
+                    add("secret", HealthFinding("secret", "connection-string-password", "medium",
+                                                "Password in a connection string", path, number,
+                                                _snippet(line.replace(password, redact(password)))))
             if not secret_hit:
                 generic = GENERIC_SECRET.search(line)
                 if generic and not PLACEHOLDER.match(generic.group(3)):
