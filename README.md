@@ -17,8 +17,8 @@ terminal, review diffs and stage/unstage/commit from Source Control, see
 live branch, upstream, and commit data on the dashboard and Git page, open a
 command palette (Ctrl/Cmd+K) to jump anywhere, and chat with the Codex or
 Gemini CLI in the desktop app or the browser. The Code Health page scans for secrets, risky
-patterns, TODOs, and large files. Semantic search and RAG chat (Phase 2) and
-duplicate-code and complexity checks are not built yet; see
+patterns, complex functions, TODOs, and large files. Semantic search and RAG
+chat (Phase 2) and duplicate-code checks are not built yet; see
 [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 The Git Repository page shows live data from the opened repository: branch,
@@ -43,7 +43,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 uvicorn app.main:app --reload --port 8000   # http://127.0.0.1:8000
-pytest                                       # run the test suite
+pytest                                       # run the test suite (CI runs it on every pull request)
 ```
 
 The SQLite database is created automatically at `backend/data/devpilot.db`
@@ -110,9 +110,10 @@ PTY terminal currently supports Linux and macOS shells.
 1. For web development, start the backend (`uvicorn app.main:app --reload --port 8000`).
 2. Start the frontend (`npm run dev`) and open http://localhost:5173. For the
    desktop app, use `npm run desktop:dev` instead; it starts its own backend.
-3. Enter an absolute path to a local Git repository and click
-   "Open repository". The file tree appears once indexing completes.
+3. Enter the full path to a local Git repository (`~/projects/app` works;
+   a relative path is rejected) and click "Open repository". The file tree appears once indexing completes.
 4. Select a file in **File Explorer** to view its source and symbol outline.
+   The `{}` badge beside a file name counts its classes, functions, and methods.
    Open **code** near Settings at the bottom of the sidebar to edit files directly, or click
    **Edit** in the file preview. Make changes, then **Save** or press **Ctrl/Cmd+S**. **Tab**
    inserts the configured indentation. **Discard** returns to the saved source.
@@ -311,14 +312,24 @@ hidden until one is open.
 **Code Health** in the sidebar (also in the command palette, and linked from
 Analytics) scans the project's indexed text files and groups what it finds:
 
-- **Possible secrets**: private keys; AWS, GitHub, Slack, Google, Stripe,
-  OpenAI, and Anthropic key formats; and string literals assigned to names
-  like `password` or `api_key`. Values are redacted before they leave the
-  backend, and placeholders such as `changeme` or `${TOKEN}` are ignored.
+- **Possible secrets**: private keys; AWS, GitHub, GitLab, Slack (tokens
+  and webhook URLs), Google, Stripe, OpenAI, Anthropic, npm, PyPI, Hugging
+  Face, and SendGrid key formats; database URLs with a password in them; and
+  string literals assigned to names like `password` or `api_key`. Values are
+  redacted before they leave the backend, and placeholders such as
+  `changeme` or `${TOKEN}` are ignored.
 - **Risky patterns**: `eval`, Python `exec`, `shell=True`, `os.system`,
-  `pickle`, `yaml.load` without a safe loader, disabled TLS verification,
-  MD5/SHA-1, `dangerouslySetInnerHTML`, `innerHTML =`, `new Function`, and
-  `curl | sh`.
+  `os.popen`, `pickle`, `marshal`, `yaml.load` without a safe loader,
+  disabled TLS verification (including `ssl._create_unverified_context`),
+  MD5/SHA-1, SQL built with f-strings, `%`, or `.format()`, shell commands
+  built from JavaScript template strings, `tempfile.mktemp`, Flask
+  `debug=True`, `dangerouslySetInnerHTML`, `innerHTML =`, `document.write`,
+  `new Function`, `chmod 777`, and `curl | sh`.
+- **Complex functions**: Python, JavaScript, and TypeScript functions with a
+  cyclomatic complexity of 15 or more (25 or more is medium severity). The
+  score is 1 plus each `if`/`elif`, loop, `except`/`catch`, `case`, ternary,
+  comprehension clause, and `and`/`or`/`&&`/`||`/`??`; nested functions are
+  scored on their own.
 - **TODO and FIXME**: `TODO`, `FIXME`, `HACK`, `XXX`, and `BUG` in comments.
 - **Large files**: indexed files of 512 KB or more.
 

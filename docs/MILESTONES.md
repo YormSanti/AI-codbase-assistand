@@ -35,8 +35,9 @@ be independently functional and tested before the next one starts.
     whose content changed; unchanged files keep their ids and symbols
   - `POST /api/repositories/{id}/reindex` forces a full re-parse (Dashboard
     **Re-index** button, command palette)
-- [ ] **Milestone 1.4 — Tree UI polish**
-  - Show per-file symbol counts / icons in the tree
+- [x] **Milestone 1.4 — Tree UI polish** (done, 2026-10-27)
+  - File Explorer shows each file's class/function/method count (tree API
+    `symbol_count`, one grouped query per tree)
 
 ## Phase 2 — Semantic search & RAG chat
 
@@ -79,7 +80,13 @@ setup when this phase starts.*
 - [x] Large files and TODO/FIXME/HACK markers (Code Health page)
 - [x] Hardcoded secrets, weak crypto, and risky pattern scanning, with
   redacted output and `ifrog-ignore` / `ifrog-ignore-file` suppression
-- [ ] Duplicate code and cyclomatic complexity
+- [x] Cyclomatic complexity per Python/JS/TS function (Tree-sitter), reported
+  at 15+ (low) and 25+ (medium)
+- [x] More token formats (GitLab, npm, PyPI, Hugging Face, SendGrid, Slack
+  webhooks), passwords in connection URLs, and SQL/shell string-building,
+  unverified SSL, `marshal`, `mktemp`, `os.popen`, Flask debug, and
+  `chmod 777` rules
+- [ ] Duplicate code
 
 ## Shell and performance (2026-10-26)
 
@@ -106,8 +113,25 @@ setup when this phase starts.*
   from their first message; deleting a thread or project removes them
 - [x] Discard working-tree changes from Source Control behind an in-app
   confirmation dialog; open editors reload files IFROG rewrote
-- [ ] Replace the remaining native `window.confirm` prompts (unsaved-edit
-  guards) with the in-app dialog; deletes in the sidebar already use it
+- [x] Discard/close prompts for unsaved edits in the file preview and editor
+  tabs use the in-app dialog
+- [ ] Leaving the editor for another page and closing the window still use
+  the native prompt; both need a synchronous answer today
+
+## Hardening and CI (2026-10-27)
+
+- [x] Terminal WebSocket rejects pages from other origins (browsers do not
+  apply CORS to WebSockets)
+- [x] Browser-build AI runs: UTF-8 split across reads decoded correctly,
+  silent hangs stopped at the 10-minute limit (whole process group), and
+  Gemini prompts that start with `-` passed intact (desktop too)
+- [x] Readable 422 validation messages in the frontend API client
+- [x] Case-insensitive file type detection, more extensions and binary types
+- [x] Opening a project requires a full path; quotes from "Copy as path" are
+  trimmed
+- [x] One Git path validator, matching `.git` in any letter case
+- [x] GitHub Actions CI: pytest, oxlint, `tsc -b`, vitest, and the landing
+  page's ESLint on pull requests
 
 ## Environment notes
 
