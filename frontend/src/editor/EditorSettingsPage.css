@@ -49,7 +49,7 @@
   padding: 0 32px 0 34px;
   border: 1px solid var(--editor-shell-border, #2b2b2b);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--overlay-1);
   color: inherit;
   font-size: 12.5px;
   outline: none;
@@ -58,7 +58,7 @@
 
 .editor-settings-search-input:focus {
   border-color: #23a9f2;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--overlay-2);
 }
 
 .editor-settings-clear-btn {
@@ -105,13 +105,13 @@
 .editor-settings-cat-btn:hover {
   color: var(--editor-shell-text, #cccccc);
   border-color: #444;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--overlay-1);
 }
 
 .editor-settings-cat-btn.is-selected {
   background: #23a9f2;
   border-color: #23a9f2;
-  color: #ffffff;
+  color: var(--editor-shell-text, var(--foreground));
 }
 
 .editor-settings-layout {
@@ -155,7 +155,7 @@
   justify-content: space-between;
   gap: 24px;
   padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--overlay-1);
 }
 
 .editor-settings-meta {
@@ -186,7 +186,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--overlay-1);
   border: 1px solid var(--editor-shell-border, #2b2b2b);
   border-radius: 6px;
   padding: 3px 6px;
@@ -206,7 +206,7 @@
 }
 
 .editor-settings-stepper button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--overlay-3);
 }
 
 .editor-settings-stepper button:disabled {
@@ -253,7 +253,7 @@
   padding: 0 10px;
   border: 1px solid var(--editor-shell-border, #2b2b2b);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--overlay-1);
   color: inherit;
   font-size: 12px;
   outline: none;
@@ -281,7 +281,7 @@
   min-width: 36px;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--overlay-2);
   font-size: 11px;
   font-weight: 600;
   text-align: center;
@@ -311,7 +311,7 @@
 
 .editor-settings-segment-btn.is-active {
   background: #23a9f2;
-  color: #ffffff;
+  color: var(--editor-shell-text, var(--foreground));
   font-weight: 500;
 }
 
@@ -323,7 +323,7 @@
   height: 22px;
   border: 1px solid var(--editor-shell-border, #3a3a3a);
   border-radius: 11px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--overlay-2);
   cursor: pointer;
   transition: background 0.2s ease, border-color 0.2s ease;
   padding: 2px;
@@ -392,7 +392,7 @@
   border: 0;
   border-radius: 5px;
   background: #23a9f2;
-  color: #ffffff;
+  color: var(--editor-shell-text, var(--foreground));
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -446,7 +446,7 @@
   justify-content: space-between;
   padding: 8px 14px;
   border-bottom: 1px solid var(--editor-shell-border, #2b2b2b);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--overlay-1);
 }
 
 .editor-settings-preview-title {
@@ -547,7 +547,7 @@
   justify-content: space-between;
   padding: 6px 12px;
   border-top: 1px solid var(--editor-shell-border, #2b2b2b);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--overlay-1);
   font-size: 10.5px;
   color: var(--editor-shell-muted, #858585);
 }

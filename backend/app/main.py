@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.agent import router as agent_router
 from app.api.routes.files import router as files_router
+from app.api.routes.health import router as health_router
 from app.api.routes.local_editor import router as local_editor_router
 from app.api.routes.git_review import router as git_review_router
 from app.api.routes.repository import router as repository_router
@@ -31,7 +33,9 @@ app.add_middleware(
 
 app.include_router(repository_router)
 app.include_router(git_review_router)
+app.include_router(agent_router)
 app.include_router(files_router)
+app.include_router(health_router)
 app.include_router(local_editor_router)
 app.include_router(terminal_router)
 

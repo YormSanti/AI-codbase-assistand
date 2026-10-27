@@ -1,11 +1,17 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { gitApi } from "../api/gitApi";
 import type { GitDiff, GitStatus } from "../types/git";
 import { EditorGitPage } from "./EditorGitPage";
+import { ConfirmProvider } from "../components/ConfirmDialog";
+import { FILES_CHANGED_EVENT } from "../lib/fileEvents";
 import { parseGitDiff, splitGitDiff } from "./gitDiff";
 
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn() } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn(), getDiff: vi.fn(), getStagedDiff: vi.fn(), getCommit: vi.fn(), getCommitDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), commit: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn(), fetch: vi.fn(), pull: vi.fn(), push: vi.fn(), getFileHistory: vi.fn() } }));
+const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+const backend = vi.hoisted(() => ({ apiStream: vi.fn() }));
+vi.mock("../api/client", async importOriginal => ({ ...(await importOriginal<typeof import("../api/client")>()), apiStream: backend.apiStream }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 const repository = { id: 1, name: "project", root_path: "/project", current_branch: "santi", head_commit: "abc1234", opened_at: null, file_count: 4 };
 const status: GitStatus = {
   branch: "santi", head_commit: "abc1234", upstream: "origin/santi", ahead: 2, behind: 0, remote_url: null,
@@ -19,12 +25,12 @@ const status: GitStatus = {
 const patch = (text = "new", staged = false): GitDiff => ({ path: "src/main.ts", staged, is_binary: false, truncated: false, content: `diff --git a/src/main.ts b/src/main.ts\n--- a/src/main.ts\n+++ b/src/main.ts\n@@ -10,2 +20,2 @@\n-old\n+${text}\n context\n` });
 const props = { repository, active: true, onReturn: vi.fn(), onOpenFolder: vi.fn() };
 beforeEach(() => { vi.mocked(gitApi.getStatus).mockResolvedValue(status); vi.mocked(gitApi.getDiff).mockResolvedValue(patch()); });
-afterEach(() => { cleanup(); vi.resetAllMocks(); });
+afterEach(() => { cleanup(); vi.resetAllMocks(); Reflect.deleteProperty(window, "__TAURI_INTERNALS__"); localStorage.clear(); });
 
 it("reviews staged and working-tree versions separately, with conflicts in their own group", async () => {
   render(<EditorGitPage {...props} />);
   expect(await screen.findByText("3 changed files")).toBeVisible();
-  expect(screen.getByText("origin/santi")).toBeVisible();
+  expect(screen.getAllByText("origin/santi")).toHaveLength(2); // sync row and overview card
   expect(screen.getAllByText("Preserve folder scope").length).toBe(2);
   expect(screen.getByRole("button", { name: "Merge Changes: merge.ts" })).toBeVisible();
   expect(screen.queryByRole("button", { name: "Changes: merge.ts" })).toBeNull();
@@ -103,4 +109,344 @@ it("preserves hunk line numbers and pairs changed lines without counting file he
   expect(changedRow?.right?.newLine).toBe(20);
   const merge = parseGitDiff("diff --cc merge.ts\n@@@ -1,1 -1,1 +1,1 @@@\n++<<<<<<< HEAD\n");
   expect(merge.at(-1)).toEqual({ kind: "meta", oldLine: null, newLine: null, text: "++<<<<<<< HEAD" });
+});
+
+it("stages, unstages, and commits from the sidebar using the returned status", async () => {
+  const afterStage: GitStatus = { ...status, changes: status.changes.map(change => change.path === "README.md" ? { ...change, index_status: "A", worktree_status: " " } : change) };
+  const afterUnstage: GitStatus = { ...afterStage, changes: afterStage.changes.map(change => change.path === "src/main.ts" ? { ...change, index_status: " " } : change) };
+  const afterCommit: GitStatus = { ...status, head_commit: "def5678abcdef", changes: [status.changes[2]], commits: [{ sha: "def5678abcdef", message: "feat: stage from UI", author: "KSK", committed_at: "2026-10-26T01:00:00Z" }, ...status.commits] };
+  vi.mocked(gitApi.stage).mockResolvedValue(afterStage);
+  vi.mocked(gitApi.unstage).mockResolvedValue(afterUnstage);
+  vi.mocked(gitApi.commit).mockResolvedValue(afterCommit);
+  render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  expect(screen.getByRole("button", { name: /^Commit/ })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Stage README.md" }));
+  expect(gitApi.stage).toHaveBeenCalledWith(1, ["README.md"]);
+  expect(await screen.findByRole("button", { name: "Staged Changes: README.md" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Changes: README.md" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Unstage src/main.ts" }));
+  expect(gitApi.unstage).toHaveBeenCalledWith(1, ["src/main.ts"]);
+  expect(await screen.findByRole("button", { name: "Changes: src/main.ts" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Staged Changes: src/main.ts" })).toBeNull();
+
+  const message = screen.getByRole("textbox", { name: "Commit message" });
+  fireEvent.change(message, { target: { value: "feat: stage from UI" } });
+  expect(screen.getByRole("button", { name: "Commit (1)" })).toBeEnabled();
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true });
+  expect(gitApi.commit).toHaveBeenCalledWith(1, "feat: stage from UI");
+  expect((await screen.findAllByText("feat: stage from UI")).length).toBeGreaterThan(0);
+  expect(message).toHaveValue("");
+  expect(screen.getByText("1 changed file")).toBeVisible();
+});
+
+it("stages a whole group and shows Git's error when an action is rejected", async () => {
+  vi.mocked(gitApi.stage).mockRejectedValueOnce(new Error("'README.md' is no longer changed. Refresh the Git status."));
+  render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Stage all changes" }));
+  expect(gitApi.stage).toHaveBeenCalledWith(1, ["src/main.ts", "README.md"]);
+  expect(await screen.findByRole("alert")).toHaveTextContent("no longer changed");
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Unstage all changes" }));
+  expect(gitApi.unstage).toHaveBeenCalledWith(1, ["src/main.ts"]);
+});
+
+it("drafts an AI review of the selected diff with its scope", async () => {
+  const onAskAI = vi.fn();
+  render(<EditorGitPage {...props} onAskAI={onAskAI} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Staged Changes: src/main.ts" }));
+  await screen.findByRole("region", { name: "File diff" });
+  fireEvent.click(screen.getByRole("button", { name: "Review with AI" }));
+  const prompt = onAskAI.mock.calls[0][0] as string;
+  expect(prompt).toContain("Review the staged changes to `src/main.ts`");
+  expect(prompt).toContain("```diff\ndiff --git a/src/main.ts b/src/main.ts");
+  expect(prompt).toContain("+new");
+});
+
+it("hides the AI review without a handler and disables it for binary diffs", async () => {
+  const view = render(<EditorGitPage {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Changes: src/main.ts" }));
+  await screen.findByRole("region", { name: "File diff" });
+  expect(screen.queryByRole("button", { name: "Review with AI" })).toBeNull();
+  view.unmount();
+  vi.mocked(gitApi.getDiff).mockResolvedValue({ ...patch(), is_binary: true, content: "" });
+  render(<EditorGitPage {...props} onAskAI={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Changes: README.md" }));
+  expect(await screen.findByText("Binary file")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Review with AI" })).toBeDisabled();
+});
+
+const stagedDiff = { content: "diff --git a/src/main.ts b/src/main.ts\n@@ -1 +1 @@\n-old\n+new\n", stat: " src/main.ts | 2 +-\n 1 file changed", files: 1, truncated: false };
+
+it("writes a commit message for the staged changes with the default provider", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  vi.mocked(gitApi.getStagedDiff).mockResolvedValue(stagedDiff);
+  tauri.invoke.mockResolvedValue({ content: "```\nfix(main): replace old value\n\nKeeps the new behaviour.\n```" });
+  render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Generate commit message with AI" }));
+  const message = screen.getByRole("textbox", { name: "Commit message" });
+  await waitFor(() => expect(message).toHaveValue("fix(main): replace old value\n\nKeeps the new behaviour."));
+  const request = tauri.invoke.mock.calls.find(([command]) => command === "run_agent")![1].request;
+  expect(request.provider).toBe("gemini");
+  expect(request.workingDirectory).toBe("/project");
+  expect(request.prompt).toContain("- Preserve folder scope");
+  expect(request.prompt).toContain("+new");
+  expect(screen.getByRole("button", { name: "Commit (1)" })).toBeEnabled();
+});
+
+it("writes commit messages in the browser build through the backend and reports provider errors", async () => {
+  vi.mocked(gitApi.getStagedDiff).mockResolvedValue(stagedDiff);
+  backend.apiStream.mockImplementation(async (_path: string, _body: unknown, onEvent: (event: unknown) => void) => {
+    onEvent({ type: "chunk", text: "docs: " });
+    onEvent({ type: "done", content: "docs: explain the change" });
+  });
+  const view = render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Generate commit message with AI" }));
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Commit message" })).toHaveValue("docs: explain the change"));
+  expect(backend.apiStream).toHaveBeenCalledWith("/api/agent/run", expect.objectContaining({ provider: "gemini", repository_id: 1 }), expect.any(Function));
+  expect(tauri.invoke).not.toHaveBeenCalled();
+  view.unmount();
+
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  tauri.invoke.mockRejectedValue(new Error("Gemini CLI was not found. Connect or install Gemini first."));
+  render(<EditorGitPage {...props} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Generate commit message with AI" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Gemini CLI was not found");
+  expect(screen.getByRole("textbox", { name: "Commit message" })).toHaveValue("");
+});
+
+it("drafts an AI review of everything staged", async () => {
+  vi.mocked(gitApi.getStagedDiff).mockResolvedValue(stagedDiff);
+  const onAskAI = vi.fn();
+  render(<EditorGitPage {...props} onAskAI={onAskAI} />);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Review staged changes with AI" }));
+  await waitFor(() => expect(onAskAI).toHaveBeenCalledTimes(1));
+  expect(onAskAI.mock.calls[0][0]).toContain("Review the staged changes below before I commit them.");
+  expect(onAskAI.mock.calls[0][0]).toContain(" src/main.ts | 2 +-");
+});
+
+const commitDetails = {
+  sha: "abc1234", message: "Preserve folder scope\n\nKeep the opened folder as the root.", author: "KSK", author_email: "ksk@example.com",
+  committed_at: "2026-10-07T01:00:00Z", parents: ["0f0f0f0f0f"],
+  files: [
+    { path: "src/main.ts", status: "M", original_path: null, additions: 1, deletions: 1 },
+    { path: "docs/new.md", status: "R", original_path: "docs/old.md", additions: 0, deletions: 0 },
+    { path: "logo.png", status: "A", original_path: null, additions: null, deletions: null },
+  ],
+};
+
+it("opens a commit from history with its message, files, and per-file diffs", async () => {
+  vi.mocked(gitApi.getCommit).mockResolvedValue(commitDetails);
+  vi.mocked(gitApi.getCommitDiff).mockImplementation(async (_id, _sha, path) => path === "logo.png"
+    ? { path, staged: false, is_binary: true, truncated: false, content: "Binary files /dev/null and b/logo.png differ\n" }
+    : { ...patch("committed change"), path });
+  const onAskAI = vi.fn();
+  render(<EditorGitPage {...props} onAskAI={onAskAI} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Open commit abc1234: Preserve folder scope" }));
+  expect(gitApi.getCommit).toHaveBeenCalledWith(1, "abc1234");
+  expect(await screen.findByText("Keep the opened folder as the root.")).toBeVisible();
+  expect(screen.getByText("Parent 0f0f0f0")).toBeVisible();
+  expect(screen.getByText("3 files changed")).toBeVisible();
+  expect(await screen.findByText("committed change")).toBeVisible();
+  expect(gitApi.getCommitDiff).toHaveBeenLastCalledWith(1, "abc1234", "src/main.ts");
+  expect(screen.getByRole("button", { name: "Modified: src/main.ts" })).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(screen.getByRole("button", { name: "Review with AI" }));
+  expect(onAskAI.mock.calls[0][0]).toContain("Review the commit abc1234 changes to `src/main.ts`");
+
+  fireEvent.click(screen.getByRole("button", { name: "Added: logo.png" }));
+  expect(await screen.findByText("Binary file")).toBeVisible();
+  expect(gitApi.getCommitDiff).toHaveBeenLastCalledWith(1, "abc1234", "logo.png");
+
+  fireEvent.click(screen.getByRole("button", { name: "Repository overview" }));
+  expect(await screen.findByText("3 changed files")).toBeVisible();
+  expect(screen.queryByRole("list", { name: "Files changed in this commit" })).toBeNull();
+});
+
+it("leaves the commit view when a working-tree change is selected and reports commit errors", async () => {
+  vi.mocked(gitApi.getCommit).mockRejectedValueOnce(new Error("That commit is not in this repository."));
+  render(<EditorGitPage {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Open commit abc1234: Preserve folder scope" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("That commit is not in this repository.");
+  fireEvent.click(screen.getByRole("button", { name: "Changes: src/main.ts" }));
+  expect(await screen.findByRole("region", { name: "File diff" })).toBeVisible();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("discards a file only after confirming in the app dialog and announces the rewritten file", async () => {
+  vi.mocked(gitApi.discard).mockResolvedValue({ ...status, changes: status.changes.filter(change => change.path !== "README.md") });
+  const announced = vi.fn();
+  window.addEventListener(FILES_CHANGED_EVENT, announced);
+  render(<ConfirmProvider><EditorGitPage {...props} /></ConfirmProvider>);
+  await screen.findByText("3 changed files");
+
+  fireEvent.click(screen.getByRole("button", { name: "Discard README.md" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Delete README.md?" });
+  expect(dialog).toHaveTextContent("README.md is untracked, so it will be deleted from disk.");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(gitApi.discard).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Discard src/main.ts" }));
+  await screen.findByRole("alertdialog", { name: "Discard changes in main.ts?" });
+  fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+  await waitFor(() => expect(gitApi.discard).toHaveBeenCalledWith(1, ["src/main.ts"]));
+  await waitFor(() => expect(announced).toHaveBeenCalledTimes(1));
+  expect((announced.mock.calls[0][0] as CustomEvent).detail).toEqual({ paths: ["src/main.ts"] });
+  window.removeEventListener(FILES_CHANGED_EVENT, announced);
+});
+
+it("discards a whole group with one confirmation that counts untracked files", async () => {
+  vi.mocked(gitApi.discard).mockResolvedValue({ ...status, changes: [status.changes[2]] });
+  render(<ConfirmProvider><EditorGitPage {...props} /></ConfirmProvider>);
+  await screen.findByText("3 changed files");
+  fireEvent.click(screen.getByRole("button", { name: "Discard all changes" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Discard 2 changes?" });
+  expect(dialog).toHaveTextContent("1 untracked file will be deleted");
+  fireEvent.click(screen.getByRole("button", { name: "Discard all" }));
+  await waitFor(() => expect(gitApi.discard).toHaveBeenCalledWith(1, ["src/main.ts", "README.md"]));
+  expect(screen.queryByRole("button", { name: "Discard merge.ts" })).toBeNull(); // conflicts are never discarded
+});
+
+const branches = { current: "santi", detached: false, branches: [
+  { name: "santi", upstream: "origin/santi", subject: "Preserve folder scope", committed_at: "2026-10-07T01:00:00Z" },
+  { name: "main", upstream: "origin/main", subject: "Release 1.4", committed_at: "2026-10-01T01:00:00Z" },
+  { name: "feature/login", upstream: null, subject: "Login form", committed_at: "2026-09-20T01:00:00Z" },
+] };
+
+it("switches branches from the picker and tells the app to refresh", async () => {
+  vi.mocked(gitApi.listBranches).mockResolvedValue(branches);
+  vi.mocked(gitApi.switchBranch).mockResolvedValue({ ...status, branch: "main", changes: [] });
+  const onWorkingTreeChanged = vi.fn();
+  const announced = vi.fn();
+  window.addEventListener(FILES_CHANGED_EVENT, announced);
+  render(<EditorGitPage {...props} onWorkingTreeChanged={onWorkingTreeChanged} workingTreeGuard={() => null} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: santi)" }));
+  expect(await screen.findByRole("option", { name: /feature\/login/ })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter or create branch" }), { target: { value: "mai" } });
+  expect(screen.getAllByRole("option")).toHaveLength(2); // the match plus "create it"
+  expect(screen.getByRole("option", { name: "Create branch “mai” from here" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("option", { name: /^main/ }));
+  await waitFor(() => expect(gitApi.switchBranch).toHaveBeenCalledWith(1, "main"));
+  await waitFor(() => expect(onWorkingTreeChanged).toHaveBeenCalledTimes(1));
+  expect((announced.mock.calls[0][0] as CustomEvent).detail).toEqual({ paths: ["*"] });
+  expect(await screen.findByRole("button", { name: "Switch branch (current: main)" })).toBeInTheDocument();
+  expect(screen.queryByRole("listbox", { name: "Branches" })).toBeNull();
+  window.removeEventListener(FILES_CHANGED_EVENT, announced);
+});
+
+it("creates a branch from the filter text and respects the unsaved-edits blocker", async () => {
+  vi.mocked(gitApi.listBranches).mockResolvedValue(branches);
+  vi.mocked(gitApi.createBranch).mockResolvedValue({ ...status, branch: "fix/typo" });
+  let blocked: string | null = "Save or discard your unsaved edits before switching branches.";
+  render(<EditorGitPage {...props} workingTreeGuard={() => blocked} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: santi)" }));
+  const input = await screen.findByRole("textbox", { name: "Filter or create branch" });
+  fireEvent.change(input, { target: { value: "fix/typo" } });
+  expect(screen.getByRole("option", { name: "Create branch “fix/typo” from here" })).toBeInTheDocument();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(await screen.findByRole("alert")).toHaveTextContent("Save or discard your unsaved edits before switching branches.");
+  expect(gitApi.createBranch).not.toHaveBeenCalled();
+
+  blocked = null;
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(gitApi.createBranch).toHaveBeenCalledWith(1, "fix/typo"));
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: fix/typo)" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Filter or create branch" }), { target: { value: "bad name" } });
+  expect(screen.queryByRole("option", { name: /Create branch/ })).toBeNull();
+  expect(screen.getByText(/No branch matches/)).toBeInTheDocument();
+});
+
+it("shows Git's refusal when switching with uncommitted changes", async () => {
+  vi.mocked(gitApi.listBranches).mockResolvedValue(branches);
+  vi.mocked(gitApi.switchBranch).mockRejectedValue(new Error("Commit, stash, or discard your changes before switching branches."));
+  render(<EditorGitPage {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: santi)" }));
+  fireEvent.click(await screen.findByRole("option", { name: /^main/ }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("before switching branches");
+  expect(screen.getByRole("listbox", { name: "Branches" })).toBeInTheDocument(); // stays open to try again
+});
+
+it("fetches, pulls behind the working-tree guard, and pushes from the sync row", async () => {
+  vi.mocked(gitApi.fetch).mockResolvedValue({ ...status, behind: 3 });
+  vi.mocked(gitApi.pull).mockResolvedValue({ ...status, behind: 0 });
+  vi.mocked(gitApi.push).mockResolvedValue({ ...status, ahead: 0, behind: 0 });
+  const onWorkingTreeChanged = vi.fn();
+  const announced = vi.fn();
+  window.addEventListener(FILES_CHANGED_EVENT, announced);
+  let guard: string | null = "Save or discard your unsaved edits before pulling.";
+  render(<EditorGitPage {...props} onWorkingTreeChanged={onWorkingTreeChanged} workingTreeGuard={action => action === "pulling" ? guard : null} />);
+  const sync = await screen.findByRole("group", { name: "Sync with remote" });
+  expect(sync).toHaveTextContent("origin/santi");
+
+  fireEvent.click(screen.getByRole("button", { name: "Fetch from remotes" }));
+  expect(await screen.findByRole("button", { name: "Pull 3 commits" })).toBeEnabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Pull 3 commits" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("before pulling");
+  expect(gitApi.pull).not.toHaveBeenCalled();
+  guard = null;
+  fireEvent.click(screen.getByRole("button", { name: "Pull 3 commits" }));
+  await waitFor(() => expect(gitApi.pull).toHaveBeenCalledWith(1));
+  await waitFor(() => expect(onWorkingTreeChanged).toHaveBeenCalledTimes(1));
+  expect((announced.mock.calls.at(-1)![0] as CustomEvent).detail).toEqual({ paths: ["*"] });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Push 2 commits" }));
+  await waitFor(() => expect(gitApi.push).toHaveBeenCalledWith(1));
+  expect(await screen.findByRole("button", { name: "Push" })).toBeInTheDocument();
+  expect(onWorkingTreeChanged).toHaveBeenCalledTimes(1); // pushing does not touch local files
+  window.removeEventListener(FILES_CHANGED_EVENT, announced);
+});
+
+it("offers to publish an unpublished branch and shows remote errors", async () => {
+  vi.mocked(gitApi.getStatus).mockResolvedValue({ ...status, upstream: null, ahead: null, behind: null });
+  vi.mocked(gitApi.push).mockRejectedValue(new Error("fatal: could not read Username for 'https://github.com': terminal prompts disabled"));
+  render(<EditorGitPage {...props} />);
+  expect(await screen.findByText("Not published")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^Pull/ })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Publish branch" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("terminal prompts disabled");
+});
+
+it("shows a file's history on request and opens a commit with that file selected", async () => {
+  vi.mocked(gitApi.getFileHistory).mockResolvedValue({ path: "frontend/src/main.ts", commits: [
+    { sha: "aaa1111bbbb", message: "Rename entry point", author: "KSK", committed_at: new Date(Date.now() - 3_600_000).toISOString() },
+    { sha: "ccc2222dddd", message: "Create entry point", author: "Dev", committed_at: new Date(Date.now() - 86_400_000 * 3).toISOString() },
+  ] });
+  vi.mocked(gitApi.getCommit).mockResolvedValue({ ...commitDetails, sha: "aaa1111bbbb", files: [
+    { path: "README.md", status: "M", original_path: null, additions: 1, deletions: 0 },
+    { path: "frontend/src/main.ts", status: "R", original_path: "frontend/src/index.ts", additions: 0, deletions: 0 },
+  ] });
+  vi.mocked(gitApi.getCommitDiff).mockResolvedValue({ ...patch("history change"), path: "frontend/src/main.ts" });
+  const onHistoryHandled = vi.fn();
+  render(<EditorGitPage {...props} historyRequest={{ path: "src/main.ts", id: 1 }} onHistoryHandled={onHistoryHandled} />);
+  const history = await screen.findByRole("region", { name: "History of src/main.ts" });
+  expect(onHistoryHandled).toHaveBeenCalledTimes(1);
+  expect(gitApi.getFileHistory).toHaveBeenCalledWith(1, "src/main.ts");
+  expect(await within(history).findByText("Rename entry point")).toBeInTheDocument();
+  expect(within(history).getByText("History of frontend/src/main.ts")).toBeInTheDocument();
+
+  fireEvent.click(within(history).getByRole("button", { name: "Open commit aaa1111: Rename entry point" }));
+  await waitFor(() => expect(gitApi.getCommitDiff).toHaveBeenCalledWith(1, "aaa1111bbbb", "frontend/src/main.ts"));
+  expect(screen.getByRole("button", { name: "Renamed: frontend/src/main.ts" })).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+  expect(await screen.findByRole("region", { name: "History of src/main.ts" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Repository overview" }));
+  expect(await screen.findByText("3 changed files")).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: /History of/ })).toBeNull();
+});
+
+it("explains a file without commits", async () => {
+  vi.mocked(gitApi.getFileHistory).mockResolvedValue({ path: "new.txt", commits: [] });
+  render(<EditorGitPage {...props} historyRequest={{ path: "new.txt", id: 2 }} />);
+  expect(await screen.findByText("No commits have changed this file yet.")).toBeInTheDocument();
 });

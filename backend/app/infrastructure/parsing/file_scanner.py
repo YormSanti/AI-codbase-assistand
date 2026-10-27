@@ -6,6 +6,7 @@ independently.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 import hashlib
 from pathlib import Path
 
@@ -34,7 +35,11 @@ def _hash_and_sniff(absolute_path: Path) -> tuple[str, bool]:
     return digest.hexdigest(), _looks_binary(sniffed)
 
 
-def scan_files(root_path: str, relative_paths: list[str]) -> list[FileMetadata]:
+def scan_files(
+    root_path: str,
+    relative_paths: list[str],
+    known: Mapping[str, FileMetadata] | None = None,
+) -> list[FileMetadata]:
     """Read metadata for each relative path under `root_path`.
 
     Paths that no longer exist on disk (e.g. race with a concurrent git
@@ -42,6 +47,11 @@ def scan_files(root_path: str, relative_paths: list[str]) -> list[FileMetadata]:
     the whole index — a single broken symlink shouldn't block indexing.
     Files are streamed in chunks rather than loaded fully into memory so a
     large binary asset can't blow up indexing.
+
+    `known` holds the previously indexed metadata by path. A file whose size
+    and modification time match its known entry keeps that entry's hash and
+    binary flag without being read, which is what makes reopening a large
+    project cheap.
     """
     root = Path(root_path)
     results: list[FileMetadata] = []
@@ -51,8 +61,19 @@ def scan_files(root_path: str, relative_paths: list[str]) -> list[FileMetadata]:
         try:
             if not absolute_path.is_file():
                 continue
-            size_bytes = absolute_path.stat().st_size
-            content_hash, sniffed_binary = _hash_and_sniff(absolute_path)
+            file_stat = absolute_path.stat()
+            size_bytes = file_stat.st_size
+            previous = known.get(relative_path) if known else None
+            if (
+                previous is not None
+                and previous.mtime_ns is not None
+                and previous.mtime_ns == file_stat.st_mtime_ns
+                and previous.size_bytes == size_bytes
+                and previous.content_hash
+            ):
+                content_hash, sniffed_binary = previous.content_hash, previous.is_binary
+            else:
+                content_hash, sniffed_binary = _hash_and_sniff(absolute_path)
         except OSError:
             continue
 
@@ -66,6 +87,7 @@ def scan_files(root_path: str, relative_paths: list[str]) -> list[FileMetadata]:
                 language=language,
                 content_hash=content_hash,
                 is_binary=is_binary,
+                mtime_ns=file_stat.st_mtime_ns,
             )
         )
 

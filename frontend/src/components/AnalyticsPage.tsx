@@ -348,7 +348,7 @@ export function AnalyticsPage({ repository, tree, isLoading = false, onNavigate 
             label: 'Large Files (≥200 KB)',
             value: stats.hugeFilesCount,
             sub: stats.hugeFilesCount > 0 ? 'Review candidates' : 'No large files indexed',
-            icon: <AlertTriangle className={`h-5 w-5 ${stats.hugeFilesCount > 0 ? 'text-amber-400' : 'text-zinc-500'}`} />,
+            icon: <AlertTriangle className={`h-5 w-5 ${stats.hugeFilesCount > 0 ? 'text-amber-400' : 'text-muted-foreground'}`} />,
             border: stats.hugeFilesCount > 0 ? 'border-amber-500/30' : 'border-border',
             bg: stats.hugeFilesCount > 0 ? 'bg-amber-500/5' : 'bg-card',
           },
@@ -690,6 +690,11 @@ export function AnalyticsPage({ repository, tree, isLoading = false, onNavigate 
               Codebase Insights & Health
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">Automated architectural observations</p>
+            {onNavigate && (
+              <button type="button" onClick={() => onNavigate('health')} className="mt-2 text-xs font-medium text-primary hover:underline">
+                Scan for secrets, risky code, and TODOs in Code Health →
+              </button>
+            )}
           </div>
 
           <div className="pt-4 space-y-4">

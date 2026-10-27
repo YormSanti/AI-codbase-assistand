@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   ArrowLeft,
   Code2,
@@ -58,6 +58,31 @@ export function useCodeCounter(initial = 0) {
   return { count, increment: () => setCount(c => c + 1) };
 }`;
 
+/** Words each setting is found by; the section headers and the rows both use this list. */
+const SEARCHABLE_SETTINGS = {
+  fontSize: { category: "editor", terms: ["Font Size", "Controls the font size in pixels.", "text", "zoom", "scale"] },
+  fontFamily: { category: "editor", terms: ["Font Family", "Controls the font family.", "font", "typeface", "mono"] },
+  lineHeight: { category: "editor", terms: ["Line Height", "Controls the line height multiplier.", "spacing", "vertical"] },
+  tabSize: { category: "editor", terms: ["Tab Size", "The number of spaces a tab is equal to.", "indent", "spaces"] },
+  wordWrap: { category: "editor", terms: ["Word Wrap", "Controls how lines should wrap.", "break", "soft wrap"] },
+  lineNumbers: { category: "editor", terms: ["Line Numbers", "Controls the display of line numbers.", "gutter"] },
+  minimap: { category: "editor", terms: ["Minimap", "Controls whether the minimap is shown.", "overview", "scroll"] },
+  cursorStyle: { category: "cursor", terms: ["Cursor Style", "Controls the cursor style.", "caret", "pointer", "line", "block"] },
+  cursorBlinking: { category: "cursor", terms: ["Cursor Blinking", "Control the cursor animation style.", "blink", "smooth", "animation"] },
+  bracketMatching: { category: "cursor", terms: ["Bracket Pair Matching", "Highlights matching brackets when cursor is near.", "parentheses", "curly", "brackets"] },
+  autoCloseBrackets: { category: "cursor", terms: ["Auto Closing Brackets", "Automatically insert closing brackets and quotes.", "auto close", "quotes"] },
+  formatOnSave: { category: "files", terms: ["Format On Save", "Format a file on save.", "prettier", "lint", "cleanup"] },
+  trimTrailingWhitespace: { category: "files", terms: ["Trim Trailing Whitespace", "Remove trailing spaces when saving.", "cleanup", "spaces", "trim"] },
+  terminalFontSize: { category: "terminal", terms: ["Terminal Font Size", "Controls font size in pixels for the integrated terminal.", "cli", "console", "shell", "terminal"] },
+  terminalScrollback: { category: "terminal", terms: ["Terminal Scrollback", "Maximum number of lines kept in terminal buffer.", "buffer", "history"] },
+} satisfies Record<string, { category: Exclude<SettingsCategory, "all">; terms: string[] }>;
+
+type SettingId = keyof typeof SEARCHABLE_SETTINGS;
+
+function matchesSearch(query: string, id: SettingId): boolean {
+  return !query || SEARCHABLE_SETTINGS[id].terms.some(term => term.toLowerCase().includes(query));
+}
+
 export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlobalSettings }: Props) {
   const { preferences, updatePreference, resetPreferences } = useEditorPreferences();
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,53 +95,14 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
 
   const q = searchQuery.toLowerCase().trim();
 
-  const matchesSearch = (title: string, desc: string, tags: string[] = []) => {
-    if (!q) return true;
-    return (
-      title.toLowerCase().includes(q) ||
-      desc.toLowerCase().includes(q) ||
-      tags.some(t => t.toLowerCase().includes(q))
-    );
-  };
-
-  const showEditorSection = useMemo(() => {
-    if (activeCategory !== "all" && activeCategory !== "editor") return false;
-    return (
-      matchesSearch("Font Size", "Controls the font size in pixels.", ["text", "zoom", "scale"]) ||
-      matchesSearch("Font Family", "Controls the font family.", ["font", "typeface", "mono"]) ||
-      matchesSearch("Line Height", "Controls the line height multiplier.", ["spacing", "vertical"]) ||
-      matchesSearch("Tab Size", "The number of spaces a tab is equal to.", ["indent", "spaces"]) ||
-      matchesSearch("Word Wrap", "Controls how lines should wrap.", ["break", "soft wrap"]) ||
-      matchesSearch("Line Numbers", "Controls the display of line numbers.", ["gutter"]) ||
-      matchesSearch("Minimap", "Controls whether the minimap is shown.", ["overview", "scroll"])
-    );
-  }, [activeCategory, q]);
-
-  const showCursorSection = useMemo(() => {
-    if (activeCategory !== "all" && activeCategory !== "cursor") return false;
-    return (
-      matchesSearch("Cursor Style", "Controls the cursor style.", ["caret", "pointer", "line", "block"]) ||
-      matchesSearch("Cursor Blinking", "Control the cursor animation style.", ["blink", "smooth"]) ||
-      matchesSearch("Bracket Pair Matching", "Highlights matching brackets when cursor is near.", ["parentheses", "curly"]) ||
-      matchesSearch("Auto Closing Brackets", "Automatically insert closing brackets and quotes.", ["auto close", "quotes"])
-    );
-  }, [activeCategory, q]);
-
-  const showFilesSection = useMemo(() => {
-    if (activeCategory !== "all" && activeCategory !== "files") return false;
-    return (
-      matchesSearch("Format On Save", "Format a file on save.", ["prettier", "lint", "cleanup"]) ||
-      matchesSearch("Trim Trailing Whitespace", "Remove trailing spaces when saving.", ["cleanup", "spaces"])
-    );
-  }, [activeCategory, q]);
-
-  const showTerminalSection = useMemo(() => {
-    if (activeCategory !== "all" && activeCategory !== "terminal") return false;
-    return (
-      matchesSearch("Terminal Font Size", "Controls font size in pixels for the integrated terminal.", ["cli", "console", "shell"]) ||
-      matchesSearch("Terminal Scrollback", "Maximum number of lines kept in terminal buffer.", ["buffer", "history"])
-    );
-  }, [activeCategory, q]);
+  const shows = (id: SettingId) => matchesSearch(q, id);
+  const showSection = (category: Exclude<SettingsCategory, "all">) =>
+    (activeCategory === "all" || activeCategory === category)
+    && (Object.keys(SEARCHABLE_SETTINGS) as SettingId[]).some(id => SEARCHABLE_SETTINGS[id].category === category && shows(id));
+  const showEditorSection = showSection("editor");
+  const showCursorSection = showSection("cursor");
+  const showFilesSection = showSection("files");
+  const showTerminalSection = showSection("terminal");
 
   const hasAnyResults = showEditorSection || showCursorSection || showFilesSection || showTerminalSection;
 
@@ -234,7 +220,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   <span>Text Editor</span>
                 </h3>
 
-                {matchesSearch("Font Size", "Controls font size in pixels.", ["text", "zoom"]) && (
+                {shows("fontSize") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <label htmlFor="pref-font-size" className="editor-settings-label">
@@ -279,7 +265,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Font Family", "Controls the font family.", ["font", "mono"]) && (
+                {shows("fontFamily") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <label htmlFor="pref-font-family" className="editor-settings-label">
@@ -323,7 +309,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Line Height", "Controls line height multiplier.", ["spacing"]) && (
+                {shows("lineHeight") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <label htmlFor="pref-line-height" className="editor-settings-label">
@@ -350,7 +336,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Tab Size", "The number of spaces a tab is equal to.", ["indent"]) && (
+                {shows("tabSize") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-tab-size-label" className="editor-settings-label">
@@ -381,7 +367,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Word Wrap", "Controls how lines should wrap.", ["break"]) && (
+                {shows("wordWrap") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-word-wrap-label" className="editor-settings-label">
@@ -406,7 +392,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Line Numbers", "Controls display of line numbers.", ["gutter"]) && (
+                {shows("lineNumbers") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-line-numbers-label" className="editor-settings-label">
@@ -431,7 +417,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Minimap", "Controls whether the minimap is shown.", ["overview"]) && (
+                {shows("minimap") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-minimap-label" className="editor-settings-label">
@@ -466,7 +452,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   <span>Cursor & Editing</span>
                 </h3>
 
-                {matchesSearch("Cursor Style", "Controls cursor style.", ["caret"]) && (
+                {shows("cursorStyle") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-cursor-style-label" className="editor-settings-label">
@@ -501,7 +487,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Cursor Blinking", "Control cursor animation style.", ["animation"]) && (
+                {shows("cursorBlinking") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-cursor-blink-label" className="editor-settings-label">
@@ -536,7 +522,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Bracket Pair Matching", "Highlights matching brackets.", ["brackets"]) && (
+                {shows("bracketMatching") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-bracket-match-label" className="editor-settings-label">
@@ -561,7 +547,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Auto Closing Brackets", "Automatically insert closing brackets.", ["quotes"]) && (
+                {shows("autoCloseBrackets") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-auto-close-label" className="editor-settings-label">
@@ -596,7 +582,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   <span>Files & Formatting</span>
                 </h3>
 
-                {matchesSearch("Format On Save", "Format a file on save.", ["prettier"]) && (
+                {shows("formatOnSave") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-format-save-label" className="editor-settings-label">
@@ -621,7 +607,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Trim Trailing Whitespace", "Remove trailing spaces when saving.", ["trim"]) && (
+                {shows("trimTrailingWhitespace") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <span id="pref-trim-whitespace-label" className="editor-settings-label">
@@ -656,7 +642,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   <span>Integrated Terminal</span>
                 </h3>
 
-                {matchesSearch("Terminal Font Size", "Controls font size for integrated terminal.", ["cli", "terminal"]) && (
+                {shows("terminalFontSize") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <label htmlFor="pref-term-font-size" className="editor-settings-label">
@@ -701,7 +687,7 @@ export function EditorSettingsPage({ active: _active, onReturn, onNavigateToGlob
                   </div>
                 )}
 
-                {matchesSearch("Terminal Scrollback", "Maximum lines kept in buffer.", ["history"]) && (
+                {shows("terminalScrollback") && (
                   <div className="editor-settings-row">
                     <div className="editor-settings-meta">
                       <label htmlFor="pref-term-scrollback" className="editor-settings-label">

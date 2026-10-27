@@ -1,10 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fileApi } from "../api/fileApi";
 import { editorApi } from "../api/editorApi";
 import { ApiError } from "../api/client";
 import type { TreeNode } from "../types/domain";
 import { FileInspector } from "./FileInspector";
+import { announceFilesChanged } from "../lib/fileEvents";
+import { EditorShellContext } from "../editor/editorShell";
+import { ConfirmProvider } from "./ConfirmDialog";
 
 const nativeWindow = vi.hoisted(() => ({ onCloseRequested: vi.fn() }));
 vi.mock("../api/editorApi", () => ({ editorApi: { getContent: vi.fn(), getSymbols: vi.fn(), saveContent: vi.fn() } }));
@@ -61,6 +64,41 @@ describe("FileInspector", () => {
     return screen.getByRole("textbox", { name: "Edit main.py" });
   }
 
+  it("reloads from disk when IFROG rewrites the file, unless there are unsaved edits", async () => {
+    render(<FileInspector file={file} onClose={vi.fn()} />);
+    await screen.findByText("def main():");
+    expect(fileApi.getContent).toHaveBeenCalledTimes(1);
+    act(() => announceFilesChanged(["other.py"]));
+    expect(fileApi.getContent).toHaveBeenCalledTimes(1);
+    vi.mocked(fileApi.getContent).mockResolvedValueOnce({ file_id: 7, path: "src/main.py", content: "def restored():\n    pass", is_binary: false, truncated: false, content_hash: "c".repeat(64), editable: true });
+    act(() => announceFilesChanged(["backend/src/main.py"])); // Git path in a parent repository
+    expect(await screen.findByText("def restored():")).toBeInTheDocument();
+    expect(fileApi.getContent).toHaveBeenCalledTimes(2);
+
+    const editor = await editFile2();
+    fireEvent.change(editor, { target: { value: "unsaved draft" } });
+    act(() => announceFilesChanged(["src/main.py"]));
+    expect(fileApi.getContent).toHaveBeenCalledTimes(2);
+    expect(editor).toHaveValue("unsaved draft");
+  });
+
+  async function editFile2() {
+    await screen.findByText("def restored():");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    return screen.getByRole("textbox", { name: "Edit main.py" });
+  }
+
+  it("offers file history only inside the editor shell", async () => {
+    const showFileHistory = vi.fn();
+    const view = render(<FileInspector file={file} onClose={vi.fn()} autoEdit />);
+    await screen.findByRole("textbox", { name: "Edit main.py" });
+    expect(screen.queryByRole("button", { name: "File history" })).toBeNull();
+    view.unmount();
+    render(<EditorShellContext.Provider value={{ showFileHistory }}><FileInspector file={file} onClose={vi.fn()} autoEdit /></EditorShellContext.Provider>);
+    fireEvent.click(await screen.findByRole("button", { name: "File history" }));
+    expect(showFileHistory).toHaveBeenCalledWith("src/main.py");
+  });
+
   it("renders indexed source and its symbol outline", async () => {
     render(<FileInspector file={file} onClose={vi.fn()} />);
 
@@ -96,7 +134,7 @@ describe("FileInspector", () => {
     fireEvent.change(editor, { target: { value: "my edits" } });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-    expect(editor).toHaveValue("def main():\n    pass");
+    await waitFor(() => expect(editor).toHaveValue("def main():\n    pass"));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(fileApi.saveContent).not.toHaveBeenCalled();
   });
@@ -173,9 +211,28 @@ describe("FileInspector", () => {
     expect(onClose).not.toHaveBeenCalled();
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-    expect(screen.queryByRole("textbox", { name: "Edit main.py" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Edit main.py" })).not.toBeInTheDocument());
     expect(screen.getByText("def main():")).toBeInTheDocument();
     expect(fileApi.saveContent).not.toHaveBeenCalled();
+  });
+
+  it("asks with the in-app dialog, not a native prompt, inside the app", async () => {
+    const onClose = vi.fn();
+    const native = vi.spyOn(window, "confirm");
+    render(<ConfirmProvider><FileInspector file={file} onClose={onClose} /></ConfirmProvider>);
+    const editor = await editFile();
+    fireEvent.change(editor, { target: { value: "my edits" } });
+
+    fireEvent.click(screen.getByTitle("Close file preview"));
+    const dialog = await screen.findByRole("alertdialog", { name: "Close main.py without saving?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTitle("Close file preview"));
+    fireEvent.click(await screen.findByRole("button", { name: "Close without saving" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(native).not.toHaveBeenCalled();
   });
 
   it("blocks duplicate saves and protects edits from reload while saving", async () => {

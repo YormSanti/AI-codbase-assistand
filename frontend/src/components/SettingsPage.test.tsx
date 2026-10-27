@@ -77,7 +77,7 @@ describe("Settings", () => {
     const submit = vi.fn();
     render(<AIThreadStartHero onSubmitPrompt={submit} />);
     await user.type(screen.getByPlaceholderText("Ask anything"), "Explain this project{Enter}");
-    expect(submit).toHaveBeenCalledWith("Explain this project", "Codex", "High");
+    expect(submit).toHaveBeenCalledWith("Explain this project", "Codex");
   });
 
   it("applies editor preferences to the actual source preview", async () => {

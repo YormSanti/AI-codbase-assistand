@@ -36,3 +36,26 @@ export function useProjectSessions(projectId?: number) {
   };
   return { threads, save };
 }
+
+/** Prefix of the title new threads get before their first message. */
+export const DEFAULT_THREAD_TITLE_PREFIX = "Session · ";
+
+export function titleFromPrompt(prompt: string): string {
+  const firstLine = prompt.trim().split("\n", 1)[0].replace(/\s+/g, " ");
+  return firstLine.length > 48 ? `${firstLine.slice(0, 47).trimEnd()}…` : firstLine;
+}
+
+/** Name a still-untitled thread after its first message, and tell open sidebars to re-read. */
+export function renameThreadIfDefault(projectId: number, threadId: string, prompt: string): void {
+  const key = `threads_${projectId}`;
+  try {
+    const threads: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
+    if (!Array.isArray(threads)) return;
+    const index = threads.findIndex(item => item && item.id === threadId);
+    const title = titleFromPrompt(prompt);
+    if (index === -1 || !title || typeof threads[index].title !== "string" || !threads[index].title.startsWith(DEFAULT_THREAD_TITLE_PREFIX)) return;
+    threads[index] = { ...threads[index], title };
+    localStorage.setItem(key, JSON.stringify(threads));
+    window.dispatchEvent(new Event("project-sessions-changed"));
+  } catch { /* storage unavailable or malformed: keep the default title */ }
+}

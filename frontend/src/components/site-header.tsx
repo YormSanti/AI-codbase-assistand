@@ -1,5 +1,8 @@
+import { Command } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ThemeToggle } from "@/components/ThemeToggle"
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 const VIEW_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
@@ -7,19 +10,22 @@ const VIEW_LABELS: Record<string, string> = {
   editor: "Code Editor",
   terminal: "Terminal",
   git: "Git Repository",
-  ai: "AI Agent Studio",
-  analytics: "Code Analytics & Charts",
-  chart: "Code Analytics & Charts",
-  charts: "Code Analytics & Charts",
+  ai: "AI Assistant",
+  analytics: "Analytics",
+  chart: "Analytics",
+  charts: "Analytics",
+  health: "Code Health",
   settings: "Settings",
 };
 
 export function SiteHeader({
   hasRepository = false,
   currentView = "dashboard",
+  onOpenCommands,
 }: {
   hasRepository?: boolean;
   currentView?: string;
+  onOpenCommands?: () => void;
 }) {
   const label = VIEW_LABELS[currentView] ?? currentView;
 
@@ -54,29 +60,41 @@ export function SiteHeader({
         </h1>
       </div>
 
-      {/* Right: status badge + theme toggle */}
+      {/* Right: command palette + status badge + theme toggle */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+        {onOpenCommands && (
+          <button
+            type="button"
+            onClick={onOpenCommands}
+            title={`Command palette (${isMac ? "⌘K" : "Ctrl+K"})`}
+            className="hidden items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:inline-flex"
+          >
+            <Command size={13} />
+            <span>Commands</span>
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">{isMac ? "⌘K" : "Ctrl K"}</kbd>
+          </button>
+        )}
         {/* Repo status pill */}
         <div className="hidden sm:flex" style={{
           alignItems: "center",
           gap: "7px",
           padding: "6px 14px",
           borderRadius: "99px",
-          background: hasRepository ? "rgba(16,185,129,0.12)" : "rgba(255,255,255,0.05)",
-          border: `1.5px solid ${hasRepository ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.12)"}`,
+          background: hasRepository ? "rgba(16,185,129,0.12)" : "var(--overlay-1)",
+          border: `1.5px solid ${hasRepository ? "rgba(52,211,153,0.4)" : "var(--overlay-3)"}`,
         }}>
           <span style={{
             width: "7px",
             height: "7px",
             borderRadius: "50%",
-            background: hasRepository ? "#10b981" : "rgba(255,255,255,0.3)",
+            background: hasRepository ? "#10b981" : "var(--muted-foreground)",
             boxShadow: hasRepository ? "0 0 8px #10b981" : "none",
             flexShrink: 0,
           }} />
           <span style={{
             fontSize: "12px",
             fontWeight: "700",
-            color: hasRepository ? "#34d399" : "var(--muted-foreground)",
+            color: hasRepository ? "var(--status-ok)" : "var(--muted-foreground)",
             userSelect: "none",
           }}>
             {hasRepository ? "Repo Connected" : "Ready"}

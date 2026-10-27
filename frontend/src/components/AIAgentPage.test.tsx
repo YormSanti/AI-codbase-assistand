@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { AIAgentPage } from "./AIAgentPage";
@@ -61,4 +61,74 @@ it("keeps replies, follow-ups, and errors in the original composer page", async 
   expect(invoke).toHaveBeenLastCalledWith("run_agent", expect.objectContaining({
     request: expect.objectContaining({ prompt: expect.stringContaining("This is the project explanation.") }),
   }));
+});
+
+it("refuses a message over the CLI limit without starting the provider", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  invoke.mockImplementation(() => Promise.resolve({ installed: true, authenticated: true }));
+  render(<AIAgentPage repository={{ id: 1, name: "repo", root_path: "/repo", current_branch: "main", head_commit: null, opened_at: null, file_count: 1 }} initialPrompt={"x".repeat(60_001)} />);
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => expect(composer).toHaveValue("x".repeat(60_001)));
+  fireEvent.keyDown(composer, { key: "Enter" });
+  expect(await screen.findByText("Message too long")).toBeInTheDocument();
+  expect(invoke.mock.calls.some(([command]) => command === "run_agent")).toBe(false);
+});
+
+it("restores a thread's conversation after remounting, titles it once, and clears it on reset", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  invoke.mockImplementation((command: string) => command === "run_agent"
+    ? Promise.resolve({ content: "Stored answer" })
+    : Promise.resolve({ installed: true, authenticated: true }));
+  const repository = { id: 1, name: "repo", root_path: "/repo", current_branch: "main", head_commit: null, opened_at: null, file_count: 1 };
+  const onFirstMessage = vi.fn();
+  const user = userEvent.setup();
+  const view = render(<AIAgentPage repository={repository} threadId="t1" onFirstMessage={onFirstMessage} />);
+  await user.type(screen.getByPlaceholderText("Ask anything"), "First question{Enter}");
+  expect(await screen.findByText("Stored answer")).toBeInTheDocument();
+  await user.type(screen.getByPlaceholderText("Ask anything"), "Second question{Enter}");
+  await waitFor(() => expect(screen.getAllByText("Stored answer")).toHaveLength(2));
+  expect(onFirstMessage).toHaveBeenCalledTimes(1);
+  expect(onFirstMessage).toHaveBeenCalledWith("First question");
+  view.unmount();
+
+  const restored = render(<AIAgentPage repository={repository} threadId="t1" />);
+  expect(screen.getByText("First question")).toBeInTheDocument();
+  expect(screen.getAllByText("Stored answer")).toHaveLength(2);
+  await user.type(screen.getByPlaceholderText("Ask anything"), "Third question{Enter}");
+  await waitFor(() => expect(invoke).toHaveBeenLastCalledWith("run_agent", expect.objectContaining({
+    request: expect.objectContaining({ prompt: expect.stringContaining("User: First question") }),
+  })));
+  await waitFor(() => expect(screen.getAllByText("Stored answer")).toHaveLength(3));
+  restored.unmount();
+
+  render(<AIAgentPage repository={repository} threadId="other" />);
+  expect(screen.queryByText("First question")).toBeNull();
+  cleanup();
+
+  render(<AIAgentPage repository={repository} threadId="t1" />);
+  await user.click(screen.getByRole("button", { name: "New thread" }));
+  expect(localStorage.getItem("ifrog_ai_conversation:1:t1")).toBeNull();
+});
+
+it("chats in the browser build through the backend and explains how to sign in", async () => {
+  const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+    if (String(url).endsWith("/api/agent/providers")) {
+      return { ok: true, status: 200, json: async () => ({ codex: { installed: true, authenticated: false }, gemini: { installed: true, authenticated: true } }) };
+    }
+    const encoder = new TextEncoder();
+    const parts = ['{"type":"chunk","text":"Browser "}\n', '{"type":"done","content":"Browser reply"}\n'];
+    let index = 0;
+    return { ok: true, status: 200, body: { getReader: () => ({ read: async () => index < parts.length ? { done: false, value: encoder.encode(parts[index++]) } : { done: true, value: undefined } }) } };
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  updateSettings({ defaultProvider: "codex" });
+  const user = userEvent.setup();
+  render(<AIAgentPage repository={{ id: 3, name: "repo", root_path: "/repo", current_branch: "main", head_commit: null, opened_at: null, file_count: 1 }} />);
+  expect(await screen.findByText("Sign in by running `codex login` on the Terminal page.")).toBeInTheDocument();
+  await user.type(screen.getByPlaceholderText("Ask anything"), "Hello{Enter}");
+  expect(await screen.findByText("Browser reply")).toBeInTheDocument();
+  const runCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/api/agent/run"))!;
+  expect(JSON.parse(runCall[1]!.body as string)).toEqual({ provider: "codex", prompt: "Hello", repository_id: 3 });
+  expect(screen.queryByText("Desktop app required")).toBeNull();
+  vi.unstubAllGlobals();
 });

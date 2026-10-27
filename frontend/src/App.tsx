@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import "./App.css";
 import { repositoryApi } from "./api/repositoryApi";
 import { editorApi } from "./api/editorApi";
@@ -6,23 +6,46 @@ import { ApiError } from "./api/client";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
-import { AIAgentPage } from "@/components/AIAgentPage";
 import { DashboardPage } from "@/components/DashboardPage";
 import { ExplorerPage } from "@/components/ExplorerPage";
 import { EditorApp } from "./editor/EditorApp";
-import type { EditorWorkspaceHandle } from "./editor/editorCommands";
-import { GitPage } from "@/components/GitPage";
-import { TerminalPage } from "@/components/TerminalPage";
-import { AnalyticsPage } from "@/components/AnalyticsPage";
-import { SettingsPage } from "@/components/SettingsPage";
+import type { EditorToolView, EditorWorkspaceHandle } from "./editor/editorCommands";
+import { PageFallback } from "@/components/PageFallback";
+import { Toaster } from "@/components/ui/sonner";
+import { renameThreadIfDefault } from "./hooks/useProjectSessions";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
+import { toast } from "sonner";
+
+// Pages that are visited on demand load as separate chunks so the first paint
+// does not pay for the terminal emulator, charts, or the AI console.
+const AIAgentPage = lazy(() => import("@/components/AIAgentPage").then(m => ({ default: m.AIAgentPage })));
+const GitPage = lazy(() => import("@/components/GitPage").then(m => ({ default: m.GitPage })));
+const TerminalPage = lazy(() => import("@/components/TerminalPage").then(m => ({ default: m.TerminalPage })));
+const AnalyticsPage = lazy(() => import("@/components/AnalyticsPage").then(m => ({ default: m.AnalyticsPage })));
+const SettingsPage = lazy(() => import("@/components/SettingsPage").then(m => ({ default: m.SettingsPage })));
+const CodeHealthPage = lazy(() => import("@/components/CodeHealthPage").then(m => ({ default: m.CodeHealthPage })));
 
 import type { FilePreview, RepositoryInfo, TreeNode } from "./types/domain";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, BarChart3, Bot, Braces, Code2, Folder, FolderOpen, GitBranch, LayoutDashboard, RefreshCw, Settings, ShieldCheck, SquareTerminal, SunMoon, TextSearch, X } from "lucide-react";
+import { CommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useAutoUpdater } from "./hooks/useAutoUpdater";
 import { useAppearance } from "./hooks/useAppearance";
 
+// Hidden views stay mounted so their state survives switching, but only for
+// the most recently used projects and threads; older ones are released so
+// shells and conversations do not pile up for the whole session.
+const MAX_TERMINAL_PAGES = 3;
+const MAX_AI_THREADS = 6;
+
+function mostRecent<T>(items: T[], item: T, limit: number, same: (a: T, b: T) => boolean): T[] {
+  const index = items.findIndex(existing => same(existing, item));
+  if (index === items.length - 1 && index !== -1) return items;
+  const next = [...items.filter(existing => !same(existing, item)), index === -1 ? item : items[index]];
+  return next.length > limit ? next.slice(next.length - limit) : next;
+}
+
 export default function App() {
-  const { settings } = useAppearance();
+  const { settings, resolvedTheme, updateSettings } = useAppearance();
   useAutoUpdater();
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
@@ -38,6 +61,11 @@ export default function App() {
   const [visitedThreads, setVisitedThreads] = useState<string[]>(["default"]);
 
   const [isSessionRestored, setIsSessionRestored] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [editorView, setEditorView] = useState<EditorToolView | null>(null);
+  // A file and line to show once the editor workspace has the file in its tree.
+  const [revealRequest, setRevealRequest] = useState<{ path: string; line: number; id: number } | null>(null);
+  const [knownRepositories, setKnownRepositories] = useState<RepositoryInfo[]>([]);
   const repositoryRequest = useRef(0);
   const editorState = useRef({ dirty: false, saving: false });
   const editorWorkspaceRef = useRef<EditorWorkspaceHandle>(null);
@@ -53,13 +81,45 @@ export default function App() {
     return !editorState.current.dirty || window.confirm("Discard your unsaved changes and continue?");
   }
 
-  function handleSelectTab(tab: string) {
-    if (tab === activeTab) return;
+  function handleSelectTab(tab: string): boolean {
+    if (tab === activeTab) return true;
     const staysInWorkspace = ["explorer", "editor"].includes(activeTab) && ["explorer", "editor"].includes(tab);
     const editorOnlyFile = selectedFile?.file_id !== null && selectedFile?.file_id !== undefined && selectedFile.file_id < 0;
-    if (!staysInWorkspace && !canLeaveEditor()) return;
+    if (!staysInWorkspace && !canLeaveEditor()) return false;
     if (editorOnlyFile && tab !== "editor") setSelectedFile(null);
+    setError(null); // a stale error from another view should not follow the user around
     setActiveTab(tab);
+    return true;
+  }
+
+  /** Re-read the current project after Git changed it underneath us (branch switch), keeping the open file. */
+  async function refreshRepository() {
+    if (!repository) return;
+    const requestId = ++repositoryRequest.current;
+    try {
+      const info = await repositoryApi.open(repository.root_path);
+      if (requestId !== repositoryRequest.current) return;
+      const treeData = await repositoryApi.getTree(info.id);
+      if (requestId !== repositoryRequest.current) return;
+      setRepository(info);
+      setTree(treeData);
+    } catch {
+      // Source Control already shows the live Git state; the index catches up on the next open.
+    }
+  }
+
+  const workingTreeGuard = (action: string) => editorState.current.saving
+    ? `Wait for the file to finish saving before ${action}.`
+    : editorState.current.dirty ? `Save or discard your unsaved edits before ${action}.` : null;
+
+  /** Open `path` in the code editor with the cursor on `line`, from any page. */
+  function openInEditor(path: string, line: number) {
+    if (handleSelectTab("editor")) setRevealRequest({ path, line, id: Date.now() });
+  }
+
+  /** Enter the code editor with one of its tool views (Source Control, Search, AI) already open. */
+  function openEditorView(view: EditorToolView) {
+    if (handleSelectTab("editor")) setEditorView(view);
   }
 
   function handleFileSaved(preview: FilePreview) {
@@ -74,16 +134,15 @@ export default function App() {
     if (!canLeaveEditor()) return;
     setAiDraft(null);
     setActiveThread(threadId);
-    setVisitedThreads(current => current.includes(threadId) ? current : [...current, threadId]);
+    setVisitedThreads(current => mostRecent(current, threadId, MAX_AI_THREADS, (a, b) => a === b));
     setActiveTab("ai");
   }
 
   useEffect(() => {
     if (activeTab !== "terminal" || !isSessionRestored || isLoading) return;
-    // Keep each project's terminal page mounted with its original working directory.
-    setTerminalRepositories(current => current.some(item => item?.root_path === repository?.root_path)
-      ? current
-      : [...current, repository]);
+    // Keep each project's terminal page mounted with its original working directory,
+    // most recently used last; the oldest beyond the cap unmounts and closes its shells.
+    setTerminalRepositories(current => mostRecent(current, repository, MAX_TERMINAL_PAGES, (a, b) => a?.root_path === b?.root_path));
   }, [activeTab, isSessionRestored, isLoading, repository]);
 
   useEffect(() => {
@@ -91,6 +150,28 @@ export default function App() {
       setHasVisitedAi(true);
     }
   }, [activeTab, hasVisitedAi]);
+
+  // Command palette: Ctrl/Cmd+Shift+P everywhere, Ctrl/Cmd+K outside views that own that key.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      const ownsK = activeTab === "editor" || activeTab === "terminal";
+      if ((event.shiftKey && key === "p") || (!event.shiftKey && key === "k" && !ownsK)) {
+        event.preventDefault();
+        setPaletteOpen(open => !open);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    let active = true;
+    repositoryApi.list().then(list => { if (active) setKnownRepositories(list); }).catch(() => { /* the palette still offers navigation */ });
+    return () => { active = false; };
+  }, [paletteOpen]);
 
   // Restore session
   useEffect(() => {
@@ -224,6 +305,29 @@ export default function App() {
     }
   }
 
+  async function handleReindex() {
+    if (!repository) return;
+    const requestId = ++repositoryRequest.current;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const info = await repositoryApi.reindex(repository.id);
+      if (requestId !== repositoryRequest.current) return;
+      const treeData = await repositoryApi.getTree(info.id);
+      if (requestId !== repositoryRequest.current) return;
+      setRepository(info);
+      setTree(treeData);
+      toast.success(`Re-indexed ${info.file_count.toLocaleString()} files in ${info.name}.`);
+    } catch (err) {
+      if (requestId !== repositoryRequest.current) return;
+      const message = err instanceof ApiError ? err.message : "Failed to re-index repository";
+      setError(message);
+      toast.error(message);
+    } finally {
+      if (requestId === repositoryRequest.current) setIsLoading(false);
+    }
+  }
+
   function handleSelectFile(node: TreeNode) {
     if (!node.is_directory && (node.file_id !== selectedFile?.file_id || node.path !== selectedFile?.path)) {
       setSelectedFile(node);
@@ -257,7 +361,35 @@ export default function App() {
     }
   }
 
+  const navigationCommands: { tab: string; label: string; icon: PaletteCommand["icon"]; needsRepository?: boolean }[] = [
+    { tab: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { tab: "explorer", label: "File Explorer", icon: Folder },
+    { tab: "editor", label: "Code Editor", icon: Code2 },
+    { tab: "terminal", label: "Terminal", icon: SquareTerminal, needsRepository: true },
+    { tab: "git", label: "Git Repository", icon: GitBranch, needsRepository: true },
+    { tab: "ai", label: "AI Assistant", icon: Bot },
+    { tab: "analytics", label: "Analytics", icon: BarChart3, needsRepository: true },
+    { tab: "health", label: "Code Health", icon: ShieldCheck, needsRepository: true },
+    { tab: "settings", label: "Settings", icon: Settings },
+  ];
+  const paletteCommands: PaletteCommand[] = [
+    ...navigationCommands.map(item => ({
+      id: `go-${item.tab}`, label: `Go to ${item.label}`, group: "Navigate", icon: item.icon,
+      disabled: Boolean(item.needsRepository) && !repository, run: () => handleSelectTab(item.tab),
+    })),
+    ...knownRepositories.filter(item => item.root_path !== repository?.root_path).map(item => ({
+      id: `open-${item.id}`, label: `Open ${item.name}`, hint: item.root_path, group: "Projects", icon: FolderOpen,
+      keywords: "project repository switch", run: () => { void handleOpen(item.root_path).catch(() => { /* shown in the error banner */ }); },
+    })),
+    { id: "source-control", label: "Open Source Control", group: "Editor", icon: GitBranch, disabled: !repository, keywords: "git stage commit diff changes", run: () => openEditorView("git") },
+    { id: "search-files", label: "Search in files", group: "Editor", icon: TextSearch, disabled: !repository, keywords: "find text grep", run: () => openEditorView("search") },
+    { id: "go-symbol", label: "Go to symbol in workspace", group: "Editor", icon: Braces, disabled: !repository, keywords: "class function method definition", run: () => openEditorView("symbols") },
+    { id: "reindex", label: "Re-index project", group: "Actions", icon: RefreshCw, disabled: !repository || isLoading, keywords: "rescan symbols refresh", run: () => void handleReindex() },
+    { id: "theme", label: resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme", group: "Actions", icon: SunMoon, keywords: "appearance", run: () => updateSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" }) },
+  ];
+
   return (
+    <ConfirmProvider>
     <SidebarProvider className={settings.sidebarPosition === "right" ? "flex-row-reverse" : undefined}>
       {activeTab !== "editor" && <AppSidebar
         side={settings.sidebarPosition}
@@ -271,13 +403,16 @@ export default function App() {
       />}
 
       <SidebarInset className="min-w-0" style={activeTab === "editor" ? { height: "100dvh", overflow: "hidden" } : undefined}>
-        {activeTab !== "editor" && <SiteHeader hasRepository={Boolean(repository)} currentView={activeTab} />}
+        {activeTab !== "editor" && <SiteHeader hasRepository={Boolean(repository)} currentView={activeTab} onOpenCommands={() => setPaletteOpen(true)} />}
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, overflowY: ["editor", "ai", "ai-agent"].includes(activeTab) ? "hidden" : "auto", backgroundColor: "var(--background)" }}>
           {error && (
             <div className="error-banner" role="alert" style={{ margin: "16px 20px 0" }}>
               <AlertCircle className="error-icon" />
               <span className="font-medium">{error}</span>
+              <button type="button" className="error-dismiss" aria-label="Dismiss error" title="Dismiss" onClick={() => setError(null)}>
+                <X size={15} />
+              </button>
             </div>
           )}
 
@@ -288,6 +423,7 @@ export default function App() {
               tree={tree}
               isLoading={isLoading}
               onNavigate={handleSelectTab}
+              onReindex={handleReindex}
             />
           )}
 
@@ -302,6 +438,11 @@ export default function App() {
               onAiPromptConsumed={() => setEditorAiPrompt(null)}
               onNavigate={handleSelectTab}
               onCommand={command => editorWorkspaceRef.current?.runCommand(command)}
+              onRevealLine={(path, line) => editorWorkspaceRef.current?.revealLine(path, line)}
+              requestedView={editorView}
+              onRequestedViewHandled={() => setEditorView(null)}
+              workingTreeGuard={workingTreeGuard}
+              onWorkingTreeChanged={() => void refreshRepository()}
             >
               {workspaceVisible => <ExplorerPage
                 ref={editorWorkspaceRef}
@@ -319,6 +460,8 @@ export default function App() {
                 onAskAI={handleAskAIAboutFile}
                 onEditorStateChange={handleEditorStateChange}
                 onFileSaved={handleFileSaved}
+                revealRequest={revealRequest}
+                onRevealHandled={() => setRevealRequest(null)}
               />}
             </EditorApp>
           )}
@@ -328,30 +471,37 @@ export default function App() {
             const isActive = activeTab === "terminal" && terminalRepository?.root_path === repository?.root_path;
             return (
               <div key={terminalRepository?.root_path ?? "home"} style={{ display: isActive ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
-                <TerminalPage repository={terminalRepository} isActive={isActive} />
+                <Suspense fallback={<PageFallback />}><TerminalPage repository={terminalRepository} isActive={isActive} /></Suspense>
               </div>
             );
           })}
 
           {/* Git Repository */}
           {activeTab === "git" && (
-            <GitPage
-              key={repository?.id ?? "none"}
-              repository={repository}
-              onNavigate={handleSelectTab}
-            />
+            <Suspense fallback={<PageFallback />}>
+              <GitPage
+                key={repository?.id ?? "none"}
+                repository={repository}
+                onNavigate={handleSelectTab}
+                onReviewChanges={() => openEditorView("git")}
+              />
+            </Suspense>
           )}
 
           {/* AI Agent */}
           {hasVisitedAi && (
-            <div style={{ display: (activeTab === "ai" || activeTab === "ai-agent") ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "#000000" }}>
+            <div style={{ display: (activeTab === "ai" || activeTab === "ai-agent") ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "var(--background)" }}>
               {visitedThreads.map(threadId => (
-              <div key={`${repository?.id ?? "none"}:${threadId}`} style={{ display: threadId === activeThread ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "#000000" }}>
-              <AIAgentPage
-                repository={repository}
-                initialPrompt={threadId === activeThread ? aiDraft : null}
-                onInitialPromptConsumed={() => setAiDraft(null)}
-              />
+              <div key={`${repository?.id ?? "none"}:${threadId}`} style={{ display: threadId === activeThread ? "flex" : "none", flex: 1, width: "100%", height: "100%", minHeight: 0, flexDirection: "column", backgroundColor: "var(--background)" }}>
+              <Suspense fallback={<PageFallback />}>
+                <AIAgentPage
+                  repository={repository}
+                  threadId={threadId}
+                  onFirstMessage={prompt => { if (repository) renameThreadIfDefault(repository.id, threadId, prompt); }}
+                  initialPrompt={threadId === activeThread ? aiDraft : null}
+                  onInitialPromptConsumed={() => setAiDraft(null)}
+                />
+              </Suspense>
               </div>
               ))}
             </div>
@@ -359,21 +509,35 @@ export default function App() {
 
           {/* Analytics & Code Charts */}
           {(activeTab === "analytics" || activeTab === "chart" || activeTab === "charts") && (
-            <AnalyticsPage
-              repository={repository}
-              tree={tree}
-              isLoading={isLoading}
-              onNavigate={handleSelectTab}
-              onOpen={handleOpen}
-            />
+            <Suspense fallback={<PageFallback />}>
+              <AnalyticsPage
+                repository={repository}
+                tree={tree}
+                isLoading={isLoading}
+                onNavigate={handleSelectTab}
+                onOpen={handleOpen}
+              />
+            </Suspense>
+          )}
+
+          {/* Code Health */}
+          {activeTab === "health" && (
+            <Suspense fallback={<PageFallback />}>
+              <CodeHealthPage repository={repository} onNavigate={handleSelectTab} onOpenInEditor={openInEditor} />
+            </Suspense>
           )}
 
           {/* Settings */}
           {activeTab === "settings" && (
-            <SettingsPage />
+            <Suspense fallback={<PageFallback />}>
+              <SettingsPage />
+            </Suspense>
           )}
         </div>
       </SidebarInset>
+      <Toaster theme={resolvedTheme} position="bottom-right" closeButton />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={paletteCommands} />
     </SidebarProvider>
+    </ConfirmProvider>
   );
 }

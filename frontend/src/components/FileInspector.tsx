@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { lazy, Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
   AlertCircle,
   Binary,
@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Copy,
   FileCode2,
+  History,
   LoaderCircle,
   MessageSquareCode,
   Pencil,
@@ -24,8 +25,11 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useAppSettings } from "../hooks/useAppSettings";
+import { useConfirm } from "../hooks/useConfirm";
+import { affectsPath, FILES_CHANGED_EVENT, type FilesChangedDetail } from "../lib/fileEvents";
 import type { CodeEditorHandle } from "./CodeEditorSurface";
 import type { EditorCommand } from "../editor/editorCommands";
+import { useEditorShell } from "../editor/editorShell";
 
 const CodeEditorSurface = lazy(async () => ({ default: (await import("./CodeEditorSurface")).CodeEditorSurface }));
 
@@ -33,6 +37,8 @@ export interface FileInspectorHandle {
   save: () => Promise<boolean>;
   focus: () => void;
   runCommand: (command: EditorCommand) => void;
+  /** Move to `line`, waiting for the file (and editor surface) to load if needed. */
+  goToLine: (line: number) => void;
 }
 
 function formatBytes(bytes: number | null): string {
@@ -107,10 +113,22 @@ export function FileInspector({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const confirm = useConfirm();
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<HTMLDivElement>(null);
   const codeEditorRef = useRef<CodeEditorHandle>(null);
+  const shell = useEditorShell();
+  const pendingLine = useRef<number | null>(null);
+  const attachCodeEditor = useCallback((handle: CodeEditorHandle | null) => {
+    codeEditorRef.current = handle;
+    if (handle && pendingLine.current !== null) {
+      const line = pendingLine.current;
+      pendingLine.current = null;
+      handle.goToLine(line);
+      setActiveLine(line);
+    }
+  }, []);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const baseline = preview?.content?.replace(/\r\n/g, "\n") ?? "";
   const isDirty = isEditing && draft !== baseline;
@@ -156,6 +174,20 @@ export function FileInspector({
     };
   }, [manageCloseGuard]);
 
+  // Reload when IFROG rewrote this file on disk (for example Discard in Source Control),
+  // unless the user has unsaved edits, which keep the existing save-conflict protection.
+  const [diskVersion, setDiskVersion] = useState(0);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = isDirty;
+  useEffect(() => {
+    const onFilesChanged = (event: Event) => {
+      const { paths } = (event as CustomEvent<FilesChangedDetail>).detail ?? { paths: [] };
+      if (!dirtyRef.current && affectsPath(paths, file.path)) setDiskVersion(value => value + 1);
+    };
+    window.addEventListener(FILES_CHANGED_EVENT, onFilesChanged);
+    return () => window.removeEventListener(FILES_CHANGED_EVENT, onFilesChanged);
+  }, [file.path]);
+
   useEffect(() => {
     let active = true;
     setIsLoading(true);
@@ -193,7 +225,7 @@ export function FileInspector({
       });
 
     return () => { active = false; };
-  }, [file.file_id, file.path, localRepositoryId]);
+  }, [file.file_id, file.path, localRepositoryId, diskVersion]);
 
   useEffect(() => {
     if (autoEdit && canEdit && !isEditing) {
@@ -219,6 +251,23 @@ export function FileInspector({
     window.setTimeout(() => setCopied(false), 2000);
   };
 
+  const revealLine = (line: number) => {
+    const editorPending = autoEdit && canEdit && (!isEditing || !codeEditorRef.current);
+    if (isLoading || !preview || editorPending) {
+      pendingLine.current = line; // flushed below, or by attachCodeEditor when the surface mounts
+      return;
+    }
+    jumpToLine(line);
+  };
+
+  useEffect(() => {
+    if (pendingLine.current === null || isLoading || !preview) return;
+    if (autoEdit && canEdit && (!isEditing || !codeEditorRef.current)) return;
+    const line = pendingLine.current;
+    pendingLine.current = null;
+    jumpToLine(line);
+  });
+
   const jumpToLine = (line: number) => {
     setActiveLine(line);
     if (autoEdit && isEditing) {
@@ -238,16 +287,20 @@ export function FileInspector({
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  const discardEdits = () => {
-    if (savingRef.current || (isDirty && !window.confirm("Discard your unsaved changes?"))) return;
+  const discardEdits = async () => {
+    if (savingRef.current) return;
+    if (isDirty && !(await confirm({ title: `Discard your changes to ${file.name}?`, description: "The file goes back to its saved version.", confirmLabel: "Discard changes", destructive: true }))) return;
+    if (savingRef.current) return; // a save started while the dialog was open
     setDraft(baseline);
     setIsEditing(autoEdit);
     setSaveError(null);
     setSaveNotice(null);
   };
 
-  const closeFile = () => {
-    if (savingRef.current || (isDirty && !window.confirm("Discard your unsaved changes and close this file?"))) return;
+  const closeFile = async () => {
+    if (savingRef.current) return;
+    if (isDirty && !(await confirm({ title: `Close ${file.name} without saving?`, description: "Your unsaved changes are lost.", confirmLabel: "Close without saving", destructive: true }))) return;
+    if (savingRef.current) return;
     onEditorStateChange?.({ dirty: false, saving: false });
     onClose();
   };
@@ -289,6 +342,7 @@ export function FileInspector({
 
   useImperativeHandle(ref, () => ({
     save: handleSave,
+    goToLine: revealLine,
     focus: () => { codeEditorRef.current?.focus(); editorRef.current?.focus(); },
     runCommand: command => {
       if (command === "save") { void handleSave(); return; }
@@ -332,6 +386,7 @@ export function FileInspector({
         </div>}
 
         <div className={autoEdit ? "vscode-editor-actions" : "flex items-center gap-1.5"}>
+          {shell && autoEdit && <Button variant="ghost" size="icon" className="size-8" aria-label="File history" title="Show the commits that changed this file" onClick={() => shell.showFileHistory(file.path)}><History className="h-3.5 w-3.5" /></Button>}
           {autoEdit && isEditing && <>
             <Button variant="ghost" size="icon" className="size-8" aria-label="Undo" title="Undo (Ctrl/Cmd+Z)" disabled={isSaving || readOnly} onClick={() => codeEditorRef.current?.undo()}><Undo2 className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="size-8" aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)" disabled={isSaving || readOnly} onClick={() => codeEditorRef.current?.redo()}><Redo2 className="h-3.5 w-3.5" /></Button>
@@ -406,7 +461,7 @@ export function FileInspector({
       ) : (
         <div id={autoEdit ? `code-editor-content-${file.file_id}` : undefined} role={autoEdit ? "tabpanel" : undefined} aria-label={autoEdit ? file.name : undefined} className={`file-inspector-grid min-h-0 flex-1 ${autoEdit ? "vscode-editor-grid" : ""}`} style={autoEdit && !outlineVisible ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
           {isEditing && autoEdit ? <Suspense fallback={<div className="flex items-center justify-center text-xs text-muted-foreground">Loading editor…</div>}><CodeEditorSurface
-            ref={codeEditorRef}
+            ref={attachCodeEditor}
             value={draft}
             label={`Edit ${file.name}`}
             language={file.language}
@@ -465,7 +520,7 @@ export function FileInspector({
                 >
                   {settings.lineNumbers && <button
                     type="button"
-                    className="w-14 shrink-0 select-none pr-3 text-right text-zinc-600 hover:text-zinc-300"
+                    className="w-14 shrink-0 select-none pr-3 text-right text-muted-foreground/60 hover:text-foreground"
                     onClick={() => setActiveLine(lineNumber)}
                     aria-label={`Line ${lineNumber}`}
                   >

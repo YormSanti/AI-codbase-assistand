@@ -30,9 +30,14 @@ be independently functional and tested before the next one starts.
     functions and `const foo = () => {}` are not extracted yet
   - 14 new backend tests (parser, extraction service, indexing integration,
     API) — 36 backend tests total, all passing
-- [ ] **Milestone 1.3 — Tree UI polish**
-  - Show per-file symbol counts / icons in the tree
-  - Loading and empty states, basic file preview pane
+- [x] **Milestone 1.3 — Incremental indexing** (done, 2026-10-26)
+  - Reopening a known repository hashes files but only re-parses the ones
+    whose content changed; unchanged files keep their ids and symbols
+  - `POST /api/repositories/{id}/reindex` forces a full re-parse (Dashboard
+    **Re-index** button, command palette)
+- [x] **Milestone 1.4 — Tree UI polish** (done, 2026-10-27)
+  - File Explorer shows each file's class/function/method count (tree API
+    `symbol_count`, one grouped query per tree)
 
 ## Phase 2 — Semantic search & RAG chat
 
@@ -54,11 +59,79 @@ setup when this phase starts.*
   untracked previews, conflicts, local upstream ahead/behind counts, and
   selected-repository remote links
 - [x] Selected-diff handoff to desktop AI for review and commit-message suggestions
+- [x] Stage, unstage, mark-resolved, and commit from the editor's Source
+  Control view (`POST .../git/stage`, `.../git/unstage`, `.../git/commit`)
+- [x] AI-written commit messages from the staged diff and AI review of a
+  file diff or of everything staged (`GET .../git/staged-diff`)
+- [x] Commit details from the history: message, author, parents, changed
+  files with line counts, and per-file diffs (`GET .../git/commits/{sha}`)
+- [x] Branch picker: list, switch (guarded against uncommitted changes and
+  unsaved drafts), and create from the current commit
+- [x] Fetch, fast-forward-only pull, and push/publish from Source Control,
+  without ever blocking on credential prompts
+- [x] File history from an editor tab (`git log --follow`), opening each
+  commit with that file selected
+- [x] Live Git data on the Dashboard and Git Repository page (branch,
+  upstream ahead/behind, working tree summary, recent commits), honoring the
+  Git refresh interval setting
 
 ## Phase 4 — Health & security
 
-- [ ] Duplicate code, large files, TODOs, cyclomatic complexity
-- [ ] Hardcoded secrets, weak crypto, risky pattern scanning
+- [x] Large files and TODO/FIXME/HACK markers (Code Health page)
+- [x] Hardcoded secrets, weak crypto, and risky pattern scanning, with
+  redacted output and `ifrog-ignore` / `ifrog-ignore-file` suppression
+- [x] Cyclomatic complexity per Python/JS/TS function (Tree-sitter), reported
+  at 15+ (low) and 25+ (medium)
+- [x] More token formats (GitLab, npm, PyPI, Hugging Face, SendGrid, Slack
+  webhooks), passwords in connection URLs, and SQL/shell string-building,
+  unverified SSL, `marshal`, `mktemp`, `os.popen`, Flask debug, and
+  `chmod 777` rules
+- [ ] Duplicate code
+
+## Shell and performance (2026-10-26)
+
+- [x] Dead shadcn leftovers and ten unused npm packages removed; toaster
+  mounted so toasts actually show
+- [x] On-demand pages (terminal, analytics, Git, AI, settings) and editor tool
+  views load as separate chunks; main JS chunk 1.3 MB -> ~0.5 MB
+- [x] Local font stacks instead of a Google Fonts request
+- [x] Desktop build waits for the sidecar `/health` before the first request
+- [x] Light theme readable everywhere (theme tokens + overlay variables)
+- [x] Command palette (Ctrl/Cmd+K, Ctrl/Cmd+Shift+P) for pages, projects,
+  re-index, and theme
+- [x] Dismissible global error; hidden terminal pages and AI threads capped
+  to the most recently used
+- [x] Backend ships as a PyInstaller `--onedir` bundle under the app's
+  resource directory (no per-launch extraction of a 31 MB executable);
+  the Tauri shell plugin is no longer needed
+- [x] Reopening a project costs one `stat` per unchanged file (size + mtime
+  shortcut); `migrate_schema` upgrades existing SQLite files
+- [x] Project-wide **Search in files** (Ctrl/Cmd+Shift+F) with jump-to-line
+- [x] **Go to Symbol in Workspace** (Ctrl/Cmd+T or `#` in Go to File) over the
+  Tree-sitter symbol index, ranked exact > prefix > substring
+- [x] AI conversations persist per project and thread; threads are titled
+  from their first message; deleting a thread or project removes them
+- [x] Discard working-tree changes from Source Control behind an in-app
+  confirmation dialog; open editors reload files IFROG rewrote
+- [x] Discard/close prompts for unsaved edits in the file preview and editor
+  tabs use the in-app dialog
+- [ ] Leaving the editor for another page and closing the window still use
+  the native prompt; both need a synchronous answer today
+
+## Hardening and CI (2026-10-27)
+
+- [x] Terminal WebSocket rejects pages from other origins (browsers do not
+  apply CORS to WebSockets)
+- [x] Browser-build AI runs: UTF-8 split across reads decoded correctly,
+  silent hangs stopped at the 10-minute limit (whole process group), and
+  Gemini prompts that start with `-` passed intact (desktop too)
+- [x] Readable 422 validation messages in the frontend API client
+- [x] Case-insensitive file type detection, more extensions and binary types
+- [x] Opening a project requires a full path; quotes from "Copy as path" are
+  trimmed
+- [x] One Git path validator, matching `.git` in any letter case
+- [x] GitHub Actions CI: pytest, oxlint, `tsc -b`, vitest, and the landing
+  page's ESLint on pull requests
 
 ## Environment notes
 

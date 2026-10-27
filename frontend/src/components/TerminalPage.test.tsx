@@ -78,6 +78,7 @@ vi.mock("@xterm/addon-fit", () => ({
 
 vi.mock("@/api/client", () => ({
   getBackendUrl: vi.fn().mockResolvedValue("http://127.0.0.1:8000"),
+  ensureBackendReady: vi.fn().mockResolvedValue(undefined),
 }));
 
 class MockWebSocket {

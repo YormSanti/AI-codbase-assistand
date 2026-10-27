@@ -4,8 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 from git import Actor, Repo
 
-from app.domain.exceptions import GitReviewError
-from app.infrastructure.git.git_review_client import GitReviewClient, MAX_DIFF_BYTES, remote_web_url
+from app.domain.exceptions import GitCommandError, GitReviewError
+from app.infrastructure.git.git_review_client import GitReviewClient, MAX_DIFF_BYTES, is_repository_path, remote_web_url
 
 
 def open_project(client: TestClient, path: Path) -> str:
@@ -191,3 +191,477 @@ def test_invalid_project_and_diff_requests(api_client: TestClient, git_repo_path
 ])
 def test_remote_web_links(remote: str, expected: str | None) -> None:
     assert remote_web_url(remote) == expected
+
+
+def _configure_identity(path: Path) -> Repo:
+    repo = Repo(path)
+    repo.git.config("user.name", "Test User")
+    repo.git.config("user.email", "test@example.com")
+    return repo
+
+
+def test_stage_unstage_and_commit_from_the_api(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = _configure_identity(git_repo_path)
+    (git_repo_path / "main.py").write_text("def main():\n    return 'edited'\n")
+    (git_repo_path / "notes.txt").write_text("brand new\n")
+    (git_repo_path / "README.md").unlink()
+
+    staged = api_client.post(f"{base}/stage", json={"paths": ["main.py", "notes.txt", "README.md"]})
+    assert staged.status_code == 200
+    index = {change["path"]: change["index_status"] for change in staged.json()["changes"]}
+    assert {path: index[path] for path in ["main.py", "notes.txt", "README.md"]} == {"main.py": "M", "notes.txt": "A", "README.md": "D"}
+    assert index["untracked.py"] == "?"
+
+    unstaged = api_client.post(f"{base}/unstage", json={"paths": ["notes.txt"]})
+    assert unstaged.status_code == 200
+    index = {change["path"]: change["index_status"] for change in unstaged.json()["changes"]}
+    assert index["notes.txt"] == "?"
+    assert index["main.py"] == "M"
+    assert (git_repo_path / "notes.txt").read_text() == "brand new\n"  # working tree untouched
+
+    committed = api_client.post(f"{base}/commit", json={"message": "feat: edit main and drop readme"})
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["commits"][0]["message"] == "feat: edit main and drop readme"
+    assert body["head_commit"] == repo.head.commit.hexsha
+    assert {change["path"] for change in body["changes"]} == {"notes.txt", "untracked.py"}
+    assert repo.head.commit.stats.files.keys() >= {"main.py", "README.md"}
+
+
+def test_commit_and_stage_are_validated(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    _configure_identity(git_repo_path)
+    nothing_staged = api_client.post(f"{base}/commit", json={"message": "nothing here"})
+    assert nothing_staged.status_code == 409
+    assert "Nothing is staged" in nothing_staged.json()["detail"]
+    assert api_client.post(f"{base}/commit", json={"message": "   "}).status_code == 409
+    assert api_client.post(f"{base}/commit", json={"message": ""}).status_code == 422
+    for path in ["../private.txt", "/etc/passwd", ".git/config", "README.md"]:
+        response = api_client.post(f"{base}/stage", json={"paths": [path]})
+        assert response.status_code == 409, path
+    assert api_client.post(f"{base}/unstage", json={"paths": ["untracked.py"]}).status_code == 409
+    assert api_client.post(f"{base}/stage", json={"paths": []}).status_code == 422
+    assert api_client.post("/api/repositories/999/git/stage", json={"paths": ["main.py"]}).status_code == 404
+
+
+def test_commit_surfaces_git_errors_and_blocks_conflicts(git_repo_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Isolate from the developer's global identity so the missing-identity path is exercised.
+    empty_config = tmp_path / "empty-gitconfig"
+    empty_config.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    repo = Repo(git_repo_path)
+    client = GitReviewClient()
+    (git_repo_path / "main.py").write_text("changed\n")
+    client.stage(str(git_repo_path), ["main.py"])
+    repo.git.config("user.useConfigOnly", "true")
+    with pytest.raises(GitCommandError) as missing_identity:
+        client.commit(str(git_repo_path), "no identity")
+    assert "identity" in str(missing_identity.value).lower() or "email" in str(missing_identity.value).lower()
+    repo.git.config("--unset", "user.useConfigOnly")
+    _configure_identity(git_repo_path)
+
+    original = repo.active_branch.name
+    repo.git.checkout("-b", "other")
+    actor = Actor("Test", "test@example.com")
+    (git_repo_path / "main.py").write_text("other\n")
+    repo.index.add(["main.py"])
+    repo.index.commit("other", author=actor, committer=actor)
+    repo.git.checkout(original)
+    (git_repo_path / "main.py").write_text("current\n")
+    repo.index.add(["main.py"])
+    repo.index.commit("current", author=actor, committer=actor)
+    repo.git.merge("other", with_exceptions=False)
+    with pytest.raises(GitCommandError) as conflict:
+        client.commit(str(git_repo_path), "merge attempt")
+    assert "conflict" in str(conflict.value).lower()
+
+
+def test_unborn_repository_can_stage_unstage_and_commit(tmp_path: Path) -> None:
+    empty = tmp_path / "fresh"
+    Repo.init(empty)
+    _configure_identity(empty)
+    (empty / "first.txt").write_text("first\n")
+    client = GitReviewClient()
+    client.stage(str(empty), ["first.txt"])
+    assert client.get_status(str(empty)).changes[0].index_status == "A"
+    client.unstage(str(empty), ["first.txt"])
+    assert client.get_status(str(empty)).changes[0].index_status == "?"
+    client.stage(str(empty), ["first.txt"])
+    commit = client.commit(str(empty), "Initial commit")
+    assert commit.message == "Initial commit"
+    status = client.get_status(str(empty))
+    assert status.head_commit == commit.sha
+    assert status.changes == []
+
+
+def test_staged_diff_combines_only_staged_files(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    empty = api_client.get(f"{base}/staged-diff")
+    assert empty.status_code == 200
+    assert empty.json() == {"content": "", "stat": "", "files": 0, "truncated": False}
+
+    repo = Repo(git_repo_path)
+    (git_repo_path / "main.py").write_text("def main():\n    return 'staged'\n")
+    (git_repo_path / "notes.txt").write_text("new staged file\n")
+    repo.index.add(["main.py", "notes.txt"])
+    (git_repo_path / "README.md").write_text("# unstaged edit\n")
+
+    body = api_client.get(f"{base}/staged-diff").json()
+    assert body["files"] == 2
+    assert body["truncated"] is False
+    assert "+    return 'staged'" in body["content"]
+    assert "+new staged file" in body["content"]
+    assert "unstaged edit" not in body["content"]
+    assert "main.py" in body["stat"] and "notes.txt" in body["stat"]
+    assert "2 files changed" in body["stat"]
+
+
+def test_staged_diff_on_an_unborn_branch(tmp_path: Path) -> None:
+    empty = tmp_path / "unborn"
+    repo = Repo.init(empty)
+    (empty / "first.txt").write_text("first\n")
+    repo.index.add(["first.txt"])
+    staged = GitReviewClient().get_staged_diff(str(empty))
+    assert staged.files == 1
+    assert "+first" in staged.content
+
+
+def _commit_all(repo: Repo, message: str) -> str:
+    actor = Actor("Test User", "test@example.com")
+    repo.git.add("-A")
+    return repo.index.commit(message, author=actor, committer=actor).hexsha
+
+
+def test_commit_details_list_files_with_status_and_counts(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    (git_repo_path / "main.py").write_text("def main():\n    return 42\n\n\ndef extra():\n    pass\n")
+    (git_repo_path / "src" / "new file.ts").write_text("export const created = true;\n")
+    repo.git.mv("README.md", "GUIDE.md")
+    repo.index.remove([".gitignore"], working_tree=True)
+    (git_repo_path / "logo.bin").write_bytes(b"\x00\x01binary")
+    sha = _commit_all(repo, "feat: second commit\n\nLonger body text.")
+
+    response = api_client.get(f"{base}/commits/{sha[:10]}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sha"] == sha
+    assert body["message"] == "feat: second commit\n\nLonger body text."
+    assert body["author"] == "Test User" and body["author_email"] == "test@example.com"
+    assert len(body["parents"]) == 1
+    files = {file["path"]: file for file in body["files"]}
+    assert files["main.py"]["status"] == "M"
+    assert (files["main.py"]["additions"], files["main.py"]["deletions"]) == (4, 0)
+    assert files["src/new file.ts"]["status"] == "A"
+    assert files["GUIDE.md"]["status"] == "R" and files["GUIDE.md"]["original_path"] == "README.md"
+    assert files[".gitignore"]["status"] == "D"
+    assert files["logo.bin"]["additions"] is None  # binary
+
+    diff = api_client.get(f"{base}/commits/{sha}/diff", params={"path": "main.py"}).json()
+    assert "+def extra():" in diff["content"] and "+    return 42" in diff["content"]
+    renamed = api_client.get(f"{base}/commits/{sha}/diff", params={"path": "GUIDE.md"}).json()
+    assert "rename from README.md" in renamed["content"]
+    binary = api_client.get(f"{base}/commits/{sha}/diff", params={"path": "logo.bin"}).json()
+    assert binary["is_binary"] is True
+
+
+def test_root_and_merge_commits_compare_with_nothing_and_the_first_parent(git_repo_path: Path) -> None:
+    repo = Repo(git_repo_path)
+    client = GitReviewClient()
+    root_sha = repo.head.commit.hexsha
+    root = client.get_commit(str(git_repo_path), root_sha)
+    assert root.parents == []
+    assert {file.path for file in root.files} == {"main.py", "README.md", "src/app.ts", ".gitignore"}
+    assert all(file.status == "A" for file in root.files)
+    assert "+def main():" in client.get_commit_diff(str(git_repo_path), root_sha, "main.py").content
+
+    original = repo.active_branch.name
+    repo.git.checkout("-b", "feature")
+    (git_repo_path / "feature.txt").write_text("feature work\n")
+    _commit_all(repo, "feature work")
+    repo.git.checkout(original)
+    (git_repo_path / "main.txt").write_text("mainline work\n")
+    _commit_all(repo, "mainline work")
+    repo.git.config("user.name", "Test User")
+    repo.git.config("user.email", "test@example.com")
+    repo.git.merge("feature", "--no-ff", "-m", "merge feature")
+    merge = client.get_commit(str(git_repo_path), repo.head.commit.hexsha)
+    assert len(merge.parents) == 2
+    # Relative to the first parent the merge brings in the feature branch's files
+    # (the fixture's untracked.py was committed there by `git add -A`), not mainline work.
+    assert {file.path for file in merge.files} == {"feature.txt", "untracked.py"}
+
+
+def test_commit_requests_are_validated(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    sha = Repo(git_repo_path).head.commit.hexsha
+    for bad in ["HEAD", "main", "not-a-sha", "0123456789abcdef0123456789abcdef01234567"]:
+        assert api_client.get(f"{base}/commits/{bad}").status_code == 409, bad
+    missing_file = api_client.get(f"{base}/commits/{sha}/diff", params={"path": "untracked.py"})
+    assert missing_file.status_code == 409
+    assert "not changed in that commit" in missing_file.json()["detail"]
+    assert api_client.get(f"/api/repositories/999/git/commits/{sha}").status_code == 404
+
+
+def test_discard_restores_tracked_files_and_deletes_untracked_ones(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    (git_repo_path / "main.py").write_text("broken edit\n")
+    (git_repo_path / "README.md").unlink()
+    (git_repo_path / "scratch.txt").write_text("temporary\n")
+    (git_repo_path / "src" / "app.ts").write_text("export const staged = 2;\n")
+    repo.index.add(["src/app.ts"])
+    (git_repo_path / "src" / "app.ts").write_text("export const staged = 3;\n")
+
+    response = api_client.post(f"{base}/discard", json={"paths": ["main.py", "README.md", "scratch.txt", "src/app.ts"]})
+    assert response.status_code == 200
+    assert (git_repo_path / "main.py").read_text() == "def main():\n    pass\n"
+    assert (git_repo_path / "README.md").read_text() == "# Sample\n"
+    assert not (git_repo_path / "scratch.txt").exists()
+    assert (git_repo_path / "src" / "app.ts").read_text() == "export const staged = 2;\n"  # back to the staged version
+    changes = {change["path"]: change for change in response.json()["changes"]}
+    assert set(changes) == {"src/app.ts", "untracked.py"}
+    assert changes["src/app.ts"]["index_status"] == "M" and changes["src/app.ts"]["worktree_status"] == " "
+
+
+def test_discard_is_validated(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    (git_repo_path / "main.py").write_text("staged only\n")
+    repo.index.add(["main.py"])
+    staged_only = api_client.post(f"{base}/discard", json={"paths": ["main.py"]})
+    assert staged_only.status_code == 409
+    assert "no unstaged changes" in staged_only.json()["detail"]
+    assert (git_repo_path / "main.py").read_text() == "staged only\n"
+    for path in ["../outside.txt", "/etc/passwd", ".git/config", "README.md"]:
+        assert api_client.post(f"{base}/discard", json={"paths": [path]}).status_code == 409, path
+    assert api_client.post(f"{base}/discard", json={"paths": []}).status_code == 422
+    assert api_client.post("/api/repositories/999/git/discard", json={"paths": ["main.py"]}).status_code == 404
+
+    outside = tmp_path / "keep.txt"
+    outside.write_text("must survive\n")
+    (git_repo_path / "link.txt").symlink_to(outside)
+    assert api_client.post(f"{base}/discard", json={"paths": ["link.txt"]}).status_code == 200
+    assert not (git_repo_path / "link.txt").exists() and outside.read_text() == "must survive\n"
+
+
+def test_discard_refuses_conflicted_files(git_repo_path: Path) -> None:
+    repo = Repo(git_repo_path)
+    original = repo.active_branch.name
+    actor = Actor("Test", "test@example.com")
+    repo.git.checkout("-b", "other")
+    (git_repo_path / "main.py").write_text("other\n")
+    repo.index.add(["main.py"])
+    repo.index.commit("other", author=actor, committer=actor)
+    repo.git.checkout(original)
+    (git_repo_path / "main.py").write_text("current\n")
+    repo.index.add(["main.py"])
+    repo.index.commit("current", author=actor, committer=actor)
+    repo.git.config("user.name", "Test")
+    repo.git.config("user.email", "test@example.com")
+    repo.git.merge("other", with_exceptions=False)
+    with pytest.raises(GitCommandError) as conflict:
+        GitReviewClient().discard(str(git_repo_path), ["main.py"])
+    assert "merge conflicts" in str(conflict.value)
+
+
+def test_list_switch_and_create_branches(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    original = repo.active_branch.name
+    repo.git.branch("feature/login")
+    (git_repo_path / "untracked.py").unlink()
+
+    listing = api_client.get(f"{base}/branches").json()
+    assert listing["current"] == original and listing["detached"] is False
+    assert {branch["name"] for branch in listing["branches"]} == {original, "feature/login"}
+    assert all(branch["subject"] == "initial commit" for branch in listing["branches"])
+
+    switched = api_client.post(f"{base}/checkout", json={"branch": "feature/login"})
+    assert switched.status_code == 200 and switched.json()["branch"] == "feature/login"
+    assert repo.active_branch.name == "feature/login"
+
+    (git_repo_path / "main.py").write_text("work in progress\n")
+    created = api_client.post(f"{base}/branches", json={"name": "fix/typo", "checkout": True})
+    assert created.status_code == 200 and created.json()["branch"] == "fix/typo"
+    assert (git_repo_path / "main.py").read_text() == "work in progress\n"  # changes come along
+
+    blocked = api_client.post(f"{base}/checkout", json={"branch": original})
+    assert blocked.status_code == 409
+    assert "before switching branches" in blocked.json()["detail"]
+    assert repo.active_branch.name == "fix/typo"
+
+    no_checkout = api_client.post(f"{base}/branches", json={"name": "later", "checkout": False})
+    assert no_checkout.status_code == 200 and no_checkout.json()["branch"] == "fix/typo"
+    assert "later" in [head.name for head in repo.heads]
+
+
+def test_branch_requests_are_validated(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    current = repo.active_branch.name
+    assert api_client.post(f"{base}/checkout", json={"branch": "missing"}).status_code == 409
+    assert api_client.post(f"{base}/checkout", json={"branch": "--orphan"}).status_code == 409
+    assert api_client.post(f"{base}/checkout", json={"branch": current}).status_code == 200  # already there
+    for name in ["bad name", "-leading-dash", "ends.lock", "a..b", "@{-1}", "trailing/", "x" * 201]:
+        response = api_client.post(f"{base}/branches", json={"name": name})
+        assert response.status_code in (409, 422), name
+    duplicate = api_client.post(f"{base}/branches", json={"name": current})
+    assert duplicate.status_code == 409 and "already exists" in duplicate.json()["detail"]
+
+    fresh = tmp_path / "fresh"
+    Repo.init(fresh)
+    unborn_base = open_project(api_client, fresh)
+    listing = api_client.get(f"{unborn_base}/branches").json()
+    assert listing["branches"] == [] and listing["current"] is not None
+    first = api_client.post(f"{unborn_base}/branches", json={"name": "topic"})
+    assert first.status_code == 409 and "first commit" in first.json()["detail"]
+
+
+def test_untracked_files_in_the_way_surface_gits_error(git_repo_path: Path) -> None:
+    repo = Repo(git_repo_path)
+    original = repo.active_branch.name
+    actor = Actor("Test", "test@example.com")
+    repo.git.checkout("-b", "adds-file")
+    (git_repo_path / "untracked.py").write_text("tracked on the other branch\n")
+    repo.index.add(["untracked.py"])
+    repo.index.commit("track it", author=actor, committer=actor)
+    repo.git.checkout(original)
+    (git_repo_path / "untracked.py").write_text("local untracked copy\n")
+    with pytest.raises(GitCommandError) as overwritten:
+        GitReviewClient().switch_branch(str(git_repo_path), "adds-file")
+    assert "untracked" in str(overwritten.value).lower()
+    assert repo.active_branch.name == original
+
+
+def _with_remote(tmp_path: Path, git_repo_path: Path) -> tuple[Repo, Path]:
+    """Publish the fixture to a local bare repository and track it."""
+    repo = Repo(git_repo_path)
+    repo.git.config("user.name", "Test User")
+    repo.git.config("user.email", "test@example.com")
+    remote = tmp_path / "remote.git"
+    Repo.init(remote, bare=True)
+    repo.create_remote("origin", str(remote))
+    repo.git.push("-u", "origin", repo.active_branch.name)
+    return repo, remote
+
+
+def _remote_commit(tmp_path: Path, remote: Path, branch: str, name: str) -> None:
+    other = Repo.clone_from(str(remote), tmp_path / f"other-{name}", branch=branch)
+    other.git.config("user.name", "Other")
+    other.git.config("user.email", "other@example.com")
+    (Path(other.working_tree_dir) / name).write_text("from the remote\n")
+    other.git.add(name)
+    other.git.commit("-m", f"remote adds {name}")
+    other.git.push("origin", branch)
+
+
+def test_fetch_pull_and_push_with_a_tracked_remote(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo, remote = _with_remote(tmp_path, git_repo_path)
+    branch = repo.active_branch.name
+
+    _remote_commit(tmp_path, remote, branch, "remote.txt")
+    fetched = api_client.post(f"{base}/fetch").json()
+    assert (fetched["ahead"], fetched["behind"]) == (0, 1)
+    assert not (git_repo_path / "remote.txt").exists()
+
+    pulled = api_client.post(f"{base}/pull")
+    assert pulled.status_code == 200
+    assert (pulled.json()["ahead"], pulled.json()["behind"]) == (0, 0)
+    assert (git_repo_path / "remote.txt").read_text() == "from the remote\n"
+
+    (git_repo_path / "main.py").write_text("print('local work')\n")
+    repo.git.add("main.py")
+    repo.git.commit("-m", "local work")
+    assert api_client.get(base).json()["ahead"] == 1
+    pushed = api_client.post(f"{base}/push")
+    assert pushed.status_code == 200
+    assert (pushed.json()["ahead"], pushed.json()["behind"]) == (0, 0)
+    assert Repo(remote).commit(branch).message.strip() == "local work"
+
+
+def test_pull_refuses_to_merge_diverged_history(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo, remote = _with_remote(tmp_path, git_repo_path)
+    _remote_commit(tmp_path, remote, repo.active_branch.name, "theirs.txt")
+    (git_repo_path / "mine.txt").write_text("mine\n")
+    repo.git.add("mine.txt")
+    repo.git.commit("-m", "local diverges")
+    before = repo.head.commit.hexsha
+    response = api_client.post(f"{base}/pull")
+    assert response.status_code == 409
+    assert "fast-forward" in response.json()["detail"].lower()
+    assert repo.head.commit.hexsha == before  # nothing merged
+
+
+def test_push_publishes_a_new_branch_and_validates_preconditions(api_client: TestClient, git_repo_path: Path, tmp_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    no_remote = api_client.post(f"{base}/push")
+    assert no_remote.status_code == 409 and "Add a remote" in no_remote.json()["detail"]
+    assert "no remote" in api_client.post(f"{base}/fetch").json()["detail"]
+
+    repo, remote = _with_remote(tmp_path, git_repo_path)
+    repo.git.checkout("-b", "topic")
+    unpublished = api_client.post(f"{base}/pull")
+    assert unpublished.status_code == 409 and "no upstream" in unpublished.json()["detail"]
+    published = api_client.post(f"{base}/push")
+    assert published.status_code == 200
+    assert published.json()["upstream"] == "origin/topic"
+    assert "topic" in [head.name for head in Repo(remote).heads]
+
+    repo.git.checkout("--detach")
+    detached = api_client.post(f"{base}/push")
+    assert detached.status_code == 409 and "Check out a branch" in detached.json()["detail"]
+
+
+def test_network_commands_do_not_wait_for_terminal_prompts(api_client: TestClient, git_repo_path: Path) -> None:
+    base = open_project(api_client, git_repo_path)
+    repo = Repo(git_repo_path)
+    repo.create_remote("origin", "https://127.0.0.1:9/nothing-listens-here.git")
+    response = api_client.post(f"{base}/fetch")
+    assert response.status_code == 409  # fails fast with Git's message instead of hanging
+    assert response.json()["detail"]
+
+
+def test_file_history_follows_renames_and_maps_subfolder_paths(api_client: TestClient, git_repo_path: Path) -> None:
+    repo = Repo(git_repo_path)
+    (git_repo_path / "src" / "app.ts").write_text("export const x = 2;\n")
+    _commit_all(repo, "change app")
+    repo.git.mv("src/app.ts", "src/main.ts")
+    _commit_all(repo, "rename app to main")
+    (git_repo_path / "main.py").write_text("print('unrelated')\n")
+    _commit_all(repo, "unrelated change")
+
+    base = open_project(api_client, git_repo_path)
+    history = api_client.get(f"{base}/history", params={"path": "src/main.ts"}).json()
+    assert history["path"] == "src/main.ts"
+    assert [commit["message"] for commit in history["commits"]] == ["rename app to main", "change app", "initial commit"]
+    assert api_client.get(f"{base}/history", params={"path": "src/main.ts", "limit": 1}).json()["commits"][0]["message"] == "rename app to main"
+
+    subfolder = open_project(api_client, git_repo_path / "src")
+    scoped = api_client.get(f"{subfolder}/history", params={"path": "main.ts"}).json()
+    assert scoped["path"] == "src/main.ts"
+    assert len(scoped["commits"]) == 3
+
+    for bad in ["../main.py", "/etc/passwd", ".git/config"]:
+        assert api_client.get(f"{base}/history", params={"path": bad}).status_code == 409, bad
+    assert api_client.get(f"{base}/history", params={"path": "never-existed.txt"}).json()["commits"] == []
+
+
+def test_file_history_of_a_repository_without_commits(tmp_path: Path) -> None:
+    fresh = tmp_path / "fresh"
+    Repo.init(fresh)
+    (fresh / "a.txt").write_text("a\n")
+    history = GitReviewClient().get_file_history(str(fresh), "a.txt", 50)
+    assert history.commits == []
+
+
+def test_is_repository_path_keeps_paths_inside_the_working_tree() -> None:
+    for path in ("src/app.py", "README.md", ".github/workflows/ci.yml", "docs/.gitkeep", "a/b/.gitignore"):
+        assert is_repository_path(path), path
+    for path in ("", "/etc/passwd", "../outside.txt", "src/../../outside", ".git/config", ".GIT/config",
+                 "sub/.Git/hooks/pre-commit", "bad\0name"):
+        assert not is_repository_path(path), path

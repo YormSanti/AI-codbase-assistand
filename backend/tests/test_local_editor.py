@@ -146,3 +146,47 @@ def test_editor_refresh_lists_new_files_and_unknown_project_is_404(api_client, g
     (git_repo_path / '.env').write_text('new')
     assert '.env' in paths(api_client.get(url + '/tree').json())
     assert api_client.get('/api/repositories/999/editor/tree').status_code == 404
+
+
+def test_search_finds_text_across_project_files(api_client, tmp_path):
+    root = tmp_path / "searchable"
+    root.mkdir()
+    (root / "app.py").write_text("def handler():\n    return 'Needle in app'\n")
+    (root / "docs").mkdir()
+    (root / "docs" / "guide.md").write_text("# Guide\nFind the needle here and NEEDLE there.\n")
+    (root / "node_modules").mkdir()
+    (root / "node_modules" / "dep.js").write_text("needle inside a dependency\n")
+    (root / ".git").mkdir()
+    (root / ".git" / "config").write_text("needle in git metadata\n")
+    (root / "image.png").write_bytes(b"needle\x00binary")
+    (root / "blob.txt").write_bytes(b"needle\x00with null byte")
+    (root / "long.txt").write_text("x" * 1000 + "needle" + "y" * 1000 + "\n")
+    base = open_editor(api_client, root)
+
+    response = api_client.get(base + "/search", params={"q": "needle"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["query"] == "needle"
+    assert body["truncated"] is False
+    by_path = {}
+    for match in body["matches"]:
+        by_path.setdefault(match["path"], []).append(match)
+    assert set(by_path) == {"app.py", "docs/guide.md", "long.txt"}
+    assert by_path["app.py"][0]["line"] == 2
+    assert by_path["app.py"][0]["column"] == 13
+    assert by_path["app.py"][0]["text"] == "    return 'Needle in app'"
+    assert by_path["docs/guide.md"][0]["line"] == 2
+    snippet = by_path["long.txt"][0]["text"]
+    assert "needle" in snippet and len(snippet) < 260 and snippet.startswith("…") and snippet.endswith("…")
+
+    sensitive = api_client.get(base + "/search", params={"q": "NEEDLE", "case_sensitive": "true"}).json()
+    assert [match["path"] for match in sensitive["matches"]] == ["docs/guide.md"]
+    assert sensitive["matches"][0]["column"] == 26  # "Find the needle here and NEEDLE there."
+
+    limited = api_client.get(base + "/search", params={"q": "needle", "limit": 1}).json()
+    assert len(limited["matches"]) == 1
+    assert limited["truncated"] is True
+
+    assert api_client.get(base + "/search", params={"q": ""}).status_code == 422
+    assert api_client.get(base + "/search", params={"q": "   "}).json()["matches"] == []
+    assert api_client.get("/api/repositories/999/editor/search", params={"q": "x"}).status_code == 404

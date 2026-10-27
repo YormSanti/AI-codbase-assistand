@@ -103,9 +103,13 @@ frontend/src/
 
 The same React frontend runs either as a web app (`npm run dev`) or in a Tauri
 2 desktop shell (`npm run desktop:dev`). In desktop mode, Rust selects an
-available loopback port, starts a PyInstaller-packaged FastAPI sidecar, exposes
-the backend URL through a Tauri command, and terminates the sidecar with the
-window. The database path is supplied through `DEVPILOT_DATABASE_PATH` so
+available loopback port, starts the PyInstaller-packaged FastAPI backend from
+the app's resource directory (`bundle.resources` maps
+`src-tauri/resources/backend/` to `backend/`; a `--onedir` build, so nothing
+is unpacked at launch), exposes the backend URL through a Tauri command, and
+kills the process when the window is destroyed. The frontend's API client
+polls `/health` once before its first request so a slow cold start never
+surfaces as a failed session restore. The database path is supplied through `DEVPILOT_DATABASE_PATH` so
 desktop data lives in the operating system's application-data directory.
 
 The repository picker uses Tauri's native folder dialog when running on the
@@ -136,12 +140,35 @@ currently changed files. Untracked text is represented as an added-file
 patch; symlinks show their link value rather than reading the target. Git
 commands disable optional index locks, external diff helpers, and textconv.
 Diff output is spooled to a temporary file with a 15-second command timeout
-and a 256,000-byte response limit. No remote fetch or Git mutation occurs.
+and a 256,000-byte response limit. Reads never fetch or mutate.
+
+The only writes are the explicit actions on `GitReviewPort`: `stage`
+(`git add -A -- <paths>`, so deletions and renames are recorded), `unstage`
+(`git reset HEAD -- <paths>`, or `git rm --cached` before the first commit),
+`discard` (`git checkout -- <paths>` for tracked files; untracked files are
+unlinked without following symlinks; conflicts and staged-only paths are
+refused), `switch_branch` (`git checkout <branch> --`, only to an existing
+local branch and only with no tracked changes), `create_branch` (validated by
+a conservative pattern and `git check-ref-format --branch`, from HEAD), and
+`commit` (`git commit -m`). Paths are validated against the current
+status, including rename sources, and `GitCommandError` carries Git's own
+stderr (hook failures, missing identity) to the API as HTTP 409. Hooks run as
+they would from the CLI. `fetch` (`--all --prune`), `pull`
+(`--no-rebase --ff-only`), and `push` (to the tracked upstream, or
+`--set-upstream` to `origin` on first push, never forced) run with
+`GIT_TERMINAL_PROMPT=0`, stdin closed, a new session without a controlling
+terminal, and a 2-minute timeout, so they can fail but never hang on a
+prompt. Nothing rewrites history.
 
 The Git page keeps staged and unstaged selections distinct, ignores late
 responses after selection changes, and is keyed by project id in `App`.
-Selected diffs become AI drafts through the existing `initialPrompt` flow;
-AI previews are limited to 20,000 characters and disclose truncation.
+Selected diffs become AI drafts through the existing `initialPrompt` flow
+(Source Control's **Review with AI**); AI previews are limited to 20,000
+characters and disclose truncation. `src/lib/agent.ts` wraps the desktop
+`run_agent` command and its stream events. The CLIs are stateless, so a
+follow-up replays the newest turns with the same provider that fit a
+60,000-character budget (the Rust command rejects prompts over 64,000), and
+an over-long message is refused before a CLI process starts.
 
 ## Data model (SQLite)
 
@@ -175,6 +202,16 @@ orphaned `symbols` rows behind, and since SQLite can reuse rowids, a new
 unrelated file could inherit a stale file's leftover symbols. Verified with
 a direct cascade test during Milestone 1.2.
 
-Opening an already-known `root_path` re-indexes in place (files and their
-symbols are fully replaced, not appended), so re-opening a repo after a
-`git pull` reflects the new state.
+Opening an already-known `root_path` refreshes the index incrementally.
+`scan_files` receives the previously indexed metadata and skips reading any
+file whose size and `mtime_ns` are unchanged, reusing the stored hash;
+everything else is hashed again. `sync_files` then inserts new rows, updates
+rows whose content hash changed, and deletes rows (with their symbols) for
+files that disappeared; unchanged files keep their ids and stored symbols.
+Only the changed files are parsed again, so re-opening a large repository on
+app start costs roughly one `stat` per file. `POST /api/repositories/{id}/reindex`
+forces a full re-parse, for example after the parser gains a language.
+
+Schema changes after a table first shipped are applied by `migrate_schema`
+in `database.py` (an `ALTER TABLE ... ADD COLUMN` per missing column) before
+`create_all` runs, so existing SQLite files upgrade in place on startup.

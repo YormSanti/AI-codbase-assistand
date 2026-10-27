@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Blocks, Code2, Files, GitBranch, PanelLeft, PanelRight, SaveAll, Search, Settings, Sparkles, SquareTerminal, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, Blocks, Code2, Files, GitBranch, PanelLeft, PanelRight, SaveAll, Search, Settings, Sparkles, SquareTerminal, TextSearch, X } from "lucide-react";
 import { Dialog, Menubar } from "radix-ui";
 import type { RepositoryInfo } from "../types/domain";
-import { AIAgentPage } from "../components/AIAgentPage";
-import { TerminalPage } from "../components/TerminalPage";
+import { PageFallback } from "../components/PageFallback";
 import { ThemeToggle } from "../components/ThemeToggle";
-import type { EditorCommand } from "./editorCommands";
-import { EditorExtensionsPage } from "./EditorExtensionsPage";
-import { EditorGitPage } from "./EditorGitPage";
-import { EditorSettingsPage } from "./EditorSettingsPage";
+import type { EditorCommand, EditorToolView } from "./editorCommands";
 import "./EditorApp.css";
+import { EditorShellContext, type EditorShell } from "./editorShell";
+
+// Tool views load on first use so opening the editor does not fetch the
+// terminal emulator, AI console, marketplace, or settings up front.
+const AIAgentPage = lazy(() => import("../components/AIAgentPage").then(m => ({ default: m.AIAgentPage })));
+const TerminalPage = lazy(() => import("../components/TerminalPage").then(m => ({ default: m.TerminalPage })));
+const EditorExtensionsPage = lazy(() => import("./EditorExtensionsPage").then(m => ({ default: m.EditorExtensionsPage })));
+const EditorGitPage = lazy(() => import("./EditorGitPage").then(m => ({ default: m.EditorGitPage })));
+const EditorSettingsPage = lazy(() => import("./EditorSettingsPage").then(m => ({ default: m.EditorSettingsPage })));
+const EditorSearchPage = lazy(() => import("./EditorSearchPage").then(m => ({ default: m.EditorSearchPage })));
 
 interface Props {
   active: boolean;
@@ -17,6 +23,15 @@ interface Props {
   isLoading: boolean;
   onNavigate: (view: string) => void;
   onCommand?: (command: EditorCommand) => void;
+  /** Open a file at a line, used by project-wide search results. */
+  onRevealLine?: (path: string, line: number) => void;
+  /** Returns a reason to refuse an action that rewrites files (branch switch, pull), such as unsaved drafts. */
+  workingTreeGuard?: (action: string) => string | null;
+  /** Called after Source Control rewrote the working tree (branch switch, pull). */
+  onWorkingTreeChanged?: () => void;
+  /** A tool view to open once the shell is active (command palette, Git page). */
+  requestedView?: EditorToolView | null;
+  onRequestedViewHandled?: () => void;
   hasSelectedFile?: boolean;
   aiPrompt?: string | null;
   onAiPromptConsumed?: () => void;
@@ -25,7 +40,7 @@ interface Props {
 
 // Keep the shared file workspace at the same position in the tree so entering
 // the editor from File Explorer does not remount the current unsaved draft.
-export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
+export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, onRevealLine, requestedView, onRequestedViewHandled, workingTreeGuard, onWorkingTreeChanged, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalRoot, setTerminalRoot] = useState<string | null>(null);
   const [terminalHeight, setTerminalHeight] = useState(260);
@@ -37,13 +52,27 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
   const [showGit, setShowGit] = useState(false);
   const gitVisible = active && showGit && gitRoot === (repository?.root_path ?? "");
   const [aiRoot, setAiRoot] = useState<string | null>(null);
+  const [historyRequest, setHistoryRequest] = useState<{ path: string; id: number } | null>(null);
+  // Prompts drafted inside the editor (for example "Review with AI" on a diff).
+  const [localAiPrompt, setLocalAiPrompt] = useState<string | null>(null);
   const [showAi, setShowAi] = useState(false);
   const aiVisible = active && showAi && aiRoot === (repository?.root_path ?? "");
   const [showExtensions, setShowExtensions] = useState(false);
   const extensionsVisible = active && showExtensions;
   const [showSettings, setShowSettings] = useState(false);
   const settingsVisible = active && showSettings;
+  const [showSearch, setShowSearch] = useState(false);
+  const searchVisible = active && showSearch;
+  const [searchOpened, setSearchOpened] = useState(false);
+  useEffect(() => { if (showSearch) setSearchOpened(true); }, [showSearch]);
+  // Mount these views on first open and keep them mounted afterwards so their
+  // state survives switching back to code.
+  const [extensionsOpened, setExtensionsOpened] = useState(false);
+  const [settingsOpened, setSettingsOpened] = useState(false);
+  useEffect(() => { if (showExtensions) setExtensionsOpened(true); }, [showExtensions]);
+  useEffect(() => { if (showSettings) setSettingsOpened(true); }, [showSettings]);
   const [explorerVisible, setExplorerVisible] = useState(true);
+  const toolVisible = gitVisible || aiVisible || extensionsVisible || settingsVisible || searchVisible;
   const canOpenTerminal = Boolean(repository) && !isLoading;
   const terminalVisible = active && showTerminal && canOpenTerminal;
   const fileActionsDisabled = !hasSelectedFile || isLoading;
@@ -62,6 +91,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
       setShowGit(false);
       setShowExtensions(false);
       setShowSettings(false);
+      setShowSearch(false);
       setAiRoot(repository.root_path);
       setShowAi(true);
     }
@@ -83,6 +113,17 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
           setShowSettings(false);
           setShowExtensions(true);
         }
+      } else if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        if (searchVisible) {
+          setShowSearch(false);
+        } else {
+          setShowGit(false);
+          setShowAi(false);
+          setShowExtensions(false);
+          setShowSettings(false);
+          setShowSearch(true);
+        }
       } else if ((event.ctrlKey || event.metaKey) && event.key === ",") {
         event.preventDefault();
         if (settingsVisible) {
@@ -93,33 +134,47 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
           setShowExtensions(false);
           setShowSettings(true);
         }
-      } else if ((gitVisible || aiVisible || extensionsVisible || settingsVisible) && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
+      } else if ((toolVisible) && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
         event.preventDefault();
         setShowGit(false);
         setShowAi(false);
         setShowExtensions(false);
         setShowSettings(false);
         requestAnimationFrame(() => onCommand?.("openFile"));
-      } else if ((gitVisible || aiVisible || extensionsVisible || settingsVisible) && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      } else if ((toolVisible) && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         onCommand?.(event.shiftKey ? "saveAll" : "save");
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, toggleTerminal, gitVisible, aiVisible, extensionsVisible, settingsVisible, onCommand]);
+  }, [active, toggleTerminal, toolVisible, extensionsVisible, settingsVisible, searchVisible, onCommand]);
 
   const resizeTerminal = (height: number) => {
     const available = contentRef.current?.clientHeight || 600;
     setTerminalHeight(Math.max(160, Math.min(Math.max(160, available - 180), height)));
   };
-  const openGit = () => { setShowAi(false); setShowExtensions(false); setShowSettings(false); setGitRoot(repository?.root_path ?? ""); setShowGit(true); };
-  const openAi = () => { setShowGit(false); setShowExtensions(false); setShowSettings(false); setAiRoot(repository?.root_path ?? ""); setShowAi(true); };
-  const openExtensions = () => { setShowGit(false); setShowAi(false); setShowSettings(false); setShowExtensions(true); };
-  const openSettings = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(true); };
-  const returnToCode = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(false); };
+  const openGit = () => { setShowAi(false); setShowExtensions(false); setShowSettings(false); setShowSearch(false); setGitRoot(repository?.root_path ?? ""); setShowGit(true); };
+  const openAi = () => { setShowGit(false); setShowExtensions(false); setShowSettings(false); setShowSearch(false); setAiRoot(repository?.root_path ?? ""); setShowAi(true); };
+  const openExtensions = () => { setShowGit(false); setShowAi(false); setShowSettings(false); setShowSearch(false); setShowExtensions(true); };
+  const openSettings = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSearch(false); setShowSettings(true); };
+  const openSearch = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(false); setShowSearch(true); };
+  useEffect(() => {
+    if (!active || !requestedView) return;
+    if (requestedView === "search" && repository) openSearch();
+    else if (requestedView === "git") openGit();
+    else if (requestedView === "ai") openAi();
+    else if (requestedView === "symbols" && repository) onCommand?.("openSymbol");
+    onRequestedViewHandled?.();
+    // openX are stable closures over state setters; re-running on their identity would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, requestedView, repository?.root_path]);
+  const shell: EditorShell | null = active && repository ? {
+    showFileHistory: path => { setHistoryRequest({ path, id: Date.now() }); openGit(); },
+  } : null;
+  const returnToCode = () => { setShowGit(false); setShowAi(false); setShowExtensions(false); setShowSettings(false); setShowSearch(false); };
   const toggleExplorerPanel = () => {
-    if (gitVisible || aiVisible || extensionsVisible || settingsVisible) {
+    if (toolVisible) {
       returnToCode();
       if (!explorerVisible) {
         setExplorerVisible(true);
@@ -138,7 +193,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
     } else if (command === "hideExplorer") {
       setExplorerVisible(false);
     }
-    if ((gitVisible || aiVisible || extensionsVisible || settingsVisible) && command !== "save" && command !== "saveAll") {
+    if ((toolVisible) && command !== "save" && command !== "saveAll") {
       returnToCode();
       requestAnimationFrame(() => onCommand?.(command));
     } else onCommand?.(command);
@@ -162,6 +217,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
       {commandItem("Undo", "undo", "Ctrl/Cmd Z", true)}{commandItem("Redo", "redo", "Ctrl/Cmd Shift Z", true)}
       <Menubar.Separator className="ifrog-editor-menu-separator" />
       {commandItem("Find / Replace…", "find", "Ctrl/Cmd F", true)}
+      <Menubar.Item className="ifrog-editor-menu-item" disabled={!repository} onSelect={openSearch}>Search in Files…<kbd>Ctrl/Cmd Shift F</kbd></Menubar.Item>
     </> },
     { label: "Selection", items: commandItem("Select All", "selectAll", "Ctrl/Cmd A", true) },
     { label: "View", items: <>
@@ -173,7 +229,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
       <Menubar.Item className="ifrog-editor-menu-item" onSelect={openSettings}>Editor Settings<kbd>Ctrl/Cmd ,</kbd></Menubar.Item>
     </> },
     { label: "Go", items: <>
-      {commandItem("Go to File…", "openFile", "Ctrl/Cmd P")}{commandItem("Go to Line…", "goToLine", "Ctrl/Cmd G", true)}
+      {commandItem("Go to File…", "openFile", "Ctrl/Cmd P")}{commandItem("Go to Symbol in Workspace…", "openSymbol", "Ctrl/Cmd T")}{commandItem("Go to Line…", "goToLine", "Ctrl/Cmd G", true)}
       <Menubar.Separator className="ifrog-editor-menu-separator" />
       {commandItem("Previous Editor", "previousFile", "Ctrl/Cmd Alt ←", true)}{commandItem("Next Editor", "nextFile", "Ctrl/Cmd Alt →", true)}
     </> },
@@ -207,8 +263,9 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
       <div className={active ? "ifrog-editor-body" : "ifrog-file-workspace-body"}>
         {active && <nav className="ifrog-editor-rail" aria-label="Editor tools">
           <div className="ifrog-editor-rail-top">
-            <button type="button" className={explorerVisible && !gitVisible && !aiVisible && !extensionsVisible && !settingsVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Explorer" aria-pressed={explorerVisible} title="Toggle Explorer" onClick={toggleExplorerPanel}><Files size={23} /></button>
-            <button type="button" aria-label="Search files" title="Go to file (Ctrl/Cmd+P)" onClick={() => runCommand("openFile")}><Search size={23} /></button>
+            <button type="button" className={explorerVisible && !toolVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Explorer" aria-pressed={explorerVisible} title="Toggle Explorer" onClick={toggleExplorerPanel}><Files size={23} /></button>
+            <button type="button" aria-label="Go to file" title="Go to file (Ctrl/Cmd+P)" onClick={() => runCommand("openFile")}><Search size={23} /></button>
+            <button type="button" className={searchVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Search in files" aria-pressed={searchVisible} title="Search in files (Ctrl/Cmd+Shift+F)" disabled={!repository} onClick={searchVisible ? returnToCode : openSearch}><TextSearch size={21} /></button>
             <button type="button" className={gitVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Git Repository" aria-pressed={gitVisible} title="Git Repository" onClick={openGit}><GitBranch size={20} /></button>
             <button type="button" className={aiVisible ? "ifrog-editor-rail-active" : undefined} aria-label="AI Assistant" aria-pressed={aiVisible} title="AI Assistant" onClick={aiVisible ? returnToCode : openAi}><Sparkles size={20} /></button>
             <button type="button" className={extensionsVisible ? "ifrog-editor-rail-active" : undefined} aria-label="Extensions" aria-pressed={extensionsVisible} title="Extensions (Ctrl/Cmd+Shift+X)" onClick={extensionsVisible ? returnToCode : openExtensions}><Blocks size={20} /></button>
@@ -218,11 +275,13 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
         </nav>}
 
         <div ref={contentRef} className={active ? "ifrog-editor-content" : "ifrog-file-workspace-content"}>
-          <div className={active ? "ifrog-editor-workspace" : "ifrog-file-workspace-page"} hidden={gitVisible || aiVisible || extensionsVisible || settingsVisible}>
-            {typeof children === "function" ? children(!gitVisible && !aiVisible && !extensionsVisible && !settingsVisible) : children}
+          <div className={active ? "ifrog-editor-workspace" : "ifrog-file-workspace-page"} hidden={toolVisible}>
+            <EditorShellContext.Provider value={shell}>
+              {typeof children === "function" ? children(!toolVisible) : children}
+            </EditorShellContext.Provider>
           </div>
 
-          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} /></div>}
+          {gitRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-git-view" hidden={!gitVisible}><Suspense fallback={<PageFallback />}><EditorGitPage key={repository?.id ?? "none"} repository={repository} active={gitVisible} onReturn={returnToCode} onOpenFolder={() => runCommand("openFolder")} onAskAI={prompt => { setLocalAiPrompt(prompt); openAi(); }} workingTreeGuard={workingTreeGuard} onWorkingTreeChanged={() => { onCommand?.("refreshFiles"); onWorkingTreeChanged?.(); }} historyRequest={historyRequest} onHistoryHandled={() => setHistoryRequest(null)} /></Suspense></div>}
 
           {aiRoot === (repository?.root_path ?? "") && <div className="ifrog-editor-ai-view" hidden={!aiVisible}>
             <header className="editor-git-header">
@@ -232,25 +291,39 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
               </div>
             </header>
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-              <AIAgentPage
-                repository={repository}
-                initialPrompt={aiPrompt}
-                onInitialPromptConsumed={onAiPromptConsumed}
-              />
+              <Suspense fallback={<PageFallback />}>
+                <AIAgentPage
+                  key={repository?.id ?? "none"}
+                  repository={repository}
+                  threadId="editor"
+                  initialPrompt={aiPrompt ?? localAiPrompt}
+                  onInitialPromptConsumed={() => { setLocalAiPrompt(null); onAiPromptConsumed?.(); }}
+                />
+              </Suspense>
             </div>
           </div>}
 
-          <div className="ifrog-editor-extensions-view" hidden={!extensionsVisible}>
-            <EditorExtensionsPage active={extensionsVisible} onReturn={returnToCode} />
-          </div>
+          {extensionsOpened && <div className="ifrog-editor-extensions-view" hidden={!extensionsVisible}>
+            <Suspense fallback={<PageFallback />}>
+              <EditorExtensionsPage active={extensionsVisible} onReturn={returnToCode} />
+            </Suspense>
+          </div>}
 
-          <div className="ifrog-editor-settings-view" hidden={!settingsVisible}>
-            <EditorSettingsPage
-              active={settingsVisible}
-              onReturn={returnToCode}
-              onNavigateToGlobalSettings={() => onNavigate("settings")}
-            />
-          </div>
+          {searchOpened && <div className="ifrog-editor-search-view" hidden={!searchVisible}>
+            <Suspense fallback={<PageFallback />}>
+              <EditorSearchPage active={searchVisible} repository={repository} onReturn={returnToCode} onOpenMatch={(path, line) => { returnToCode(); requestAnimationFrame(() => onRevealLine?.(path, line)); }} />
+            </Suspense>
+          </div>}
+
+          {settingsOpened && <div className="ifrog-editor-settings-view" hidden={!settingsVisible}>
+            <Suspense fallback={<PageFallback />}>
+              <EditorSettingsPage
+                active={settingsVisible}
+                onReturn={returnToCode}
+                onNavigateToGlobalSettings={() => onNavigate("settings")}
+              />
+            </Suspense>
+          </div>}
 
           {repository && terminalRoot === repository.root_path && <section id="ifrog-editor-terminal" className="ifrog-editor-terminal" aria-label="Integrated terminal" hidden={!terminalVisible} style={{ height: terminalHeight }}>
             <div className="ifrog-editor-terminal-resizer" role="separator" aria-label="Resize integrated terminal" aria-orientation="horizontal" aria-valuenow={terminalHeight} aria-valuemin={160} tabIndex={0}
@@ -261,7 +334,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
               onKeyDown={event => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); resizeTerminal(terminalHeight + (event.key === "ArrowUp" ? 20 : -20)); } }}
             />
             <header className="ifrog-editor-panel-header"><span>TERMINAL</span><span title={repository.root_path}>{repository.root_path}</span><button type="button" aria-label="Hide integrated terminal" title="Hide terminal" onClick={() => setShowTerminal(false)}><X size={15} /></button></header>
-            <div className="ifrog-editor-terminal-session"><TerminalPage key={repository.root_path} repository={repository} isActive={terminalVisible} /></div>
+            <div className="ifrog-editor-terminal-session"><Suspense fallback={<PageFallback />}><TerminalPage key={repository.root_path} repository={repository} isActive={terminalVisible} /></Suspense></div>
           </section>}
         </div>
       </div>
@@ -271,7 +344,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
           <Dialog.Content className="ifrog-editor-help">
             <Dialog.Title>Keyboard Shortcuts</Dialog.Title>
             <Dialog.Description>Use Ctrl on Linux and Windows, or Cmd on macOS.</Dialog.Description>
-            <dl>{[["Go to File", "Ctrl/Cmd P"], ["Save", "Ctrl/Cmd S"], ["Save All", "Ctrl/Cmd Shift S"], ["Close Editor", "Ctrl/Cmd W"], ["Find / Replace", "Ctrl/Cmd F"], ["Go to Line", "Ctrl/Cmd G"], ["Undo", "Ctrl/Cmd Z"], ["Redo", "Ctrl/Cmd Shift Z"], ["Extensions", "Ctrl/Cmd Shift X"], ["Editor Settings", "Ctrl/Cmd ,"], ["Toggle Terminal", "Ctrl/Cmd `"]].map(([label, shortcut]) => <div key={label}><dt>{label}</dt><dd><kbd>{shortcut}</kbd></dd></div>)}</dl>
+            <dl>{[["Go to File", "Ctrl/Cmd P"], ["Go to Symbol", "Ctrl/Cmd T"], ["Save", "Ctrl/Cmd S"], ["Save All", "Ctrl/Cmd Shift S"], ["Close Editor", "Ctrl/Cmd W"], ["Find / Replace", "Ctrl/Cmd F"], ["Search in Files", "Ctrl/Cmd Shift F"], ["Go to Line", "Ctrl/Cmd G"], ["Undo", "Ctrl/Cmd Z"], ["Redo", "Ctrl/Cmd Shift Z"], ["Extensions", "Ctrl/Cmd Shift X"], ["Editor Settings", "Ctrl/Cmd ,"], ["Toggle Terminal", "Ctrl/Cmd `"]].map(([label, shortcut]) => <div key={label}><dt>{label}</dt><dd><kbd>{shortcut}</kbd></dd></div>)}</dl>
             <Dialog.Close className="ifrog-editor-help-close" aria-label="Close keyboard shortcuts"><X size={17} /></Dialog.Close>
           </Dialog.Content>
         </Dialog.Portal>

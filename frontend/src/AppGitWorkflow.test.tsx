@@ -9,6 +9,10 @@ vi.mock("./api/repositoryApi", () => ({ repositoryApi: {
   open: vi.fn().mockResolvedValue({ id: 7, name: "project", root_path: "/project", current_branch: "feature/original", head_commit: "abcdef1234", opened_at: null, file_count: 3 }),
   getTree: vi.fn().mockResolvedValue({ name: "project", path: "", children: [] }),
 } }));
+vi.mock("./api/gitApi", () => ({ gitApi: {
+  getStatus: vi.fn().mockResolvedValue({ branch: "feature/original", head_commit: "abcdef1234", upstream: null, ahead: null, behind: null, remote_url: null, changes: [], commits: [] }),
+  getDiff: vi.fn(),
+} }));
 vi.mock("@/components/ui/sidebar", () => ({ SidebarProvider: ({ children }: { children: ReactNode }) => children, SidebarInset: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@/components/app-sidebar", () => ({ AppSidebar: () => null }));
 vi.mock("@/components/site-header", () => ({ SiteHeader: () => null }));
@@ -24,5 +28,6 @@ it("restores the selected project into the original Git Repository dashboard", a
   expect(screen.getByText("feature/original")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Repository Details" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Git Activity" })).toBeInTheDocument();
+  expect(await screen.findByText("No commits in this repository yet.")).toBeInTheDocument();
   expect(screen.queryByRole("log")).not.toBeInTheDocument();
 });

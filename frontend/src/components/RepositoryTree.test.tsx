@@ -27,6 +27,7 @@ const sampleTree: TreeNode = {
           language: "python",
           size_bytes: 120,
           file_id: 1,
+          symbol_count: 3,
           children: [],
         },
       ],
@@ -61,6 +62,15 @@ describe("RepositoryTree", () => {
     await user.click(screen.getByText("src"));
 
     expect(screen.getByText("main.py")).toBeInTheDocument();
+  });
+
+  it("shows how many symbols a file has, and nothing for files without any", async () => {
+    const user = userEvent.setup();
+    render(<RepositoryTree root={sampleTree} />);
+    await user.click(screen.getByText("src"));
+
+    expect(screen.getByLabelText("3 classes, functions, and methods")).toHaveTextContent("3");
+    expect(screen.getByRole("treeitem", { name: "README.md" }).querySelector(".tree-symbols")).toBeNull();
   });
 
   it("shows the language tag for files", () => {

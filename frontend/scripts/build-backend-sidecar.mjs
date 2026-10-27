@@ -1,8 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Builds the FastAPI backend with PyInstaller in --onedir mode and places the
+// resulting folder under src-tauri/resources/backend, which tauri.conf.json
+// ships as a bundle resource. A directory bundle starts immediately; the
+// previous single-file build unpacked ~30 MB to a temp directory on every
+// launch before the server could bind its port.
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const backendDir = resolve(frontendDir, "../backend");
 const venvPython = join(backendDir, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
@@ -16,16 +21,6 @@ function run(command, args, cwd) {
   }
   return result.stdout.trim();
 }
-
-let targetTriple;
-try {
-  const rustVersion = run("rustc", ["-vV"], frontendDir);
-  targetTriple = rustVersion.match(/^host: (.+)$/m)?.[1];
-} catch (error) {
-  throw new Error("Rust is required to prepare the Tauri sidecar. Install it from https://rustup.rs/", { cause: error });
-}
-
-if (!targetTriple) throw new Error("Could not determine the Rust host target triple.");
 
 try {
   run(python, ["-m", "PyInstaller", "--version"], backendDir);
@@ -42,17 +37,19 @@ run(
     "-m", "PyInstaller",
     "--noconfirm",
     "--clean",
-    "--onefile",
+    "--onedir",
     "--name", "devpilot-backend",
     "desktop_entry.py",
   ],
   backendDir,
 );
 
-const executableSuffix = process.platform === "win32" ? ".exe" : "";
-const source = join(backendDir, "dist", `devpilot-backend${executableSuffix}`);
-const destinationDir = join(frontendDir, "src-tauri", "binaries");
-const destination = join(destinationDir, `devpilot-backend-${targetTriple}${executableSuffix}`);
-mkdirSync(destinationDir, { recursive: true });
-copyFileSync(source, destination);
-console.log(`Prepared backend sidecar: ${destination}`);
+const source = join(backendDir, "dist", "devpilot-backend");
+const executable = join(source, `devpilot-backend${process.platform === "win32" ? ".exe" : ""}`);
+if (!existsSync(executable)) throw new Error(`PyInstaller did not produce ${executable}`);
+
+const destination = join(frontendDir, "src-tauri", "resources", "backend");
+rmSync(destination, { recursive: true, force: true });
+mkdirSync(dirname(destination), { recursive: true });
+cpSync(source, destination, { recursive: true });
+console.log(`Prepared backend bundle: ${destination}`);

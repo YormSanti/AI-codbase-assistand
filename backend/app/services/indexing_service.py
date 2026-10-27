@@ -7,14 +7,14 @@ swapped onto different infrastructure later without changes here.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
 from app.domain.exceptions import (
     IndexedFileNotFoundError, RepositoryNotFoundError,
 )
-from app.domain.models import CodeSymbol, FileMetadata, FilePreview, RepositoryInfo, TreeNode
+from app.domain.models import CodeSymbol, FileMetadata, FilePreview, RepositoryInfo, SymbolMatch, TreeNode
 from app.domain.ports import FileMetadataRepositoryPort, GitClientPort
 from app.domain.tree_builder import build_tree
 from app.services.parsing_service import SymbolExtractionService
@@ -22,7 +22,7 @@ from app.services.file_content_service import (
     FILE_EDIT_LOCK as _file_edit_lock, MAX_EDIT_BYTES, preview_file, save_file,
 )
 
-FileScanner = Callable[[str, list[str]], list[FileMetadata]]
+FileScanner = Callable[[str, list[str], Mapping[str, FileMetadata] | None], list[FileMetadata]]
 
 
 class IndexingService:
@@ -38,16 +38,23 @@ class IndexingService:
         self._scan_files = scan_files
         self._symbol_extraction_service = symbol_extraction_service
 
-    def open_repository(self, path: str) -> RepositoryInfo:
-        """Open (or re-index, if already known) a Git repository at `path`."""
+    def open_repository(self, path: str, *, reparse_all: bool = False) -> RepositoryInfo:
+        """Open (or refresh, if already known) a repository at `path`.
+
+        Files are hashed on every open, but only files that are new or whose
+        content changed are parsed again; unchanged files keep their ids and
+        stored symbols. Pass `reparse_all=True` to rebuild every symbol, for
+        example after the parser gained support for a language.
+        """
         info = self._git_client.open(path)
         saved = self._file_repository.save_repository(info)
 
         relative_paths = self._git_client.list_tracked_files(saved.root_path)
-        files = self._scan_files(saved.root_path, relative_paths)
-        indexed = self._file_repository.replace_files(saved.id, files)
+        known = {file.relative_path: file for file in self._file_repository.list_files(saved.id)}
+        files = self._scan_files(saved.root_path, relative_paths, known)
+        synced = self._file_repository.sync_files(saved.id, files)
 
-        for file in indexed:
+        for file in synced.files if reparse_all else synced.changed:
             self._symbol_extraction_service.extract_and_store(file, saved.root_path)
 
         return RepositoryInfo(
@@ -57,8 +64,13 @@ class IndexingService:
             current_branch=saved.current_branch,
             head_commit=saved.head_commit,
             opened_at=saved.opened_at,
-            file_count=len(indexed),
+            file_count=len(synced.files),
         )
+
+    def reindex_repository(self, repository_id: int) -> RepositoryInfo:
+        """Rescan a known repository and re-parse every file."""
+        info = self.get_repository(repository_id)
+        return self.open_repository(info.root_path, reparse_all=True)
 
     def list_repositories(self) -> list[RepositoryInfo]:
         return self._file_repository.list_repositories()
@@ -77,7 +89,12 @@ class IndexingService:
     def get_tree(self, repository_id: int) -> TreeNode:
         info = self.get_repository(repository_id)
         files = self._file_repository.list_files(repository_id)
-        return build_tree(info.name, files)
+        return build_tree(info.name, files, self._symbol_extraction_service.count_by_file(repository_id))
+
+    def search_symbols(self, repository_id: int, query: str, limit: int = 50) -> list[SymbolMatch]:
+        """Workspace symbol search over the indexed classes, functions, and methods."""
+        self.get_repository(repository_id)
+        return self._symbol_extraction_service.search(repository_id, query, limit)
 
     def get_symbols(self, file_id: int) -> list[CodeSymbol]:
         if self._file_repository.get_file(file_id) is None:
@@ -110,9 +127,13 @@ class IndexingService:
         with _file_edit_lock:
             file, root, absolute_path = self._get_file_path(file_id)
             saved = save_file(file, root, absolute_path, content, expected_hash)
+            try:
+                mtime_ns: int | None = absolute_path.stat().st_mtime_ns
+            except OSError:
+                mtime_ns = None
             updated = self._file_repository.update_file(replace(
                 file, size_bytes=saved.size_bytes, content_hash=saved.content_hash,
-                is_binary=False,
+                is_binary=False, mtime_ns=mtime_ns,
             ))
             self._symbol_extraction_service.extract_and_store(updated, str(root))
             return self._get_file_preview(file_id, MAX_EDIT_BYTES)

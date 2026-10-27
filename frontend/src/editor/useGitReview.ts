@@ -18,6 +18,8 @@ export function useGitReview(repositoryId: number | null, active: boolean) {
   const [selected, setSelected] = useState<(GitSelection & { repositoryId: number }) | null>(null);
   const [snapshot, setSnapshot] = useState<{ repositoryId: number; data: GitStatus | null; loading: boolean; error: string | null } | null>(null);
   const [diff, setDiff] = useState<{ key: string; data: GitDiff | null; loading: boolean; error: string | null } | null>(null);
+  const [action, setAction] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const [diffVersion, setDiffVersion] = useState(0);
   const selection = selected?.repositoryId === repositoryId ? selected : null;
   const status = snapshot?.repositoryId === repositoryId ? snapshot.data : null;
   const loading = repositoryId !== null && (snapshot?.repositoryId !== repositoryId || snapshot.loading);
@@ -55,10 +57,40 @@ export function useGitReview(repositoryId: number | null, active: boolean) {
       if (current) setDiff({ key: diffKey, data: null, loading: false, error: reason instanceof Error ? reason.message : "Could not load this diff." });
     });
     return () => { current = false; };
-  }, [active, repositoryId, selection, diffKey, version]);
+  }, [active, repositoryId, selection, diffKey, version, diffVersion]);
+
+  // Stage, unstage, and commit resolve with a fresh status, which replaces the
+  // snapshot directly so the sidebar updates without a second round trip.
+  const runAction = async (perform: (id: number) => Promise<GitStatus>): Promise<GitStatus | null> => {
+    if (repositoryId === null || action.busy) return null;
+    setAction({ busy: true, error: null });
+    try {
+      const data = await perform(repositoryId);
+      setSnapshot({ repositoryId, data, loading: false, error: null });
+      setSelected(previous => previous?.repositoryId === repositoryId && groupChanges(data.changes, previous.group).some(change => change.path === previous.path) ? previous : null);
+      setDiffVersion(value => value + 1); // reload the open diff against the new index without refetching status
+      setAction({ busy: false, error: null });
+      return data;
+    } catch (reason) {
+      setAction({ busy: false, error: reason instanceof Error ? reason.message : "Git could not apply that change." });
+      return null;
+    }
+  };
 
   return {
     status, loading, error, selection,
+    busy: action.busy,
+    actionError: action.error,
+    clearActionError: () => setAction(previous => ({ ...previous, error: null })),
+    stage: (paths: string[]) => runAction(id => gitApi.stage(id, paths)),
+    unstage: (paths: string[]) => runAction(id => gitApi.unstage(id, paths)),
+    discard: (paths: string[]) => runAction(id => gitApi.discard(id, paths)),
+    switchBranch: (name: string) => runAction(id => gitApi.switchBranch(id, name)),
+    fetch: () => runAction(id => gitApi.fetch(id)),
+    pull: () => runAction(id => gitApi.pull(id)),
+    push: () => runAction(id => gitApi.push(id)),
+    createBranch: (name: string) => runAction(id => gitApi.createBranch(id, name)),
+    commit: (message: string) => runAction(id => gitApi.commit(id, message)),
     patch: diff?.key === diffKey ? diff.data : null,
     diffLoading: Boolean(selection) && (diff?.key !== diffKey || diff.loading),
     diffError: diff?.key === diffKey ? diff.error : null,

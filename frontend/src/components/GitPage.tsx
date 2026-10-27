@@ -1,289 +1,210 @@
-import { IconBrandGithub } from '@tabler/icons-react';
-import React from 'react';
-import { GitBranch, FolderGit2, Calendar, FileBox, CheckCircle2, GitCommit, GitPullRequest, ArrowUpCircle, ArrowDownCircle, ExternalLink } from 'lucide-react';
-import type { RepositoryInfo } from '../types/domain';
+import { useState, type ComponentType, type ReactNode } from "react";
+import {
+  ArrowDown, ArrowUp, Calendar, Check, Code2, Copy, ExternalLink, FileBox, Files, FolderGit2,
+  GitBranch, GitCommitHorizontal, History, LoaderCircle, RefreshCw, TriangleAlert,
+} from "lucide-react";
+import type { RepositoryInfo } from "../types/domain";
+import { useGitStatus } from "../hooks/useGitStatus";
+import { groupChanges } from "../editor/useGitReview";
+import { copyText } from "../lib/clipboard";
+import { openExternal } from "../lib/openExternal";
+import { formatRelativeTime } from "../lib/time";
 
 interface Props {
   repository: RepositoryInfo | null;
   onNavigate: (tab: string) => void;
+  /** Opens the editor directly on Source Control; falls back to the plain editor. */
+  onReviewChanges?: () => void;
 }
 
-export const GitPage: React.FC<Props> = ({
-  repository,
-  onNavigate,
-}) => {
-  const cardStyle = {
-    borderRadius: '20px',
-    backgroundColor: 'rgba(18, 18, 24, 0.9)',
-    border: '1.5px solid rgba(255, 255, 255, 0.08)',
-    padding: '28px',
-    boxShadow: '0 8px 32px -8px rgba(0, 0, 0, 0.4)',
-  };
+type IconType = ComponentType<{ size?: number; className?: string }>;
 
-  const rowStyle = {
-    padding: '14px 18px',
-    borderRadius: '12px',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    border: '1px solid rgba(255, 255, 255, 0.07)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-  };
+const buttonClass = "inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50";
+const primaryButtonClass = "inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 
-  const simulatedActivities = [
-    { id: 1, type: 'commit', message: 'feat: add premium git dashboard', time: '10 mins ago', icon: GitCommit, color: '#34d399' },
-    { id: 2, type: 'push', message: 'Pushed 1 commit to origin/main', time: '15 mins ago', icon: ArrowUpCircle, color: '#60a5fa' },
-    { id: 3, type: 'merge', message: 'Merge pull request #42 from santi/feature-ui', time: '2 hours ago', icon: GitPullRequest, color: '#a78bfa' },
-    { id: 4, type: 'commit', message: 'fix: padding issues in explorer', time: '3 hours ago', icon: GitCommit, color: '#34d399' },
-    { id: 5, type: 'fetch', message: 'Fetched origin', time: '1 day ago', icon: ArrowDownCircle, color: '#fbbf24' },
-    { id: 6, type: 'commit', message: 'Initial commit', time: '2 days ago', icon: GitCommit, color: '#34d399' },
-  ];
-
+function Card({ title, icon: Icon, aside, children }: { title: string; icon: IconType; aside?: ReactNode; children: ReactNode }) {
   return (
-    <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '32px', width: '100%', boxSizing: 'border-box' }}>
-      {/* Header */}
-      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: '20px', padding: '24px 28px' }}>
-        <div style={{ 
-          backgroundColor: 'rgba(52, 211, 153, 0.1)', 
-          padding: '14px', 
-          borderRadius: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <GitBranch size={32} color="#34d399" style={{ filter: 'drop-shadow(0 0 12px rgba(52, 211, 153, 0.5))' }} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h1 style={{ margin: '0 0 6px 0', fontSize: '28px', fontWeight: 700, color: 'white', letterSpacing: '-0.5px' }}>Git Repository</h1>
-          <p style={{ margin: 0, fontSize: '15px', color: 'rgba(255, 255, 255, 0.6)' }}>Manage branches, commits, and repository history</p>
-        </div>
-        
-        {repository && (
-          <button 
-            className="hover:bg-white/10 transition-colors cursor-pointer"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 20px',
-              backgroundColor: 'rgba(255,255,255,0.05)',
-              color: 'white',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '12px',
-              fontWeight: 600,
-              fontSize: '14px',
-            }}
-            onClick={async () => {
-              try {
-                if ("__TAURI_INTERNALS__" in window) {
-                  const { openUrl } = await import("@tauri-apps/plugin-opener");
-                  await openUrl('https://github.com/YormSanti/AI-codbase-assistand');
-                } else {
-                  window.open('https://github.com/YormSanti/AI-codbase-assistand', '_blank');
-                }
-              } catch (e) {
-                console.error(e);
-              }
-            }}
-          >
-            <IconBrandGithub size={18} />
-            Open on GitHub
-            <ExternalLink size={14} style={{ opacity: 0.5, marginLeft: '4px' }} />
-          </button>
-        )}
-      </div>
+    <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 text-card-foreground">
+      <header className="flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-base font-semibold"><Icon size={16} className="text-muted-foreground" />{title}</h3>
+        {aside && <span className="text-xs text-muted-foreground">{aside}</span>}
+      </header>
+      {children}
+    </section>
+  );
+}
 
-      {!repository ? (
-        <div style={{ 
-          ...cardStyle, 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          padding: '80px 40px',
-          textAlign: 'center',
-          gap: '24px'
-        }}>
-          <FolderGit2 size={64} color="#34d399" style={{ filter: 'drop-shadow(0 0 16px rgba(52, 211, 153, 0.5))' }} />
-          <div>
-            <h2 style={{ margin: '0 0 12px 0', color: 'white', fontSize: '24px' }}>No Repository Connected</h2>
-            <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', maxWidth: '400px' }}>Connect a local git repository to view branches and commit history.</p>
-          </div>
-          <button 
-            className="hover:bg-emerald-500 transition-colors cursor-pointer"
-            style={{
-              padding: '12px 28px',
-              backgroundColor: '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              fontWeight: 600,
-              fontSize: '15px',
-              marginTop: '16px'
-            }}
-            onClick={() => onNavigate("explorer")}
-          >
-            Connect Repository
-          </button>
-        </div>
-      ) : (
-        <>
-          {/* Top 2 Columns */}
-          <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
-            {/* Repository Details Card */}
-            <div style={{ ...cardStyle, flex: '1 1 400px', display: 'flex', flexDirection: 'column' }}>
-              <h3 style={{ margin: '0 0 24px 0', color: 'white', fontSize: '18px', fontWeight: 600 }}>Repository Details</h3>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={rowStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.5)' }}>
-                    <FolderGit2 size={16} />
-                    <span style={{ fontSize: '14px', fontWeight: 500 }}>Name</span>
-                  </div>
-                  <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '14px' }}>{repository.name || 'AI-Git-assistand'}</span>
-                </div>
-                <div style={rowStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.5)' }}>
-                    <FileBox size={16} />
-                    <span style={{ fontSize: '14px', fontWeight: 500 }}>Root Path</span>
-                  </div>
-                  <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '13px', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>{repository.root_path || '/home/ksk/AI-Git-assistand'}</span>
-                </div>
-                <div style={rowStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.5)' }}>
-                    <Calendar size={16} />
-                    <span style={{ fontSize: '14px', fontWeight: 500 }}>Opened At</span>
-                  </div>
-                  <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '14px' }}>{repository.opened_at ? new Date(repository.opened_at).toLocaleDateString() : 'Today'}</span>
-                </div>
-                <div style={{ ...rowStyle, marginBottom: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.5)' }}>
-                    <CheckCircle2 size={16} />
-                    <span style={{ fontSize: '14px', fontWeight: 500 }}>File Count</span>
-                  </div>
-                  <span style={{ color: '#34d399', fontFamily: 'monospace', fontSize: '15px', fontWeight: 600 }}>{repository.file_count || 0}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Branch & Commit Card */}
-            <div style={{ ...cardStyle, flex: '1 1 400px', display: 'flex', flexDirection: 'column' }}>
-               <h3 style={{ margin: '0 0 24px 0', color: 'white', fontSize: '18px', fontWeight: 600 }}>Branch & Commit</h3>
-               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px' }}>Current Branch</span>
-                    <div style={{ 
-                      display: 'inline-flex', 
-                      alignItems: 'center', 
-                      gap: '8px', 
-                      padding: '8px 16px', 
-                      backgroundColor: 'rgba(52, 211, 153, 0.15)', 
-                      border: '1px solid rgba(52, 211, 153, 0.3)',
-                      borderRadius: '24px',
-                      color: '#34d399',
-                      fontWeight: 600,
-                      boxShadow: '0 0 16px rgba(52, 211, 153, 0.2)'
-                    }}>
-                      <GitBranch size={16} />
-                      {repository.current_branch || 'main'}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
-                     <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px' }}>HEAD Commit</span>
-                     <div 
-                      className="hover:bg-gray-800 transition-colors cursor-pointer"
-                      style={{ 
-                        padding: '8px 12px', 
-                        backgroundColor: 'rgba(255,255,255,0.05)', 
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: '#e5e7eb',
-                        fontFamily: 'monospace',
-                        fontSize: '14px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                     }}>
-                        {repository.head_commit || 'a1b2c3d4e5f6'}
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', padding: '2px 6px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px' }}>COPY</span>
-                     </div>
-                  </div>
-               </div>
-
-               {/* Branch Visualization */}
-               <div style={{ 
-                  marginTop: 'auto', 
-                  padding: '24px', 
-                  backgroundColor: 'rgba(0,0,0,0.3)', 
-                  borderRadius: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  position: 'relative'
-               }}>
-                  {/* Simple branch visualization with inline styles */}
-                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', maxWidth: '280px', position: 'relative' }}>
-                     <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#60a5fa', zIndex: 2 }} />
-                     <div style={{ flex: 1, height: '2px', backgroundColor: 'rgba(255,255,255,0.2)', position: 'relative' }}>
-                        <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '50%', backgroundColor: '#60a5fa' }} />
-                     </div>
-                     <div style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: '#34d399', zIndex: 2, boxShadow: '0 0 10px #34d399' }} />
-                     <div style={{ position: 'absolute', top: '24px', left: '-10px', color: '#60a5fa', fontSize: '12px', fontFamily: 'monospace' }}>main</div>
-                     <div style={{ position: 'absolute', top: '24px', right: '-10px', color: '#34d399', fontSize: '12px', fontFamily: 'monospace' }}>santi</div>
-                  </div>
-               </div>
-            </div>
-          </div>
-
-          {/* Activity Section */}
-          <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ margin: '0 0 24px 0', color: 'white', fontSize: '18px', fontWeight: 600 }}>Git Activity</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {simulatedActivities.map((activity) => {
-                const Icon = activity.icon;
-                return (
-                  <div key={activity.id} style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    padding: '16px 20px', 
-                    backgroundColor: 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.05)',
-                    borderRadius: '12px',
-                    gap: '16px'
-                  }}>
-                    <div style={{ 
-                      width: '40px', 
-                      height: '40px', 
-                      borderRadius: '10px', 
-                      backgroundColor: `${activity.color}20`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      <Icon size={20} color={activity.color} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: 'white', fontSize: '15px', fontWeight: 500, marginBottom: '4px' }}>{activity.message}</div>
-                      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>{activity.time}</div>
-                    </div>
-                    <div style={{ 
-                      padding: '4px 10px', 
-                      borderRadius: '20px', 
-                      backgroundColor: 'rgba(255,255,255,0.05)',
-                      color: 'rgba(255,255,255,0.6)',
-                      fontSize: '12px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px'
-                    }}>
-                      {activity.type}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
+function Row({ icon: Icon, label, children }: { icon: IconType; label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/40 px-4 py-3">
+      <span className="flex items-center gap-2 text-sm text-muted-foreground"><Icon size={15} />{label}</span>
+      <span className="min-w-0 truncate text-right text-sm text-foreground">{children}</span>
     </div>
   );
-};
+}
+
+export function GitPage({ repository, onNavigate, onReviewChanges }: Props) {
+  const reviewChanges = onReviewChanges ?? (() => onNavigate("editor"));
+  const git = useGitStatus(repository?.id ?? null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const status = git.status;
+  const branch = status?.branch ?? repository?.current_branch ?? null;
+  const headCommit = status?.head_commit ?? repository?.head_commit ?? null;
+  const staged = status ? groupChanges(status.changes, "staged").length : 0;
+  const unstaged = status ? groupChanges(status.changes, "changes").length : 0;
+  const conflicts = status ? groupChanges(status.changes, "conflicts").length : 0;
+
+  const copy = async (sha: string) => {
+    try {
+      await copyText(sha);
+      setCopied(sha);
+      setNotice(null);
+    } catch {
+      setNotice("Could not copy the commit hash.");
+    }
+  };
+
+  const openRemote = async () => {
+    if (!status?.remote_url) return;
+    try {
+      await openExternal(status.remote_url);
+    } catch {
+      setNotice("Could not open the remote repository.");
+    }
+  };
+
+  if (!repository) {
+    return (
+      <div className="flex w-full flex-1 items-center justify-center p-8">
+        <div className="flex max-w-md flex-col items-center gap-5 rounded-2xl border border-border bg-card p-10 text-center">
+          <FolderGit2 size={56} className="text-emerald-500" />
+          <div>
+            <h2 className="text-xl font-semibold">No Repository Connected</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Open a local project to see its branch, working tree, and commit history.</p>
+          </div>
+          <button type="button" className={primaryButtonClass} onClick={() => onNavigate("explorer")}>Connect Repository</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex w-full flex-col gap-6 p-5 lg:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center gap-4">
+          <div className="rounded-xl bg-emerald-500/10 p-3 text-emerald-500"><GitBranch size={26} /></div>
+          <div>
+            <h1 className="text-2xl font-semibold">Git Repository</h1>
+            <p className="text-sm text-muted-foreground">Live status, branch, and recent commits for {repository.name}.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={buttonClass} aria-label="Refresh Git status" title="Refresh Git status" disabled={git.loading} onClick={git.refresh}>
+            <RefreshCw size={15} className={git.loading ? "animate-spin" : undefined} /><span>Refresh</span>
+          </button>
+          {status?.remote_url && (
+            <button type="button" className={buttonClass} title={status.remote_url} onClick={() => void openRemote()}>
+              <ExternalLink size={15} /><span>Open remote</span>
+            </button>
+          )}
+          <button type="button" className={primaryButtonClass} onClick={() => onNavigate("editor")}>
+            <Code2 size={15} /><span>Open in editor</span>
+          </button>
+        </div>
+      </header>
+
+      {git.error && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+          <TriangleAlert size={16} /><span className="flex-1">{git.error}</span>
+          <button type="button" className={buttonClass} onClick={git.refresh}>Retry</button>
+        </div>
+      )}
+      {notice && <div role="alert" className="rounded-xl border border-destructive/30 px-4 py-3 text-sm text-destructive">{notice}</div>}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card title="Repository Details" icon={FolderGit2}>
+          <div className="flex flex-col gap-2">
+            <Row icon={FolderGit2} label="Name"><span className="font-mono">{repository.name}</span></Row>
+            <Row icon={FileBox} label="Root Path"><code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{repository.root_path}</code></Row>
+            <Row icon={Calendar} label="Opened At">{repository.opened_at ? new Date(repository.opened_at).toLocaleString() : "—"}</Row>
+            <Row icon={Files} label="File Count"><span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{repository.file_count}</span></Row>
+          </div>
+        </Card>
+
+        <Card title="Branch & Commit" icon={GitBranch} aside={!status && git.loading ? "Reading Git status…" : undefined}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current branch</span>
+              <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                <GitBranch size={14} />{branch ?? (headCommit ? "Detached HEAD" : "No commits yet")}
+              </span>
+            </div>
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">HEAD commit</span>
+              {headCommit ? (
+                <button type="button" className={buttonClass} aria-label="Copy HEAD commit" title={headCommit} onClick={() => void copy(headCommit)}>
+                  <code className="font-mono text-xs">{headCommit.slice(0, 7)}</code>
+                  {copied === headCommit ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                </button>
+              ) : <span className="text-sm text-muted-foreground">No commits yet</span>}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upstream</span>
+              <p className="mt-1 truncate text-sm font-medium" title={status?.upstream ?? undefined}>{status ? (status.upstream ?? "No upstream configured") : "—"}</p>
+              <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1"><ArrowUp size={12} />{status?.ahead ?? "—"} ahead</span>
+                <span className="inline-flex items-center gap-1"><ArrowDown size={12} />{status?.behind ?? "—"} behind</span>
+              </p>
+            </div>
+            <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Working tree</span>
+              <p className="mt-1 text-sm font-medium">
+                {!status ? "—" : status.changes.length === 0 ? "Working tree clean" : `${status.changes.length} changed ${status.changes.length === 1 ? "file" : "files"}`}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {status ? `${staged} staged · ${unstaged} unstaged${conflicts ? ` · ${conflicts} conflicts` : ""}` : "Git status unavailable"}
+              </p>
+            </div>
+          </div>
+          {status && status.changes.length > 0 && (
+            <button type="button" className={`${buttonClass} w-fit`} onClick={reviewChanges}>Review changes in editor</button>
+          )}
+        </Card>
+      </div>
+
+      <Card title="Git Activity" icon={History} aside={status?.commits.length ? `Latest ${status.commits.length} commits` : undefined}>
+        {!status ? (
+          <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
+            {git.loading ? <><LoaderCircle size={16} className="animate-spin" />Reading Git history…</> : "Git history is unavailable for this folder."}
+          </div>
+        ) : status.commits.length === 0 ? (
+          <p className="py-6 text-sm text-muted-foreground">No commits in this repository yet.</p>
+        ) : (
+          <ol className="flex flex-col divide-y divide-border/70">
+            {status.commits.map(commit => (
+              <li key={commit.sha} className="flex items-center gap-4 py-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><GitCommitHorizontal size={17} /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium" title={commit.message}>{commit.message}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {commit.author}
+                    <span className="mx-1.5">·</span>
+                    <time dateTime={commit.committed_at} title={new Date(commit.committed_at).toLocaleString()}>{formatRelativeTime(commit.committed_at)}</time>
+                  </p>
+                </div>
+                <button type="button" className={buttonClass} aria-label={`Copy commit ${commit.sha.slice(0, 7)}`} title={commit.sha} onClick={() => void copy(commit.sha)}>
+                  <code className="font-mono text-xs">{commit.sha.slice(0, 7)}</code>
+                  {copied === commit.sha ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Card>
+    </div>
+  );
+}

@@ -34,6 +34,21 @@ describe("EditorSettingsPage", () => {
     expect(screen.queryByText("Editor: Font Size")).toBeNull();
   });
 
+  it("shows the matching rows whenever their section is shown", () => {
+    render(<EditorSettingsPage active onReturn={vi.fn()} />);
+    const searchInput = screen.getByRole("textbox", { name: "Search Settings" });
+
+    // Tags only a section check used to know about: the heading showed with no rows under it.
+    fireEvent.change(searchInput, { target: { value: "scale" } });
+    expect(screen.getByRole("region", { name: /Text Editor/i })).toBeVisible();
+    expect(screen.getByText("Editor: Font Size")).toBeVisible();
+
+    fireEvent.change(searchInput, { target: { value: "scroll" } });
+    expect(screen.getByText("Editor: Minimap")).toBeVisible();
+    expect(screen.getByText("Terminal: Scrollback Lines")).toBeVisible();
+    expect(screen.queryByText("Editor: Font Size")).toBeNull();
+  });
+
   it("adjusts font size with stepper buttons", () => {
     render(<EditorSettingsPage active onReturn={vi.fn()} />);
 

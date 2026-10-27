@@ -31,3 +31,7 @@ class FileEditConflictError(FileEditError):
 
 class GitReviewError(DevPilotError):
     """Raised when live Git status or a requested diff cannot be read."""
+
+
+class GitCommandError(DevPilotError):
+    """Raised when an explicit Git action (stage, unstage, commit) is rejected or fails."""
