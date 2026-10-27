@@ -15,6 +15,8 @@ describe("agent prompt helpers", () => {
   it("uses a fence the content cannot close", () => {
     expect(fenced("+const x = 1;\n", "diff")).toBe("```diff\n+const x = 1;\n```");
     expect(fenced("+```js\n+code\n+```", "diff")).toBe("~~~~diff\n+```js\n+code\n+```\n~~~~");
+    // A context line that is itself a tilde fence must not close the block early.
+    expect(fenced(" ```md\n ~~~~~\n+x", "diff")).toBe("~~~~~~diff\n ```md\n ~~~~~\n+x\n~~~~~~");
   });
 
   it("builds a review prompt naming the file, scope, and truncation", () => {

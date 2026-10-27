@@ -68,9 +68,17 @@ export function clipForPrompt(text: string, limit = MAX_CONTEXT_CHARS): { text: 
   return { text: text.slice(0, cut > limit * 0.8 ? cut : limit), truncated: true };
 }
 
+/** Longest run of `~` that starts a line (after up to three spaces), which could close a tilde fence. */
+function longestTildeFence(text: string): number {
+  let longest = 0;
+  for (const match of text.matchAll(/^ {0,3}(~+)/gm)) longest = Math.max(longest, match[1].length);
+  return longest;
+}
+
 /** Wrap text in a fenced block that cannot be closed early by fences inside it. */
 export function fenced(text: string, language = ""): string {
-  const fence = text.includes("```") ? "~~~~" : "```";
+  // A closing fence must be at least as long as the opening one, so go one longer than any inside.
+  const fence = text.includes("```") ? "~".repeat(Math.max(4, longestTildeFence(text) + 1)) : "```";
   return `${fence}${language}\n${text.replace(/\s+$/, "")}\n${fence}`;
 }
 
