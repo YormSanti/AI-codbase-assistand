@@ -10,9 +10,10 @@ import codecs
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
-import time
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,6 +64,17 @@ def _command(provider: str, binary: str, prompt: str) -> list[str]:
     return [binary, "--prompt", prompt, "--output-format", "text"]
 
 
+def _kill(process: subprocess.Popen[bytes]) -> None:
+    """Kill the CLI and anything it started; a child left holding stdout would keep the read blocked."""
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL)  # the run has its own session, so its group id is its pid
+        else:
+            process.kill()
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def _event(kind: str, **fields: object) -> str:
     return json.dumps({"type": kind, **fields}) + "\n"
 
@@ -86,7 +98,16 @@ def stream_agent(provider: str, prompt: str, working_directory: Path) -> Iterato
     # A read can end inside a multi-byte character; the incremental decoder
     # holds the partial bytes until the rest arrives instead of emitting U+FFFD.
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
+    # A watchdog rather than a check between reads: a CLI that hangs without printing never returns from read.
+    timed_out = threading.Event()
+
+    def stop_at_deadline() -> None:
+        timed_out.set()
+        _kill(process)
+
+    watchdog = threading.Timer(RUN_TIMEOUT_SECONDS, stop_at_deadline)
+    watchdog.daemon = True
+    watchdog.start()
     try:
         assert process.stdout is not None
         while True:
@@ -97,10 +118,9 @@ def stream_agent(provider: str, prompt: str, working_directory: Path) -> Iterato
                 yield _event("chunk", text=text)
             if not chunk:
                 break
-            if time.monotonic() > deadline:
-                process.kill()
-                yield _event("error", message=f"{name} did not finish within {RUN_TIMEOUT_SECONDS // 60} minutes.")
-                return
+        if timed_out.is_set():
+            yield _event("error", message=f"{name} did not finish within {RUN_TIMEOUT_SECONDS // 60} minutes.")
+            return
         code = process.wait(timeout=30)
         reply = "".join(content).strip()
         if code != 0:
@@ -112,7 +132,8 @@ def stream_agent(provider: str, prompt: str, working_directory: Path) -> Iterato
         else:
             yield _event("done", content=reply)
     finally:
-        if process.poll() is None:  # the client went away or a timeout hit
-            process.kill()
+        watchdog.cancel()
+        if process.poll() is None:  # the client went away
+            _kill(process)
             process.wait()
         errors.close()

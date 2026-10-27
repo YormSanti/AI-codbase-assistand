@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -74,3 +75,15 @@ def test_run_keeps_multibyte_characters_split_across_reads(api_client: TestClien
     events = _events(api_client.post("/api/agent/run", json={"provider": "codex", "prompt": "hi"}))
     assert events[-1] == {"type": "done", "content": "café ok"}
     assert "\ufffd" not in "".join(event.get("text", "") for event in events)
+
+
+def test_run_stops_a_cli_that_hangs_without_output(api_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The child sleep keeps stdout open, so only killing the whole process group ends the read.
+    binary = _fake_cli(tmp_path, "sleep 30 &\nwait\n")
+    monkeypatch.setattr(agent_service, "find_binary", lambda name: binary)
+    monkeypatch.setattr(agent_service, "RUN_TIMEOUT_SECONDS", 0.5)
+    started = time.monotonic()
+    events = _events(api_client.post("/api/agent/run", json={"provider": "codex", "prompt": "hi"}))
+    assert time.monotonic() - started < 10
+    assert len(events) == 1 and events[0]["type"] == "error"
+    assert events[0]["message"].startswith("Codex did not finish within")
