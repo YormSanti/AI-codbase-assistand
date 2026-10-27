@@ -7,6 +7,8 @@ on:
 
 jobs:
   release:
+    permissions:
+      contents: write # create the GitHub release and upload installers
     strategy:
       fail-fast: false
       matrix:
@@ -38,14 +40,21 @@ jobs:
         run: npm install
         working-directory: ./frontend
 
+      # Signs the update bundles and uploads latest.json, which installed apps poll through
+      # releases/latest/download/latest.json. The key pair is ~/.tauri/ifrog.key(.pub); add the
+      # private key and its password as repository secrets.
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: "./frontend"
-          tagName: app-v__VERSION__
+          tagName: v__VERSION__
           releaseName: "IFROG v__VERSION__"
           releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
+          # Published, not draft: the "latest release" URL the updater uses ignores drafts.
+          releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
