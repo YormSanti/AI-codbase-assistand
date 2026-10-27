@@ -11,6 +11,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.config import settings
+
 router = APIRouter(prefix="/ws", tags=["terminal"])
 
 RESIZE_PREFIX = "\0DEVPILOT_RESIZE:"
@@ -23,8 +25,22 @@ def resize_pty(fd: int, cols: int, rows: int) -> None:
     fcntl.ioctl(fd, termios.TIOCSWINSZ, window_size)
 
 
+def origin_allowed(origin: str | None) -> bool:
+    """Browsers do not apply CORS to WebSockets, so check the page's origin here.
+
+    Without this, any website open in the user's browser could connect to the
+    local backend and drive a shell. Clients that send no Origin header (the
+    CLI, tests) are not browsers and are allowed.
+    """
+    return origin is None or origin in settings.cors_origins
+
+
 @router.websocket("/terminal")
 async def terminal_websocket(websocket: WebSocket):
+    if not origin_allowed(websocket.headers.get("origin")):
+        # Closing before accept() rejects the handshake with HTTP 403.
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
 
     requested_cwd = websocket.query_params.get("cwd")

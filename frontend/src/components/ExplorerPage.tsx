@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Ref } from 'react';
 import { FileCode2, Files, FolderOpen, GitBranch, PanelLeft, PanelRight, RefreshCw, SaveAll, Search, WrapText, X } from 'lucide-react';
-import type { FilePreview, RepositoryInfo, TreeNode } from '../types/domain';
+import type { FilePreview, RepositoryInfo, SymbolMatch, TreeNode } from '../types/domain';
+import { repositoryApi } from '../api/repositoryApi';
 import { RepositoryPicker } from './RepositoryPicker';
 import { RepositorySummary } from './RepositorySummary';
 import { RepositoryTree } from './RepositoryTree';
@@ -28,6 +29,9 @@ interface Props {
   onAskAI: (file: TreeNode) => void;
   onEditorStateChange?: (state: { dirty: boolean; saving: boolean }) => void;
   onFileSaved?: (preview: FilePreview) => void;
+  /** Show this file and line once it is in the tree (used when another page opens the editor). */
+  revealRequest?: { path: string; line: number; id: number } | null;
+  onRevealHandled?: () => void;
 }
 
 function collectFiles(node: TreeNode | null): TreeNode[] {
@@ -35,7 +39,7 @@ function collectFiles(node: TreeNode | null): TreeNode[] {
   return node.is_directory ? node.children.flatMap(collectFiles) : [node];
 }
 
-export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'explorer', repository, tree: indexedTree, selectedFile, isLoading, onOpen, onSelectFile, onCloseFile, onAskAI, onEditorStateChange, onFileSaved }: Props) {
+export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'explorer', repository, tree: indexedTree, selectedFile, isLoading, onOpen, onSelectFile, onCloseFile, onAskAI, onEditorStateChange, onFileSaved, revealRequest, onRevealHandled }: Props) {
   const isEditor = mode === 'editor';
   const [localTree, setLocalTree] = useState<{ repository: RepositoryInfo; tree: TreeNode } | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -57,13 +61,62 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
   const workspaceRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const files = useMemo(() => collectFiles(tree), [tree]);
-  const matches = useMemo(() => files.filter(file => file.path.toLowerCase().includes(fileQuery.toLowerCase())).slice(0, 30), [files, fileQuery]);
+  const symbolMode = fileQuery.startsWith('#');
+  const symbolQuery = symbolMode ? fileQuery.slice(1).trim() : '';
+  const matches = useMemo(() => symbolMode ? [] : files.filter(file => file.path.toLowerCase().includes(fileQuery.toLowerCase())).slice(0, 30), [files, fileQuery, symbolMode]);
+  const [symbolResults, setSymbolResults] = useState<{ query: string; items: SymbolMatch[]; error: string | null } | null>(null);
+  const symbolItems = symbolResults?.query === symbolQuery ? symbolResults.items : [];
+  const symbolsLoading = symbolMode && Boolean(symbolQuery) && symbolResults?.query !== symbolQuery;
+  const openQuickOpen = (prefix = '') => { setFileQuery(prefix); setQuickIndex(0); setShowQuickOpen(true); };
 
-  useImperativeHandle(ref, () => ({ runCommand: command => {
-    if (command !== 'openFile' && command !== 'openFolder') documents.focusSelected();
+  // "#name" in Go to File searches the indexed classes, functions, and methods.
+  useEffect(() => {
+    if (!showQuickOpen || !symbolMode || !symbolQuery || !repository) return;
+    let current = true;
+    const timer = window.setTimeout(() => {
+      repositoryApi.searchSymbols(repository.id, symbolQuery)
+        .then(items => { if (current) setSymbolResults({ query: symbolQuery, items, error: null }); })
+        .catch(error => { if (current) setSymbolResults({ query: symbolQuery, items: [], error: error instanceof Error ? error.message : 'Symbol search failed.' }); });
+    }, 150);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [showQuickOpen, symbolMode, symbolQuery, repository]);
+
+  // Search results open a file and move to a line; the inspector may still be loading,
+  // so the line is handed over once the file is the selected one.
+  const pendingReveal = useRef<{ path: string; line: number } | null>(null);
+  const revealLine = (path: string, line: number) => {
+    const node = files.find(file => file.path === path);
+    if (!node) return;
+    if (selectedFile?.path === path) { documents.revealLine(path, line); return; }
+    pendingReveal.current = { path, line };
+    onSelectFile(node);
+  };
+  useEffect(() => {
+    const pending = pendingReveal.current;
+    if (pending && selectedFile?.path === pending.path) {
+      pendingReveal.current = null;
+      documents.revealLine(pending.path, pending.line);
+    }
+  });
+
+  useEffect(() => {
+    if (!revealRequest || !isEditor) return;
+    if (files.some(file => file.path === revealRequest.path)) {
+      onRevealHandled?.();
+      revealLine(revealRequest.path, revealRequest.line);
+    } else if (!filesLoading && localTree?.repository === repository) {
+      onRevealHandled?.(); // the complete local listing is loaded and the file is gone
+    }
+    // revealLine reads the latest render's state; re-running on its identity would repeat the reveal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealRequest, isEditor, files, filesLoading, localTree, repository]);
+
+  useImperativeHandle(ref, () => ({ revealLine, runCommand: command => {
+    if (command !== 'openFile' && command !== 'openFolder' && command !== 'openSymbol') documents.focusSelected();
     switch (command) {
       case 'openFolder': if (!isLoading) setShowFolderPicker(true); break;
-      case 'openFile': if (tree) { setFileQuery(''); setQuickIndex(0); setShowQuickOpen(true); } break;
+      case 'openFile': if (tree) openQuickOpen(); break;
+      case 'openSymbol': if (repository) openQuickOpen('#'); break;
       case 'saveAll': if (!isLoading) void saveAll(); break;
       case 'closeFile': if (selectedFile) closeFile(selectedFile); break;
       case 'toggleExplorer': setShowExplorer(value => !value); break;
@@ -130,9 +183,13 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
         const index = openFiles.findIndex(file => file.path === selectedFile?.path);
         onSelectFile(openFiles[(index + (event.key === 'ArrowLeft' ? -1 : 1) + openFiles.length) % openFiles.length]);
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'p') {
         event.preventDefault();
-        if (tree) { setFileQuery(''); setQuickIndex(0); setShowQuickOpen(true); }
+        if (tree) openQuickOpen();
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 't') {
+        event.preventDefault();
+        if (repository) openQuickOpen('#');
       }
       if (event.key === 'Escape') { setShowQuickOpen(false); setShowFolderPicker(false); }
     };
@@ -142,12 +199,14 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
       window.removeEventListener('keydown', saveAllShortcut, true);
       window.removeEventListener('keydown', quickOpen);
     };
-  }, [isEditor, isActive, tree, isLoading, selectedFile, openFiles, onSelectFile, closeFile, saveAll, showQuickOpen, showFolderPicker]);
+  }, [isEditor, isActive, tree, repository, isLoading, selectedFile, openFiles, onSelectFile, closeFile, saveAll, showQuickOpen, showFolderPicker]);
 
   useEffect(() => { if (showQuickOpen) quickInputRef.current?.focus(); }, [showQuickOpen]);
 
   const openFromSearch = (file: TreeNode) => { onSelectFile(file); setShowQuickOpen(false); };
-  const cardStyle: CSSProperties = { borderRadius: 20, backgroundColor: 'rgba(18, 18, 24, 0.9)', border: '1.5px solid rgba(255, 255, 255, 0.08)', padding: '24px 28px', boxShadow: '0 8px 32px -8px rgba(0, 0, 0, 0.4)' };
+  const openSymbol = (symbol: SymbolMatch) => { setShowQuickOpen(false); revealLine(symbol.path, symbol.start_line); };
+  const quickCount = symbolMode ? symbolItems.length : matches.length;
+  const cardStyle: CSSProperties = { borderRadius: 20, backgroundColor: 'var(--card)', border: '1px solid var(--border)', padding: '24px 28px', boxShadow: '0 8px 32px -8px var(--shadow-strong)' };
 
   return (
     <div ref={workspaceRef} className={isEditor ? 'vscode-workspace' : 'explorer-page'} style={isEditor ? undefined : { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, width: '100%', boxSizing: 'border-box' }}>
@@ -164,7 +223,7 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
         </> : <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <Files size={32} color="#60a5fa" />
-            <div><h1 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 600, color: 'white' }}>File Explorer</h1><p style={{ margin: 0, fontSize: 15, color: 'rgba(255,255,255,0.6)' }}>Browse, inspect, and edit your workspace files</p></div>
+            <div><h1 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 600, color: 'var(--foreground)' }}>File Explorer</h1><p style={{ margin: 0, fontSize: 15, color: 'var(--muted-foreground)' }}>Browse, inspect, and edit your workspace files</p></div>
           </div>
           <div style={{ minWidth: 300 }}><RepositoryPicker isLoading={isLoading} onOpen={onOpen} /></div>
         </>}
@@ -254,16 +313,23 @@ export function ExplorerPage({ ref, embedded = false, isActive = true, mode = 'e
           <DialogPrimitive.Overlay asChild><div className="vscode-dialog-backdrop" onClick={() => { setShowQuickOpen(false); setShowFolderPicker(false); }}>
           <DialogPrimitive.Content asChild onCloseAutoFocus={event => { event.preventDefault(); documents.focusSelected(); }}>
         <section className={'vscode-dialog ' + (showQuickOpen ? 'vscode-quick-open' : '')} onClick={event => event.stopPropagation()}>
-          <DialogPrimitive.Title className="sr-only">{showQuickOpen ? 'Go to file' : 'Open project folder'}</DialogPrimitive.Title>
+          <DialogPrimitive.Title className="sr-only">{showQuickOpen ? (symbolMode ? 'Go to symbol in workspace' : 'Go to file') : 'Open project folder'}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">{showQuickOpen ? 'Search and select a file in your project.' : 'Choose a local folder to open in your workspace.'}</DialogPrimitive.Description>
-          <header><span>{showQuickOpen ? 'GO TO FILE' : 'OPEN FOLDER'}</span><button type="button" aria-label="Close dialog" onClick={() => { setShowQuickOpen(false); setShowFolderPicker(false); }}><X size={15} /></button></header>
+          <header><span>{showQuickOpen ? (symbolMode ? 'GO TO SYMBOL' : 'GO TO FILE') : 'OPEN FOLDER'}</span><button type="button" aria-label="Close dialog" onClick={() => { setShowQuickOpen(false); setShowFolderPicker(false); }}><X size={15} /></button></header>
           {showQuickOpen ? <>
-            <Input ref={quickInputRef} aria-label="Search project files" placeholder="Search files by name or path…" value={fileQuery} onChange={event => { setFileQuery(event.target.value); setQuickIndex(0); }} onKeyDown={event => {
-              if (event.key === 'ArrowDown') { event.preventDefault(); setQuickIndex(index => Math.max(0, Math.min(matches.length - 1, index + 1))); }
+            <Input ref={quickInputRef} aria-label="Search project files" placeholder="Search files by name or path, or type # for symbols…" value={fileQuery} onChange={event => { setFileQuery(event.target.value); setQuickIndex(0); }} onKeyDown={event => {
+              if (event.key === 'ArrowDown') { event.preventDefault(); setQuickIndex(index => Math.max(0, Math.min(quickCount - 1, index + 1))); }
               if (event.key === 'ArrowUp') { event.preventDefault(); setQuickIndex(index => Math.max(0, index - 1)); }
-              if (event.key === 'Enter' && matches[quickIndex]) { event.preventDefault(); openFromSearch(matches[quickIndex]); }
+              if (event.key === 'Enter') {
+                if (symbolMode && symbolItems[quickIndex]) { event.preventDefault(); openSymbol(symbolItems[quickIndex]); }
+                else if (!symbolMode && matches[quickIndex]) { event.preventDefault(); openFromSearch(matches[quickIndex]); }
+              }
             }} />
-            <div className="vscode-quick-results">{matches.map((file, index) => <button type="button" key={file.file_id} className={index === quickIndex ? 'is-selected' : ''} onClick={() => openFromSearch(file)}><FileCode2 size={15} className={'file-color-' + (file.language ?? 'other')} /><span>{file.name}<small>{file.path}</small></span></button>)}{matches.length === 0 && <p>No matching files.</p>}</div>
+            {symbolMode ? <div className="vscode-quick-results" role="listbox" aria-label="Symbols">
+              {symbolItems.map((symbol, index) => <button type="button" role="option" aria-selected={index === quickIndex} key={`${symbol.path}:${symbol.start_line}:${symbol.name}`} className={index === quickIndex ? 'is-selected' : ''} onClick={() => openSymbol(symbol)}><span className={`vscode-symbol-kind kind-${symbol.kind}`} aria-hidden="true">{symbol.kind === 'class' ? 'C' : symbol.kind === 'method' ? 'm' : 'ƒ'}</span><span>{symbol.parent_name ? `${symbol.parent_name}.` : ''}{symbol.name}<small>{symbol.path}:{symbol.start_line}</small></span></button>)}
+              {!symbolQuery ? <p>Type a class, function, or method name.</p> : symbolsLoading ? <p>Searching symbols…</p> : symbolResults?.error ? <p role="alert">{symbolResults.error}</p> : symbolItems.length === 0 ? <p>No matching symbols. Only Python, JavaScript, and TypeScript files are indexed for symbols.</p> : null}
+            </div>
+            : <div className="vscode-quick-results">{matches.map((file, index) => <button type="button" key={file.file_id} className={index === quickIndex ? 'is-selected' : ''} onClick={() => openFromSearch(file)}><FileCode2 size={15} className={'file-color-' + (file.language ?? 'other')} /><span>{file.name}<small>{file.path}</small></span></button>)}{matches.length === 0 && <p>No matching files.</p>}</div>}
           </> : <RepositoryPicker isLoading={isLoading} onOpen={async path => { await onOpen(path); setShowFolderPicker(false); }} />}
         </section>
           </DialogPrimitive.Content>

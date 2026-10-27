@@ -17,21 +17,101 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const backendUrl = await getBackendUrl();
-  const response = await fetch(`${backendUrl}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+const READINESS_TIMEOUT_MS = 30_000;
+const INITIAL_RETRY_DELAY_MS = 150;
+const MAX_RETRY_DELAY_MS = 1_000;
 
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new ApiError(response.status, body.detail ?? response.statusText);
+let backendReady: Promise<void> | null = null;
+
+function isDesktop(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+async function waitForBackend(baseUrl: string): Promise<void> {
+  const deadline = Date.now() + READINESS_TIMEOUT_MS;
+  let delay = INITIAL_RETRY_DELAY_MS;
+  for (;;) {
+    try {
+      const response = await fetch(`${baseUrl}/health`, { cache: "no-store" });
+      if (response.ok) return;
+    } catch {
+      // The sidecar is still binding its port; keep waiting.
+    }
+    if (Date.now() >= deadline) return; // Give up quietly; the real request reports the error.
+    await new Promise(resolve => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
   }
+}
+
+/**
+ * In the desktop app the Python sidecar starts alongside the window, so the
+ * first requests can race its startup. Wait once for /health before the first
+ * API call; the browser build talks to an already running server and skips this.
+ */
+export function ensureBackendReady(): Promise<void> {
+  if (!isDesktop()) return Promise.resolve();
+  backendReady ??= getBackendUrl().then(waitForBackend).catch(() => undefined);
+  return backendReady;
+}
+
+/**
+ * The error message for a failed response. FastAPI sends `detail` as a string
+ * for HTTP errors and as a list of `{ msg }` objects for validation errors.
+ */
+async function errorFromResponse(response: Response): Promise<ApiError> {
+  const body = await response.json().catch(() => null);
+  const detail: unknown = body?.detail;
+  let message: string | undefined;
+  if (typeof detail === "string") message = detail;
+  else if (Array.isArray(detail)) {
+    message = detail
+      .map(item => (typeof item === "string" ? item : typeof item?.msg === "string" ? item.msg : null))
+      .filter(Boolean)
+      .join("; ");
+  }
+  return new ApiError(response.status, message || response.statusText || `Request failed (${response.status}).`);
+}
+
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  await ensureBackendReady();
+  const backendUrl = await getBackendUrl();
+  // Merge rather than replace, so a caller's own headers keep the JSON content type.
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const response = await fetch(`${backendUrl}${path}`, { ...init, headers });
+
+  if (!response.ok) throw await errorFromResponse(response);
 
   if (response.status === 204) {
     return undefined as T;
   }
 
   return response.json() as Promise<T>;
+}
+
+/**
+ * POST `body` and read a newline-delimited JSON stream, calling `onEvent` for
+ * each event as it arrives. HTTP errors reject like apiRequest.
+ */
+export async function apiStream<E>(path: string, body: unknown, onEvent: (event: E) => void): Promise<void> {
+  await ensureBackendReady();
+  const backendUrl = await getBackendUrl();
+  const response = await fetch(`${backendUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw await errorFromResponse(response);
+  if (!response.body) throw new ApiError(response.status, "The server sent an empty stream.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffered += decoder.decode(value, { stream: !done });
+    const lines = buffered.split("\n");
+    buffered = done ? "" : lines.pop() ?? "";
+    for (const line of lines) if (line.trim()) onEvent(JSON.parse(line) as E);
+    if (done) return;
+  }
 }

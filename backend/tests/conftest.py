@@ -1,9 +1,21 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
+import os
+import tempfile
 
-import pytest
+# Point the application's module-level engine at a throwaway database before
+# any `app.*` import constructs settings. Without this, in-process CLI tests
+# (which call init_db()/SessionLocal()) read and migrate the developer's real
+# backend/data/devpilot.db.
+os.environ.setdefault(
+    "DEVPILOT_DATABASE_PATH",
+    os.path.join(tempfile.mkdtemp(prefix="devpilot-tests-"), "devpilot.db"),
+)
+
+from collections.abc import Iterator  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient
 from git import Actor, Repo
 from sqlalchemy import create_engine

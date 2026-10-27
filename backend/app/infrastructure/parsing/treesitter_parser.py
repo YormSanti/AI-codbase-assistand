@@ -1,7 +1,7 @@
 """Tree-sitter-backed implementation of `CodeParserPort`.
 
 Extracts classes, functions/methods, and import statements from source
-code. Deliberately conservative for this milestone: only named
+code, and scores each function's cyclomatic complexity. Deliberately conservative for this milestone: only named
 declarations are captured (no anonymous/arrow functions, no re-exports),
 which keeps the extraction rules simple and predictable across languages.
 """
@@ -15,7 +15,7 @@ import tree_sitter_typescript as tstypescript
 from tree_sitter import Language as TSLanguage
 from tree_sitter import Node, Parser
 
-from app.domain.models import CodeSymbol, Language, SymbolKind
+from app.domain.models import CodeSymbol, FunctionComplexity, Language, SymbolKind
 from app.domain.ports import CodeParserPort
 
 _MAX_IMPORT_SNIPPET_LENGTH = 300
@@ -161,6 +161,61 @@ def _walk(
         _walk(child, source, config, current_class, symbols)
 
 
+# Nodes that start their own complexity count. Python lambdas stay with the enclosing function.
+_FUNCTION_SCOPES = frozenset({
+    "function_definition", "function_declaration", "generator_function_declaration", "method_definition",
+    "arrow_function", "function_expression", "generator_function",
+})
+# Each of these adds one path through a function (Python, then JavaScript/TypeScript).
+_BRANCH_NODES = frozenset({
+    "if_statement", "elif_clause", "for_statement", "while_statement", "except_clause", "conditional_expression",
+    "boolean_operator", "for_in_clause", "if_clause", "case_clause",
+    "for_in_statement", "do_statement", "catch_clause", "ternary_expression", "switch_case",
+})
+_LOGICAL_OPERATORS = frozenset({"&&", "||", "??"})
+# Where an unnamed function expression takes its name from: `const name = () => {}`, `{ name: () => {} }`, ...
+_NAME_FIELDS = {
+    "variable_declarator": "name", "pair": "key", "public_field_definition": "name",
+    "field_definition": "property", "assignment_expression": "left",
+}
+
+
+def _text(node: Node, source: bytes) -> str:
+    return source[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
+
+
+def _branch_points(node: Node, source: bytes) -> int:
+    if node.type == "binary_expression":
+        operator = node.child_by_field_name("operator")
+        return 1 if operator is not None and operator.type in _LOGICAL_OPERATORS else 0
+    if node.type == "case_clause":  # Python `case _:` is the default branch, like JavaScript's `default:`
+        patterns = [child for child in node.children if child.type == "case_pattern"]
+        return 0 if len(patterns) == 1 and _text(patterns[0], source).strip() == "_" else 1
+    return 1 if node.type in _BRANCH_NODES else 0
+
+
+def _function_name(node: Node, source: bytes) -> str:
+    name = node.child_by_field_name("name")
+    if name is None and node.parent is not None and node.parent.type in _NAME_FIELDS:
+        name = node.parent.child_by_field_name(_NAME_FIELDS[node.parent.type])
+    return " ".join(_text(name, source).split())[:120] if name is not None else "anonymous function"
+
+
+def _complexity(root: Node, source: bytes) -> list[FunctionComplexity]:
+    """McCabe complexity per function: 1 plus its branch points, with nested functions scored on their own."""
+    found: list[list] = []  # [name, (row, column), score], indexed by the enclosing function
+    stack: list[tuple[Node, int | None]] = [(root, None)]
+    while stack:  # iterative, so deeply nested code cannot hit the recursion limit
+        node, owner = stack.pop()
+        if node.is_named and node.type in _FUNCTION_SCOPES:
+            found.append([_function_name(node, source), tuple(node.start_point), 1])
+            owner = len(found) - 1
+        elif owner is not None:
+            found[owner][2] += _branch_points(node, source)
+        stack.extend((child, owner) for child in node.children)
+    return [FunctionComplexity(name, start[0] + 1, score) for name, start, score in sorted(found, key=lambda item: item[1])]
+
+
 class TreeSitterCodeParser(CodeParserPort):
     def __init__(self) -> None:
         javascript_config = _javascript_config()
@@ -186,3 +241,6 @@ class TreeSitterCodeParser(CodeParserPort):
         symbols: list[CodeSymbol] = []
         _walk(tree.root_node, source, config, current_class=None, symbols=symbols)
         return symbols
+
+    def complexity(self, source: bytes, language: Language) -> list[FunctionComplexity]:
+        return _complexity(self._parsers[language].parse(source).root_node, source)

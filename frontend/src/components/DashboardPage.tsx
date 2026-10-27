@@ -1,19 +1,24 @@
-import { useState, useEffect } from "react";
-import type { RepositoryInfo, TreeNode } from "../types/domain";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import {
-  GitBranch, FileCode2, Zap, Bot, Terminal,
-  Play, ChevronRight, BarChart3, Clock,
-  GitCommit, Shield, ArrowRight,
-  Activity, Code2, Sparkles, Database,
-  CheckCircle2,
+  Activity, ArrowRight, BarChart3, Bot, Code2, Database, FileCode2, Files, Folder, GitBranch,
+  GitCommitHorizontal, LoaderCircle, RefreshCw, Server, SquareTerminal, Sparkles, TriangleAlert,
 } from "lucide-react";
+import type { RepositoryInfo, TreeNode } from "../types/domain";
+import { healthApi } from "../api/healthApi";
+import { useGitStatus } from "../hooks/useGitStatus";
+import { groupChanges } from "../editor/useGitReview";
+import { describeProvider, getProviderStatuses, PROVIDER_NAMES, type ProviderId, type ProviderStatus } from "../lib/providers";
+import { formatRelativeTime } from "../lib/time";
 
 interface Props {
   repository: RepositoryInfo | null;
   tree: TreeNode | null;
   isLoading: boolean;
   onNavigate: (tab: string) => void;
+  onReindex?: () => Promise<void> | void;
 }
+
+type IconType = ComponentType<{ size?: number; className?: string }>;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function countFiles(node: TreeNode | null): { total: number; byLang: Record<string, number> } {
@@ -44,311 +49,249 @@ const LANG_LABELS: Record<string, string> = {
   markdown: "Markdown", shell: "Shell", other: "Other",
 };
 
-const QUICK_ACTIONS = [
-  { icon: Bot, label: "Run AI Agent", desc: "Autonomous code analysis", color: "#a78bfa", bg: "rgba(124,58,237,0.12)", border: "rgba(139,92,246,0.35)", tab: "ai" },
-  { icon: Terminal, label: "File Explorer", desc: "Browse repository tree", color: "#60a5fa", bg: "rgba(37,99,235,0.10)", border: "rgba(59,130,246,0.35)", tab: "explorer" },
-  { icon: GitBranch, label: "Git Overview", desc: "Branches & commits", color: "#34d399", bg: "rgba(16,185,129,0.10)", border: "rgba(52,211,153,0.35)", tab: "git" },
-  { icon: Shield, label: "Security Audit", desc: "Scan for vulnerabilities", color: "#f472b6", bg: "rgba(236,72,153,0.10)", border: "rgba(244,114,182,0.35)", tab: "ai" },
+// Every destination here is a real page; nothing promises a feature that does not exist.
+const QUICK_ACTIONS: { icon: IconType; label: string; desc: string; tab: string; needsRepository?: boolean }[] = [
+  { icon: Code2, label: "Code Editor", desc: "Edit files with tabs, search, and Git", tab: "editor" },
+  { icon: Folder, label: "File Explorer", desc: "Browse the indexed tree and symbols", tab: "explorer" },
+  { icon: GitBranch, label: "Git Repository", desc: "Branch, upstream, and recent commits", tab: "git", needsRepository: true },
+  { icon: SquareTerminal, label: "Terminal", desc: "Shell sessions in the project folder", tab: "terminal", needsRepository: true },
+  { icon: Bot, label: "AI Assistant", desc: "Ask Codex or Gemini about this code", tab: "ai" },
+  { icon: BarChart3, label: "Analytics", desc: "Language and file size breakdown", tab: "analytics", needsRepository: true },
 ];
 
-const RECENT_ACTIVITY = [
-  { type: "commit", icon: GitCommit, label: "feat: add AI Agent page", time: "2m ago", color: "#a78bfa" },
-  { type: "file", icon: FileCode2, label: "AIAgentPage.tsx modified", time: "4m ago", color: "#60a5fa" },
-  { type: "build", icon: CheckCircle2, label: "Production build passed", time: "6m ago", color: "#34d399" },
-  { type: "test", icon: CheckCircle2, label: "11/11 tests passing", time: "7m ago", color: "#34d399" },
-  { type: "file", icon: FileCode2, label: "App.css redesigned", time: "12m ago", color: "#60a5fa" },
-  { type: "commit", icon: GitCommit, label: "fix: border spacing margins", time: "15m ago", color: "#a78bfa" },
-];
+function greeting(now: Date): string {
+  const hour = now.getHours();
+  if (hour < 5) return "Working late";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+const cardClass = "rounded-2xl border border-border bg-card p-5 text-card-foreground";
+const buttonClass = "inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50";
+const primaryButtonClass = "inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+
+function StatusPill({ tone, children }: { tone: "ok" | "warn" | "bad" | "muted"; children: ReactNode }) {
+  const tones = {
+    ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    warn: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    bad: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+    muted: "border-border bg-muted text-muted-foreground",
+  };
+  return <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{children}</span>;
+}
+
+function StatusRow({ label, detail, children }: { label: string; detail?: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/40 px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        {detail && <p className="truncate text-xs text-muted-foreground" title={detail}>{detail}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export function DashboardPage({ repository, tree, isLoading, onNavigate }: Props) {
+export function DashboardPage({ repository, tree, isLoading, onNavigate, onReindex }: Props) {
   const { total, byLang } = countFiles(tree);
   const topLangs = Object.entries(byLang).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const [now, setNow] = useState(new Date());
-  useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
+  const [now, setNow] = useState(() => new Date());
+  const git = useGitStatus(repository?.id ?? null);
+  const [backend, setBackend] = useState<"checking" | "ok" | "down">("checking");
+  const [providers, setProviders] = useState<Record<ProviderId, ProviderStatus> | null | "loading">("loading");
+  const [reindexing, setReindexing] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setBackend("checking");
+    healthApi.check().then(() => { if (active) setBackend("ok"); }).catch(() => { if (active) setBackend("down"); });
+    return () => { active = false; };
+  }, [repository?.id]);
+
+  useEffect(() => {
+    let active = true;
+    getProviderStatuses().then(result => { if (active) setProviders(result); }).catch(() => { if (active) setProviders(null); });
+    return () => { active = false; };
+  }, []);
+
+  const reindex = async () => {
+    if (!onReindex || reindexing) return;
+    setReindexing(true);
+    try { await onReindex(); } finally { setReindexing(false); }
+  };
+
+  const status = git.status;
+  const branch = status?.branch ?? repository?.current_branch ?? null;
+  const changes = status?.changes.length ?? null;
+  const staged = status ? groupChanges(status.changes, "staged").length : 0;
+  const unstaged = status ? groupChanges(status.changes, "changes").length : 0;
+
+  const stats: { icon: IconType; label: string; value: string; sub: string }[] = [
+    { icon: Files, label: "Files indexed", value: repository ? repository.file_count.toLocaleString() : "—", sub: repository?.opened_at ? `indexed ${formatRelativeTime(repository.opened_at, now)}` : "open a project to index it" },
+    { icon: GitBranch, label: "Branch", value: branch ?? "—", sub: status?.upstream ? `tracking ${status.upstream}` : status ? "no upstream" : "current checkout" },
+    { icon: GitCommitHorizontal, label: "Working tree", value: changes === null ? "—" : changes === 0 ? "Clean" : String(changes), sub: status ? (changes ? `${staged} staged · ${unstaged} unstaged` : "nothing to commit") : "changed files" },
+    { icon: BarChart3, label: "Languages", value: topLangs.length ? String(Object.keys(byLang).length) : "—", sub: "detected in the index" },
+  ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "28px", width: "100%", padding: "20px" }}>
-
-      {/* ── Welcome Hero ─────────────────────────────────────────────────── */}
-      <div style={{
-        position: "relative", overflow: "hidden",
-        padding: "40px 44px", borderRadius: "24px",
-        background: "linear-gradient(135deg, rgba(88,28,255,0.18) 0%, rgba(37,99,235,0.12) 50%, rgba(16,185,129,0.06) 100%)",
-        border: "1.5px solid rgba(139,92,246,0.30)",
-        boxShadow: "0 16px 48px -12px rgba(88,28,255,0.2)",
-      }}>
-        {/* bg glow orbs */}
-        <div style={{ position: "absolute", top: "-60px", right: "-60px", width: "300px", height: "300px", borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,0.15) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", bottom: "-40px", left: "40%", width: "200px", height: "200px", borderRadius: "50%", background: "radial-gradient(circle, rgba(37,99,235,0.10) 0%, transparent 70%)", pointerEvents: "none" }} />
-
-        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "24px", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
-              <div style={{ padding: "12px", borderRadius: "16px", background: "linear-gradient(135deg,#7c3aed,#2563eb)", boxShadow: "0 8px 20px -4px rgba(124,58,237,0.5)" }}>
-                <Sparkles style={{ width: "24px", height: "24px", color: "white" }} />
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: "12px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "1.5px", color: "rgba(167,139,250,0.9)" }}>DevPilot AI</p>
-                <p style={{ margin: 0, fontSize: "11px", color: "var(--muted-foreground)" }}>Intelligence Platform</p>
-              </div>
-            </div>
-            <h1 style={{ margin: "0 0 12px 0", fontSize: "32px", fontWeight: "900", color: "var(--foreground)", letterSpacing: "-0.75px", lineHeight: 1.15 }}>
-              {repository ? `Welcome back 👋` : "Good morning 👋"}
-            </h1>
-            <p style={{ margin: 0, fontSize: "14px", color: "var(--muted-foreground)", lineHeight: "1.6", maxWidth: "500px" }}>
+    <div className="flex w-full flex-col gap-6 p-5 lg:p-8">
+      {/* ── Hero ───────────────────────────────────────────────────────── */}
+      <section className={`${cardClass} relative overflow-hidden`}>
+        <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
+        <div className="relative flex flex-wrap items-center justify-between gap-6">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-primary"><Sparkles size={14} />IFROG</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">{greeting(now)}</h1>
+            <p className="mt-2 max-w-xl text-sm text-muted-foreground">
               {repository
-                ? `Currently analyzing <strong>${repository.name}</strong> — ${repository.file_count} indexed files on branch <code>${repository.current_branch || "main"}</code>.`
-                : "Open a repository to start exploring code intelligence, AST analysis, and AI-powered refactoring."}
+                ? <>Working in <strong className="text-foreground">{repository.name}</strong> on <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{branch ?? "no branch"}</code> with {repository.file_count.toLocaleString()} indexed files.</>
+                : "Open a local project to browse its files, review Git changes, and ask AI about the code."}
             </p>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-end" }}>
-            <div style={{ fontSize: "13px", color: "var(--muted-foreground)", textAlign: "right" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--foreground)", fontWeight: "600" }}>
-                <Clock style={{ width: "14px", height: "14px" }} />
-                {now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-              <span style={{ fontSize: "11px" }}>{now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span>
+          <div className="flex flex-col items-end gap-3">
+            <div className="text-right text-sm">
+              <p className="font-semibold">{now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</p>
+              <p className="text-xs text-muted-foreground">{now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
             </div>
-            {!repository && (
-              <button
-                onClick={() => onNavigate("explorer")}
-                disabled={isLoading}
-                style={{
-                  display: "flex", alignItems: "center", gap: "8px",
-                  padding: "12px 24px", borderRadius: "14px", border: "none", cursor: "pointer",
-                  background: "linear-gradient(135deg,#7c3aed,#4f46e5,#2563eb)",
-                  color: "white", fontSize: "13px", fontWeight: "700",
-                  boxShadow: "0 8px 20px -4px rgba(124,58,237,0.4)",
-                }}
-              >
-                <Play style={{ width: "14px", height: "14px" }} />
-                Open Workspace Repo
-              </button>
-            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              {repository ? (
+                <>
+                  <button type="button" className={buttonClass} disabled={isLoading || reindexing || !onReindex} onClick={() => void reindex()} title="Rescan the working tree and rebuild symbols">
+                    <RefreshCw size={15} className={reindexing ? "animate-spin" : undefined} />{reindexing ? "Re-indexing…" : "Re-index"}
+                  </button>
+                  <button type="button" className={primaryButtonClass} onClick={() => onNavigate("editor")}><Code2 size={15} />Open in editor</button>
+                </>
+              ) : (
+                <button type="button" className={primaryButtonClass} disabled={isLoading} onClick={() => onNavigate("explorer")}><Folder size={15} />Open a project</button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* ── Stat Cards Row ───────────────────────────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
-        {[
-          { icon: FileCode2, label: "Total Files", value: repository ? String(repository.file_count) : "—", sub: "indexed source files", color: "#60a5fa", bg: "rgba(37,99,235,0.10)", border: "rgba(59,130,246,0.25)" },
-          { icon: GitBranch, label: "Active Branch", value: repository ? (repository.current_branch || "main") : "—", sub: "current checkout", color: "#a78bfa", bg: "rgba(124,58,237,0.10)", border: "rgba(139,92,246,0.25)" },
-          { icon: GitCommit, label: "HEAD Commit", value: repository ? (repository.head_commit?.slice(0, 7) || "—") : "—", sub: "latest commit hash", color: "#34d399", bg: "rgba(16,185,129,0.10)", border: "rgba(52,211,153,0.25)" },
-          { icon: BarChart3, label: "Languages", value: topLangs.length > 0 ? String(topLangs.length) : "—", sub: "detected in codebase", color: "#fb923c", bg: "rgba(251,146,60,0.10)", border: "rgba(251,146,60,0.25)" },
-        ].map(({ icon: Icon, label, value, sub, color, bg, border }) => (
-          <div key={label} style={{
-            padding: "24px 22px", borderRadius: "20px",
-            background: bg, border: `1.5px solid ${border}`,
-            display: "flex", flexDirection: "column", gap: "14px",
-            boxShadow: "0 4px 16px -4px rgba(0,0,0,0.2)",
-            transition: "transform 0.15s ease, box-shadow 0.15s ease",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.8px" }}>{label}</span>
-              <div style={{ padding: "8px", borderRadius: "10px", background: "rgba(255,255,255,0.08)" }}>
-                <Icon style={{ width: "16px", height: "16px", color }} />
-              </div>
+      {/* ── Stats ──────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {stats.map(({ icon: Icon, label, value, sub }) => (
+          <div key={label} className={`${cardClass} flex flex-col gap-3`}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
+              <span className="rounded-lg bg-muted p-2 text-muted-foreground"><Icon size={15} /></span>
             </div>
             <div>
-              <p style={{ margin: "0 0 4px 0", fontSize: "26px", fontWeight: "800", color: "var(--foreground)", letterSpacing: "-0.5px", fontFamily: "var(--font-code)" }}>{value}</p>
-              <p style={{ margin: 0, fontSize: "11px", color: "var(--muted-foreground)" }}>{sub}</p>
+              <p className="truncate font-mono text-2xl font-semibold" title={value}>{value}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{sub}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* ── Middle Row: Quick Actions + Lang Breakdown ───────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "20px" }}>
-
-        {/* Quick Actions */}
-        <div style={{
-          padding: "28px 28px", borderRadius: "20px",
-          background: "rgba(18,18,24,0.9)", border: "1.5px solid rgba(255,255,255,0.08)",
-          boxShadow: "0 8px 32px -8px rgba(0,0,0,0.4)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <Zap style={{ width: "16px", height: "16px", color: "#fbbf24" }} />
-              <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--foreground)" }}>Quick Actions</span>
-            </div>
+      {/* ── Quick actions + languages ──────────────────────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section className={cardClass}>
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold"><Activity size={15} className="text-muted-foreground" />Quick actions</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {QUICK_ACTIONS.map(({ icon: Icon, label, desc, tab, needsRepository }) => (
+              <button key={tab} type="button" disabled={Boolean(needsRepository) && !repository} onClick={() => onNavigate(tab)}
+                className="group flex items-start gap-3 rounded-xl border border-border/70 bg-muted/40 p-4 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50">
+                <span className="rounded-lg bg-background p-2 text-primary"><Icon size={17} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center justify-between gap-2 text-sm font-semibold">{label}<ArrowRight size={13} className="text-muted-foreground transition-transform group-hover:translate-x-0.5" /></span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{desc}</span>
+                </span>
+              </button>
+            ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
-            {QUICK_ACTIONS.map(action => {
-              const Icon = action.icon;
-              return (
-                <button
-                  key={action.label}
-                  onClick={() => onNavigate(action.tab)}
-                  style={{
-                    display: "flex", alignItems: "flex-start", gap: "14px",
-                    padding: "20px 18px", borderRadius: "16px",
-                    background: action.bg, border: `1.5px solid ${action.border}`,
-                    cursor: "pointer", textAlign: "left", transition: "all 0.15s ease",
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 24px -4px rgba(0,0,0,0.3)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = ""; (e.currentTarget as HTMLButtonElement).style.boxShadow = ""; }}
-                >
-                  <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(255,255,255,0.08)", flexShrink: 0 }}>
-                    <Icon style={{ width: "18px", height: "18px", color: action.color }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "5px" }}>
-                      <span style={{ fontSize: "13px", fontWeight: "700", color: "var(--foreground)" }}>{action.label}</span>
-                      <ArrowRight style={{ width: "13px", height: "13px", color: "var(--muted-foreground)" }} />
-                    </div>
-                    <p style={{ margin: 0, fontSize: "11px", color: "var(--muted-foreground)", lineHeight: "1.4" }}>{action.desc}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        </section>
 
-        {/* Language Breakdown */}
-        <div style={{
-          padding: "28px", borderRadius: "20px",
-          background: "rgba(18,18,24,0.9)", border: "1.5px solid rgba(255,255,255,0.08)",
-          boxShadow: "0 8px 32px -8px rgba(0,0,0,0.4)",
-          display: "flex", flexDirection: "column", gap: "16px",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Code2 style={{ width: "16px", height: "16px", color: "#a78bfa" }} />
-            <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--foreground)" }}>Language Breakdown</span>
-          </div>
-
+        <section className={`${cardClass} flex flex-col gap-4`}>
+          <h2 className="flex items-center gap-2 text-sm font-semibold"><FileCode2 size={15} className="text-muted-foreground" />Language breakdown</h2>
           {topLangs.length > 0 ? (
             <>
-              {/* Stacked bar */}
-              <div style={{ height: "10px", borderRadius: "99px", overflow: "hidden", display: "flex", gap: "2px" }}>
-                {topLangs.map(([lang, count]) => (
-                  <div key={lang} style={{
-                    flex: count, height: "100%",
-                    background: LANG_COLORS[lang] ?? "#475569",
-                    borderRadius: "99px",
-                  }} />
-                ))}
+              <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full">
+                {topLangs.map(([lang, count]) => <div key={lang} style={{ flex: count, background: LANG_COLORS[lang] ?? "#475569" }} />)}
               </div>
-
-              {/* Lang list */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <ul className="flex flex-col gap-2.5">
                 {topLangs.map(([lang, count]) => {
                   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
                   return (
-                    <div key={lang} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: LANG_COLORS[lang] ?? "#475569", flexShrink: 0, boxShadow: `0 0 6px ${LANG_COLORS[lang] ?? "#475569"}` }} />
-                      <span style={{ flex: 1, fontSize: "12px", fontWeight: "600", color: "var(--foreground)" }}>{LANG_LABELS[lang] ?? lang}</span>
-                      <span style={{ fontSize: "11px", color: "var(--muted-foreground)", fontFamily: "var(--font-code)" }}>{count} files</span>
-                      <div style={{ width: "60px", height: "5px", borderRadius: "99px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, height: "100%", borderRadius: "99px", background: LANG_COLORS[lang] ?? "#475569" }} />
-                      </div>
-                    </div>
+                    <li key={lang} className="flex items-center gap-3 text-sm">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: LANG_COLORS[lang] ?? "#475569" }} />
+                      <span className="flex-1 font-medium">{LANG_LABELS[lang] ?? lang}</span>
+                      <span className="font-mono text-xs text-muted-foreground">{count} files</span>
+                      <span className="h-1.5 w-14 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full" style={{ width: `${pct}%`, background: LANG_COLORS[lang] ?? "#475569" }} /></span>
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             </>
           ) : (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px", color: "var(--muted-foreground)", textAlign: "center" }}>
-              <Database style={{ width: "32px", height: "32px", opacity: 0.3 }} />
-              <p style={{ margin: 0, fontSize: "12px" }}>Open a repository to see language breakdown</p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center text-sm text-muted-foreground">
+              <Database size={28} className="opacity-40" />
+              <p>Open a repository to see its language breakdown.</p>
             </div>
           )}
-        </div>
+        </section>
       </div>
 
-      {/* ── Bottom Row: System Status + Recent Activity ───────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-
-        {/* Recent Activity */}
-        <div style={{
-          padding: "28px", borderRadius: "20px",
-          background: "rgba(18,18,24,0.9)", border: "1.5px solid rgba(255,255,255,0.08)",
-          boxShadow: "0 8px 32px -8px rgba(0,0,0,0.4)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
-            <Activity style={{ width: "16px", height: "16px", color: "#34d399" }} />
-            <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--foreground)" }}>Recent Activity</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
-            {RECENT_ACTIVITY.map((item, i) => {
-              const Icon = item.icon;
-              return (
-                <div key={i} style={{
-                  display: "flex", alignItems: "flex-start", gap: "14px",
-                  padding: "14px 0",
-                  borderBottom: i < RECENT_ACTIVITY.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none",
-                }}>
-                  <div style={{ width: "32px", height: "32px", borderRadius: "10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Icon style={{ width: "14px", height: "14px", color: item.color }} />
+      {/* ── Recent commits + system status ─────────────────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className={cardClass}>
+          <header className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold"><GitCommitHorizontal size={15} className="text-muted-foreground" />Recent commits</h2>
+            {repository && status && status.commits.length > 0 && <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => onNavigate("git")}>View all</button>}
+          </header>
+          {!repository ? (
+            <p className="py-6 text-sm text-muted-foreground">Open a project to see its commit history.</p>
+          ) : git.error ? (
+            <div role="alert" className="flex items-center gap-2 py-4 text-sm text-amber-700 dark:text-amber-300"><TriangleAlert size={15} /><span className="flex-1">{git.error}</span><button type="button" className={buttonClass} onClick={git.refresh}>Retry</button></div>
+          ) : !status ? (
+            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><LoaderCircle size={15} className="animate-spin" />Reading Git history…</div>
+          ) : status.commits.length === 0 ? (
+            <p className="py-6 text-sm text-muted-foreground">No commits in this repository yet.</p>
+          ) : (
+            <ol className="divide-y divide-border/70">
+              {status.commits.slice(0, 6).map(commit => (
+                <li key={commit.sha} className="flex items-center gap-3 py-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><GitCommitHorizontal size={15} /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium" title={commit.message}>{commit.message}</p>
+                    <p className="text-xs text-muted-foreground">{commit.author} · <time dateTime={commit.committed_at} title={new Date(commit.committed_at).toLocaleString()}>{formatRelativeTime(commit.committed_at, now)}</time></p>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ margin: "0 0 3px 0", fontSize: "12px", fontWeight: "600", color: "var(--foreground)" }}>{item.label}</p>
-                    <p style={{ margin: 0, fontSize: "11px", color: "var(--muted-foreground)" }}>{item.time}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                  <code className="font-mono text-xs text-muted-foreground" title={commit.sha}>{commit.sha.slice(0, 7)}</code>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
 
-        {/* System Status */}
-        <div style={{
-          padding: "28px", borderRadius: "20px",
-          background: "rgba(18,18,24,0.9)", border: "1.5px solid rgba(255,255,255,0.08)",
-          boxShadow: "0 8px 32px -8px rgba(0,0,0,0.4)",
-          display: "flex", flexDirection: "column", gap: "20px",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Shield style={{ width: "16px", height: "16px", color: "#f472b6" }} />
-            <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--foreground)" }}>System Status</span>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {[
-              { label: "Backend API", status: "Operational", color: "#34d399", bg: "rgba(16,185,129,0.12)", border: "rgba(52,211,153,0.3)" },
-              { label: "Tree-sitter Parser", status: "Active", color: "#34d399", bg: "rgba(16,185,129,0.12)", border: "rgba(52,211,153,0.3)" },
-              { label: "AI Agent Engine", status: "Ready", color: "#34d399", bg: "rgba(16,185,129,0.12)", border: "rgba(52,211,153,0.3)" },
-              { label: "SQLite Repository DB", status: "Connected", color: "#34d399", bg: "rgba(16,185,129,0.12)", border: "rgba(52,211,153,0.3)" },
-              { label: "Git Integration", status: repository ? "Active" : "No Repo", color: repository ? "#34d399" : "#fbbf24", bg: repository ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)", border: repository ? "rgba(52,211,153,0.3)" : "rgba(245,158,11,0.3)" },
-            ].map(({ label, status, color, bg, border }) => (
-              <div key={label} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "14px 18px", borderRadius: "14px",
-                background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
-              }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--foreground)" }}>{label}</span>
-                <span style={{
-                  display: "flex", alignItems: "center", gap: "6px",
-                  fontSize: "11px", fontWeight: "700", padding: "4px 12px",
-                  borderRadius: "99px", background: bg, border: `1px solid ${border}`, color,
-                }}>
-                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: color, boxShadow: `0 0 6px ${color}` }} />
-                  {status}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* AI Agent call to action */}
-          <button
-            onClick={() => onNavigate("ai")}
-            style={{
-              marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-              padding: "14px 20px", borderRadius: "14px", border: "none", cursor: "pointer",
-              background: "linear-gradient(135deg,#7c3aed,#4f46e5,#2563eb)",
-              color: "white", fontSize: "13px", fontWeight: "700",
-              boxShadow: "0 8px 20px -4px rgba(124,58,237,0.35)",
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)"; (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 12px 28px -4px rgba(124,58,237,0.5)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = ""; (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 20px -4px rgba(124,58,237,0.35)"; }}
-          >
-            <Bot style={{ width: "16px", height: "16px" }} />
-            Launch AI Agent Studio
-            <ChevronRight style={{ width: "14px", height: "14px" }} />
-          </button>
-        </div>
+        <section className={`${cardClass} flex flex-col gap-3`}>
+          <h2 className="flex items-center gap-2 text-sm font-semibold"><Server size={15} className="text-muted-foreground" />System status</h2>
+          <StatusRow label="Backend API" detail={backend === "down" ? "The local service did not answer /health." : "Local FastAPI service"}>
+            {backend === "checking" ? <StatusPill tone="muted">Checking…</StatusPill> : backend === "ok" ? <StatusPill tone="ok">Operational</StatusPill> : <StatusPill tone="bad">Unreachable</StatusPill>}
+          </StatusRow>
+          <StatusRow label="Project index" detail={repository ? `${repository.file_count.toLocaleString()} files${repository.opened_at ? ` · ${formatRelativeTime(repository.opened_at, now)}` : ""}` : "No project open"}>
+            {repository ? <StatusPill tone="ok">Indexed</StatusPill> : <StatusPill tone="muted">Idle</StatusPill>}
+          </StatusRow>
+          <StatusRow label="Git" detail={!repository ? "Open a project to read its repository" : git.error ? git.error : status ? (status.upstream ? `${status.upstream} · ${status.ahead ?? 0} ahead, ${status.behind ?? 0} behind` : "No upstream configured") : "Reading status…"}>
+            {!repository ? <StatusPill tone="muted">No project</StatusPill> : git.error ? <StatusPill tone="warn">Unavailable</StatusPill> : status ? <StatusPill tone="ok">{branch ?? "Detached"}</StatusPill> : <StatusPill tone="muted">Checking…</StatusPill>}
+          </StatusRow>
+          {(["codex", "gemini"] as ProviderId[]).map(id => {
+            const described = providers === "loading" ? null : providers === null ? null : describeProvider(providers[id]);
+            return (
+              <StatusRow key={id} label={`${PROVIDER_NAMES[id]} CLI`} detail="AI provider for the assistant">
+                {providers === "loading" ? <StatusPill tone="muted">Checking…</StatusPill> : described ? <StatusPill tone={described.tone}>{described.label}</StatusPill> : <StatusPill tone="muted">Unknown</StatusPill>}
+              </StatusRow>
+            );
+          })}
+          <button type="button" className={`${primaryButtonClass} mt-auto justify-center`} onClick={() => onNavigate("ai")}><Bot size={15} />Open AI Assistant</button>
+        </section>
       </div>
     </div>
   );

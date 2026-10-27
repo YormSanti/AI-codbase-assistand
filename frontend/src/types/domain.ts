@@ -42,6 +42,8 @@ export interface TreeNode {
   language: Language | null;
   size_bytes: number | null;
   file_id: number | null;
+  /** Classes, functions, and methods in a file; absent or null when none are indexed. */
+  symbol_count?: number | null;
   children: TreeNode[];
 }
 
@@ -66,4 +68,49 @@ export interface FilePreview {
   size_bytes?: number | null;
   editable?: boolean;
   editing_disabled_reason?: string | null;
+}
+
+export interface SearchMatch {
+  path: string;
+  line: number;
+  column: number;
+  text: string;
+}
+
+export interface SearchResults {
+  query: string;
+  matches: SearchMatch[];
+  files_scanned: number;
+  truncated: boolean;
+}
+
+export interface SymbolMatch {
+  name: string;
+  kind: SymbolKind;
+  path: string;
+  start_line: number;
+  end_line: number;
+  parent_name: string | null;
+}
+
+export type HealthCategory = "secret" | "risk" | "complexity" | "marker";
+export type HealthSeverity = "high" | "medium" | "low" | "info";
+
+export interface HealthFinding {
+  category: HealthCategory;
+  rule: string;
+  severity: HealthSeverity;
+  title: string;
+  path: string;
+  line: number;
+  /** The source line; detected secrets are redacted by the backend. */
+  snippet: string;
+}
+
+export interface HealthReport {
+  files_scanned: number;
+  findings: HealthFinding[];
+  large_files: { path: string; size_bytes: number }[];
+  counts: Record<HealthCategory, number>;
+  truncated: boolean;
 }

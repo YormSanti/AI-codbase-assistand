@@ -30,3 +30,52 @@ export interface GitDiff {
   is_binary: boolean;
   truncated: boolean;
 }
+
+export interface StagedDiff {
+  content: string;
+  stat: string;
+  files: number;
+  truncated: boolean;
+}
+
+export interface CommitFile {
+  path: string;
+  /** A, M, D, R (renamed), C (copied), or T (type change). */
+  status: string;
+  original_path: string | null;
+  /** Null for binary files. */
+  additions: number | null;
+  deletions: number | null;
+}
+
+export interface CommitDetails {
+  sha: string;
+  message: string;
+  author: string;
+  author_email: string;
+  committed_at: string;
+  parents: string[];
+  files: CommitFile[];
+}
+
+export interface BranchInfo {
+  name: string;
+  upstream: string | null;
+  subject: string;
+  committed_at: string | null;
+}
+
+export interface BranchList {
+  /** Checked-out branch (also one without commits yet); null when HEAD is detached. */
+  current: string | null;
+  detached: boolean;
+  /** Local branches, most recently committed first. */
+  branches: BranchInfo[];
+}
+
+export interface FileHistory {
+  /** Path relative to the Git repository root (may differ from the editor's path in a subfolder workspace). */
+  path: string;
+  /** Newest first, following renames. */
+  commits: GitCommit[];
+}

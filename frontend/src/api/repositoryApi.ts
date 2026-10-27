@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { RepositoryInfo, TreeNode } from "../types/domain";
+import type { RepositoryInfo, SymbolMatch, TreeNode } from "../types/domain";
 
 // React development-mode startup can restore the same project twice.
 // Share concurrent opens so indexing and SQLite inserts do not race.
@@ -21,10 +21,21 @@ export const repositoryApi = {
     return apiRequest<RepositoryInfo[]>("/api/repositories");
   },
 
+  /** Rescan the working tree and rebuild symbols for every file. */
+  reindex(repositoryId: number): Promise<RepositoryInfo> {
+    return apiRequest<RepositoryInfo>(`/api/repositories/${repositoryId}/reindex`, { method: "POST" });
+  },
+
   remove(repositoryId: number): Promise<void> {
     return apiRequest<void>(`/api/repositories/${repositoryId}`, {
       method: "DELETE",
     });
+  },
+
+  /** Indexed classes, functions, and methods whose name contains `query`, best matches first. */
+  searchSymbols(repositoryId: number, query: string, limit = 50): Promise<SymbolMatch[]> {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    return apiRequest<SymbolMatch[]>(`/api/repositories/${repositoryId}/symbols?${params}`);
   },
 
   getTree(repositoryId: number): Promise<TreeNode> {

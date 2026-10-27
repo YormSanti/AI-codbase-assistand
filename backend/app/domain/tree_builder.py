@@ -5,12 +5,16 @@ without a database or filesystem.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from app.domain.models import FileMetadata, TreeNode
 
 _DirEntry = dict[str, "_DirEntry | FileMetadata"]
 
 
-def build_tree(root_name: str, files: list[FileMetadata]) -> TreeNode:
+def build_tree(root_name: str, files: list[FileMetadata], symbol_counts: Mapping[int, int] | None = None) -> TreeNode:
+    """Nest `files` under directories; `symbol_counts` maps file ids to their symbol counts."""
+    counts = symbol_counts or {}
     root: _DirEntry = {}
 
     for file in sorted(files, key=lambda f: f.relative_path):
@@ -33,6 +37,7 @@ def build_tree(root_name: str, files: list[FileMetadata]) -> TreeNode:
                         language=child_value.language,
                         size_bytes=child_value.size_bytes,
                         file_id=child_value.id,
+                        symbol_count=counts.get(child_value.id) if child_value.id is not None else None,
                     )
                 )
             else:

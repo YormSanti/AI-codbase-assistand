@@ -47,6 +47,7 @@ class TreeNodeResponse(BaseModel):
     language: Language | None = None
     size_bytes: int | None = None
     file_id: int | None = None
+    symbol_count: int | None = None
     children: list["TreeNodeResponse"] = Field(default_factory=list)
 
     @classmethod
@@ -58,6 +59,7 @@ class TreeNodeResponse(BaseModel):
             language=node.language,
             size_bytes=node.size_bytes,
             file_id=node.file_id,
+            symbol_count=node.symbol_count,
             children=[cls.from_domain(child) for child in node.children],
         )
 
@@ -112,6 +114,23 @@ class FilePreviewResponse(BaseModel):
 class SaveFileRequest(BaseModel):
     content: str = Field(..., max_length=512_000)
     expected_hash: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+
+
+class GitPathsRequest(BaseModel):
+    paths: list[str] = Field(..., min_length=1, max_length=500, description="Changed paths from the current Git status")
+
+
+class GitSwitchBranchRequest(BaseModel):
+    branch: str = Field(..., min_length=1, max_length=200)
+
+
+class GitCreateBranchRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    checkout: bool = True
+
+
+class GitCommitRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=10_000)
 
 
 class ErrorResponse(BaseModel):

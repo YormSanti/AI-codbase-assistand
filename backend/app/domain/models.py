@@ -47,6 +47,8 @@ class FileMetadata:
     is_binary: bool
     id: int | None = None
     repository_id: int | None = None
+    mtime_ns: int | None = None
+    """Modification time at scan; with the size it lets a rescan skip re-hashing unchanged files."""
 
     @property
     def name(self) -> str:
@@ -57,6 +59,18 @@ class FileMetadata:
         if "/" not in self.relative_path:
             return ""
         return self.relative_path.rsplit("/", 1)[0]
+
+
+@dataclass(frozen=True, slots=True)
+class FileSyncResult:
+    """Outcome of reconciling scanned files with the stored index."""
+
+    files: list[FileMetadata]
+    """Every indexed file after the sync, each with its persisted id."""
+    changed: list[FileMetadata]
+    """Files that were added or whose content hash changed and need re-parsing."""
+    removed: int = 0
+    """Stored files that no longer exist in the working tree."""
 
 
 class SymbolKind(str, Enum):
@@ -77,6 +91,57 @@ class CodeSymbol:
     parent_name: str | None = None
     id: int | None = None
     file_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HealthFinding:
+    category: str
+    """secret, risk, complexity, or marker."""
+    rule: str
+    severity: str
+    """high, medium, low, or info."""
+    title: str
+    path: str
+    line: int
+    snippet: str
+    """The source line, with any detected secret redacted."""
+
+
+@dataclass(frozen=True, slots=True)
+class FunctionComplexity:
+    """Cyclomatic complexity of one function: 1 plus its branch points, not counting nested functions."""
+
+    name: str
+    start_line: int
+    complexity: int
+
+
+@dataclass(frozen=True, slots=True)
+class LargeFile:
+    path: str
+    size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class HealthReport:
+    files_scanned: int
+    findings: list[HealthFinding]
+    large_files: list[LargeFile]
+    counts: dict[str, int]
+    truncated: bool = False
+    """True when a time, file, or per-category finding limit stopped the scan early."""
+
+
+@dataclass(frozen=True, slots=True)
+class SymbolMatch:
+    """A workspace symbol search hit: the symbol and where it is defined."""
+
+    name: str
+    kind: SymbolKind
+    path: str
+    start_line: int
+    end_line: int
+    parent_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +167,28 @@ class TreeNode:
     language: Language | None = None
     size_bytes: int | None = None
     file_id: int | None = None
+    symbol_count: int | None = None
+    """Classes, functions, and methods found in a file; None when none are stored."""
     children: list["TreeNode"] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchMatch:
+    """One matching line from a project-wide text search."""
+
+    path: str
+    line: int
+    column: int
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResults:
+    query: str
+    matches: list[SearchMatch]
+    files_scanned: int
+    truncated: bool = False
+    """True when the match limit, file limit, or time budget stopped the scan early."""
 
 
 @dataclass(frozen=True, slots=True)

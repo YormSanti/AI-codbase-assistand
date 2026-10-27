@@ -1,0 +1,24 @@
+.editor-search { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; background: var(--editor-shell-bg, var(--background)); color: var(--editor-shell-text, var(--foreground)); font-size: 12px; }
+.editor-search-body { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 12px 14px; gap: 8px; }
+.editor-search-box { display: flex; align-items: center; gap: 6px; }
+.editor-search-box input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--editor-shell-border, var(--border)); border-radius: 4px; background: var(--background); color: inherit; font: 12px var(--font-body, inherit); }
+.editor-search-box input:focus { outline: 1px solid #23a9f2; outline-offset: -1px; }
+.editor-search-box input:disabled { opacity: .6; }
+.editor-search-toggle { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--editor-shell-border, var(--border)); border-radius: 4px; color: var(--editor-shell-muted, var(--muted-foreground)); background: transparent; }
+.editor-search-toggle:hover { background: var(--overlay-2); color: inherit; }
+.editor-search-toggle[aria-pressed="true"] { color: #23a9f2; border-color: #23a9f2; background: var(--overlay-1); }
+.editor-search-summary { display: flex; align-items: center; gap: 6px; min-height: 18px; color: var(--editor-shell-muted, var(--muted-foreground)); }
+.editor-search-truncated { opacity: .85; }
+.editor-search-results { flex: 1; min-height: 0; overflow: auto; }
+.editor-search-empty { padding: 20px 0; color: var(--editor-shell-muted, var(--muted-foreground)); }
+.editor-search-file { margin-bottom: 4px; }
+.editor-search-file-heading { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 6px; border-radius: 4px; text-align: left; color: inherit; background: transparent; border: 0; }
+.editor-search-file-heading:hover { background: var(--overlay-1); }
+.editor-search-file-name { font-weight: 600; }
+.editor-search-file-heading small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--editor-shell-muted, var(--muted-foreground)); }
+.editor-search-file-heading .editor-git-count { margin-left: auto; }
+.editor-search-match { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 3px 6px 3px 30px; border: 0; border-radius: 4px; text-align: left; color: inherit; background: transparent; font-family: var(--font-code, monospace); }
+.editor-search-match:hover, .editor-search-match:focus-visible { background: var(--overlay-2); outline: none; }
+.editor-search-line { flex-shrink: 0; min-width: 32px; text-align: right; color: var(--editor-shell-muted, var(--muted-foreground)); font-size: 11px; }
+.editor-search-match code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; font: inherit; }
+.editor-search-match mark { background: rgba(35, 169, 242, 0.28); color: inherit; border-radius: 2px; }

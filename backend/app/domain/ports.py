@@ -9,18 +9,79 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.domain.git_models import GitDiff, GitStatus
-from app.domain.models import CodeSymbol, FileMetadata, Language, RepositoryInfo
+from app.domain.git_models import BranchList, CommitDetails, FileHistory, GitCommit, GitDiff, GitStatus, StagedDiff
+from app.domain.models import CodeSymbol, FileMetadata, FileSyncResult, Language, RepositoryInfo, SymbolMatch
 
 
 class GitReviewPort(ABC):
-    """Read live status and diffs without changing the working tree or index."""
+    """Read live status and diffs, and apply explicit index/commit actions.
+
+    Reads never touch the working tree or index. Writes are limited to the
+    three actions below, always on paths the user picked from the current
+    status; nothing fetches, pushes, or rewrites history.
+    """
 
     @abstractmethod
     def get_status(self, path: str) -> GitStatus: ...
 
     @abstractmethod
     def get_diff(self, root_path: str, path: str, staged: bool) -> GitDiff: ...
+
+    @abstractmethod
+    def get_commit(self, root_path: str, sha: str) -> CommitDetails:
+        """Metadata and changed files of one commit, compared with its first parent."""
+
+    @abstractmethod
+    def get_commit_diff(self, root_path: str, sha: str, path: str) -> GitDiff:
+        """One file's patch within a commit."""
+
+    @abstractmethod
+    def get_file_history(self, root_path: str, path: str, limit: int) -> FileHistory:
+        """Commits that changed `path` (relative to `root_path`), newest first, following renames."""
+
+    @abstractmethod
+    def get_staged_diff(self, root_path: str) -> StagedDiff:
+        """The combined patch and stat of everything currently staged."""
+
+    @abstractmethod
+    def stage(self, root_path: str, paths: list[str]) -> None:
+        """Add the given changed paths (including deletions) to the index."""
+
+    @abstractmethod
+    def unstage(self, root_path: str, paths: list[str]) -> None:
+        """Remove the given paths from the index, keeping working tree edits."""
+
+    @abstractmethod
+    def list_branches(self, root_path: str) -> BranchList:
+        """Local branches and which one is checked out."""
+
+    @abstractmethod
+    def switch_branch(self, root_path: str, name: str) -> None:
+        """Check out an existing local branch; refused while tracked files have changes."""
+
+    @abstractmethod
+    def create_branch(self, root_path: str, name: str, checkout: bool) -> None:
+        """Create a branch at HEAD, optionally switching to it (working-tree changes come along)."""
+
+    @abstractmethod
+    def fetch(self, root_path: str) -> None:
+        """Fetch every remote, pruning deleted remote branches."""
+
+    @abstractmethod
+    def pull(self, root_path: str) -> None:
+        """Fast-forward the current branch to its upstream; never creates a merge commit."""
+
+    @abstractmethod
+    def push(self, root_path: str) -> str:
+        """Push the current branch (setting an upstream on first push); never forces. Returns the target."""
+
+    @abstractmethod
+    def discard(self, root_path: str, paths: list[str]) -> None:
+        """Throw away working-tree changes: restore tracked files from the index, delete untracked ones."""
+
+    @abstractmethod
+    def commit(self, root_path: str, message: str) -> GitCommit:
+        """Commit the index with `message`; hooks and identity rules apply as in the CLI."""
 
 
 class GitClientPort(ABC):
@@ -56,8 +117,13 @@ class FileMetadataRepositoryPort(ABC):
         """Delete a repository and its indexed files."""
 
     @abstractmethod
-    def replace_files(self, repository_id: int, files: list[FileMetadata]) -> list[FileMetadata]:
-        """Atomically replace all indexed files for a repository (re-index)."""
+    def sync_files(self, repository_id: int, files: list[FileMetadata]) -> FileSyncResult:
+        """Reconcile the stored index with `files`.
+
+        Unchanged files keep their ids (and symbols), changed files are
+        updated in place, new files are inserted, and files missing from
+        `files` are removed together with their symbols.
+        """
 
     @abstractmethod
     def list_files(self, repository_id: int) -> list[FileMetadata]: ...
@@ -81,6 +147,10 @@ class CodeParserPort(ABC):
     def parse(self, source: bytes, language: Language) -> list[CodeSymbol]:
         """Extract symbols from `source`. Caller guarantees `supports(language)`."""
 
+    @abstractmethod
+    def complexity(self, source: bytes, language: Language) -> list[FunctionComplexity]:
+        """Cyclomatic complexity of each function in `source`. Caller guarantees `supports(language)`."""
+
 
 class SymbolRepositoryPort(ABC):
     """Persists the symbols extracted from a single file."""
@@ -91,3 +161,11 @@ class SymbolRepositoryPort(ABC):
 
     @abstractmethod
     def list_symbols_for_file(self, file_id: int) -> list[CodeSymbol]: ...
+
+    @abstractmethod
+    def search_symbols(self, repository_id: int, query: str, limit: int) -> list[SymbolMatch]:
+        """Classes, functions, and methods whose name contains `query`, best matches first."""
+
+    @abstractmethod
+    def count_symbols_by_file(self, repository_id: int) -> dict[int, int]:
+        """Number of classes, functions, and methods per file id; files without any are left out."""

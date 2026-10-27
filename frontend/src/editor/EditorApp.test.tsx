@@ -1,12 +1,20 @@
 import { useEffect, useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { RepositoryInfo } from "../types/domain";
 import { EditorApp } from "./EditorApp";
+import { gitApi } from "../api/gitApi";
+import { useEditorShell } from "./editorShell";
+
+function HistoryButton() {
+  const shell = useEditorShell();
+  return shell ? <button type="button" onClick={() => shell.showFileHistory("src/a.ts")}>Show history</button> : <span>no shell</span>;
+}
 
 const shells = vi.hoisted(() => ({ start: vi.fn(), close: vi.fn() }));
 vi.mock("../components/ThemeToggle", () => ({ ThemeToggle: () => null }));
-vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn().mockResolvedValue({ branch: "main", changes: [], commits: [], head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null }), getDiff: vi.fn() } }));
+vi.mock("../api/editorApi", () => ({ editorApi: { search: vi.fn().mockResolvedValue({ query: "draft", matches: [{ path: "src/a.ts", line: 3, column: 1, text: "draft line" }], files_scanned: 1, truncated: false }) } }));
+vi.mock("../api/gitApi", () => ({ gitApi: { getStatus: vi.fn().mockResolvedValue({ branch: "main", changes: [], commits: [], head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null }), getDiff: vi.fn(), listBranches: vi.fn(), switchBranch: vi.fn(), createBranch: vi.fn(), getFileHistory: vi.fn() } }));
 vi.mock("../components/TerminalPage", () => ({ TerminalPage: ({ repository }: { repository: RepositoryInfo }) => {
   const [command, setCommand] = useState("");
   useEffect(() => { shells.start(repository.root_path); return () => { shells.close(repository.root_path); }; }, [repository.root_path]);
@@ -16,7 +24,7 @@ vi.mock("../components/TerminalPage", () => ({ TerminalPage: ({ repository }: { 
 const repository: RepositoryInfo = { id: 1, name: "project", root_path: "/project", current_branch: "main", head_commit: null, opened_at: null, file_count: 1 };
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
-it("keeps the file draft and shell when entering and leaving the editor through File Explorer", () => {
+it("keeps the file draft and shell when entering and leaving the editor through File Explorer", async () => {
   const props = { active: false, repository, isLoading: false, onNavigate: vi.fn() };
   const view = render(<EditorApp {...props}><input aria-label="File draft" defaultValue="saved" /></EditorApp>);
   fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "unsaved draft" } });
@@ -24,7 +32,7 @@ it("keeps the file draft and shell when entering and leaving the editor through 
   expect(screen.getByLabelText("File draft")).toHaveValue("unsaved draft");
   expect(shells.start).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  fireEvent.change(screen.getByLabelText("Shell input"), { target: { value: "npm run dev" } });
+  fireEvent.change(await screen.findByLabelText("Shell input", {}, { timeout: 5000 }), { target: { value: "npm run dev" } });
   view.rerender(<EditorApp {...props}><input aria-label="File draft" defaultValue="saved" /></EditorApp>);
   expect(screen.getByLabelText("File draft")).toHaveValue("unsaved draft");
   expect(screen.getByLabelText("Shell input")).not.toBeVisible();
@@ -34,13 +42,13 @@ it("keeps the file draft and shell when entering and leaving the editor through 
   expect(shells.start).toHaveBeenCalledTimes(1);
 });
 
-it("switches a visible terminal to the new project and defers a hidden terminal until requested", () => {
+it("switches a visible terminal to the new project and defers a hidden terminal until requested", async () => {
   const props = { active: true, repository, isLoading: false, onNavigate: vi.fn() };
   const next = { ...repository, id: 2, name: "next", root_path: "/next" };
   const third = { ...repository, id: 3, name: "third", root_path: "/third" };
   const view = render(<EditorApp {...props}><span>workspace</span></EditorApp>);
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  expect(shells.start).toHaveBeenCalledWith("/project");
+  await waitFor(() => expect(shells.start).toHaveBeenCalledWith("/project"), { timeout: 5000 });
   view.rerender(<EditorApp {...props} repository={next}><span>workspace</span></EditorApp>);
   expect(shells.close).toHaveBeenCalledWith("/project");
   expect(shells.start).toHaveBeenLastCalledWith("/next");
@@ -59,9 +67,9 @@ it("keeps drafts and the terminal alive while reviewing Git inside the editor", 
   </EditorApp>);
   fireEvent.change(screen.getByLabelText("File draft"), { target: { value: "unsaved" } });
   fireEvent.click(screen.getByRole("button", { name: "Toggle integrated terminal" }));
-  fireEvent.change(screen.getByLabelText("Shell input"), { target: { value: "git status" } });
+  fireEvent.change(await screen.findByLabelText("Shell input", {}, { timeout: 5000 }), { target: { value: "git status" } });
   fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
-  expect((await screen.findAllByText("Working tree clean"))[0]).toBeVisible();
+  expect((await screen.findAllByText("Working tree clean", {}, { timeout: 5000 }))[0]).toBeVisible();
   expect(screen.getByLabelText("File draft")).not.toBeVisible();
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
   expect(screen.getByLabelText("Shell input")).toHaveValue("git status");
@@ -107,7 +115,7 @@ it("opens extensions inside the editor without navigating away from code", async
 
   // The draft is hidden while extensions view is visible
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
-  expect(screen.getByText("Install from VSIX…")).toBeVisible();
+  expect(await screen.findByText("Install from VSIX…", {}, { timeout: 5000 })).toBeVisible();
   expect(screen.getByText("Python")).toBeVisible();
 
   // Clicking "Back to code" returns to code
@@ -144,7 +152,7 @@ it("keeps the open file code visible and active when closing or toggling the exp
   expect(screen.getByLabelText("File draft")).toBeVisible();
 });
 
-it("opens dedicated editor settings inside the editor workspace without kicking user to global app settings", () => {
+it("opens dedicated editor settings inside the editor workspace without kicking user to global app settings", async () => {
   const onNavigate = vi.fn();
   render(
     <EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
@@ -163,7 +171,7 @@ it("opens dedicated editor settings inside the editor workspace without kicking 
 
   // The draft is safely hidden in the background while settings is visible
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
-  expect(screen.getByText("Editor Settings")).toBeVisible();
+  expect(await screen.findByText("Editor Settings", {}, { timeout: 5000 })).toBeVisible();
   expect(screen.getByText("Editor: Font Size")).toBeVisible();
   expect(screen.getByText("Live Preview")).toBeVisible();
 
@@ -173,7 +181,7 @@ it("opens dedicated editor settings inside the editor workspace without kicking 
   expect(screen.getByLabelText("File draft")).toHaveValue("modified code buffer");
 });
 
-it("toggles editor settings with Ctrl+, shortcut without navigating away", () => {
+it("toggles editor settings with Ctrl+, shortcut without navigating away", async () => {
   const onNavigate = vi.fn();
   render(
     <EditorApp active repository={repository} isLoading={false} onNavigate={onNavigate}>
@@ -184,9 +192,98 @@ it("toggles editor settings with Ctrl+, shortcut without navigating away", () =>
   // Press Ctrl+,
   fireEvent.keyDown(window, { key: ",", ctrlKey: true });
   expect(onNavigate).not.toHaveBeenCalled();
-  expect(screen.getByText("Editor Settings")).toBeVisible();
+  expect(await screen.findByText("Editor Settings", {}, { timeout: 5000 })).toBeVisible();
 
   // Press Ctrl+, again to toggle back
   fireEvent.keyDown(window, { key: ",", ctrlKey: true });
   expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+});
+
+it("searches project files from the rail and jumps to a match in the code view", async () => {
+  const onRevealLine = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onRevealLine={onRevealLine}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  fireEvent.click(screen.getByRole("button", { name: "Search in files" }));
+  const input = await screen.findByRole("searchbox", { name: "Search in files" }, { timeout: 5000 });
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  fireEvent.change(input, { target: { value: "draft" } });
+  fireEvent.click(await screen.findByRole("button", { name: "src/a.ts line 3" }));
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+  await waitFor(() => expect(onRevealLine).toHaveBeenCalledWith("src/a.ts", 3));
+  fireEvent.keyDown(window, { key: "F", ctrlKey: true, shiftKey: true });
+  expect(screen.getByRole("searchbox", { name: "Search in files" })).toBeVisible();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  fireEvent.keyDown(window, { key: "F", ctrlKey: true, shiftKey: true });
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "true");
+});
+
+it("opens a requested tool view once it is active and reports it handled", async () => {
+  const onRequestedViewHandled = vi.fn();
+  const view = render(<EditorApp active={false} repository={repository} isLoading={false} onNavigate={vi.fn()} requestedView="search" onRequestedViewHandled={onRequestedViewHandled}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  expect(onRequestedViewHandled).not.toHaveBeenCalled();
+  view.rerender(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} requestedView="search" onRequestedViewHandled={onRequestedViewHandled}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  expect(await screen.findByRole("searchbox", { name: "Search in files" }, { timeout: 5000 })).toBeInTheDocument();
+  expect(screen.getByLabelText("File draft")).toHaveAttribute("data-active", "false");
+  expect(onRequestedViewHandled).toHaveBeenCalledTimes(1);
+});
+
+it("hands a Source Control diff review to the AI Assistant as an editable draft", async () => {
+  vi.mocked(gitApi.getStatus).mockResolvedValueOnce({ branch: "main", head_commit: "abc", upstream: null, ahead: null, behind: null, remote_url: null, commits: [],
+    changes: [{ path: "src/a.ts", index_status: " ", worktree_status: "M", original_path: null }] });
+  vi.mocked(gitApi.getDiff).mockResolvedValueOnce({ path: "src/a.ts", staged: false, is_binary: false, truncated: false, content: "diff --git a/src/a.ts b/src/a.ts\n@@ -1 +1 @@\n-old line\n+new line\n" });
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()}>
+    {visible => <input aria-label="File draft" defaultValue="saved" data-active={visible} />}
+  </EditorApp>);
+  fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Changes: src/a.ts" }));
+  await screen.findByRole("region", { name: "File diff" });
+  fireEvent.click(screen.getByRole("button", { name: "Review with AI" }));
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => expect((composer as HTMLTextAreaElement).value).toContain("Review the working tree changes to `src/a.ts`"));
+  expect((composer as HTMLTextAreaElement).value).toContain("+new line");
+  expect(screen.getByRole("button", { name: "AI Assistant" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("asks the workspace to open symbol search when that view is requested", async () => {
+  const onCommand = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onCommand={onCommand} requestedView="symbols" onRequestedViewHandled={vi.fn()}>
+    <span>workspace</span>
+  </EditorApp>);
+  await waitFor(() => expect(onCommand).toHaveBeenCalledWith("openSymbol"));
+});
+
+it("refreshes the file tree and notifies the app after Source Control switches branch", async () => {
+  vi.mocked(gitApi.getStatus).mockResolvedValue({ branch: "main", head_commit: "abc", upstream: null, ahead: null, behind: null, remote_url: null, commits: [], changes: [] });
+  vi.mocked(gitApi.listBranches).mockResolvedValue({ current: "main", detached: false, branches: [
+    { name: "main", upstream: null, subject: "x", committed_at: null },
+    { name: "topic", upstream: null, subject: "y", committed_at: null },
+  ] });
+  vi.mocked(gitApi.switchBranch).mockResolvedValue({ branch: "topic", head_commit: "def", upstream: null, ahead: null, behind: null, remote_url: null, commits: [], changes: [] });
+  const onCommand = vi.fn();
+  const onWorkingTreeChanged = vi.fn();
+  render(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()} onCommand={onCommand} onWorkingTreeChanged={onWorkingTreeChanged} workingTreeGuard={() => null}>
+    <span>workspace</span>
+  </EditorApp>);
+  fireEvent.click(screen.getByRole("button", { name: "Git Repository" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Switch branch (current: main)" }));
+  fireEvent.click(await screen.findByRole("option", { name: /^topic/ }));
+  await waitFor(() => expect(onWorkingTreeChanged).toHaveBeenCalledTimes(1));
+  expect(onCommand).toHaveBeenCalledWith("refreshFiles");
+});
+
+it("lets documents open their file history in Source Control through the editor shell", async () => {
+  vi.mocked(gitApi.getStatus).mockResolvedValue({ branch: "main", head_commit: "abc", upstream: null, ahead: null, behind: null, remote_url: null, commits: [], changes: [] });
+  vi.mocked(gitApi.getFileHistory).mockResolvedValue({ path: "src/a.ts", commits: [{ sha: "abc1234", message: "Add a", author: "Dev", committed_at: "2026-10-01T00:00:00Z" }] });
+  const view = render(<EditorApp active={false} repository={repository} isLoading={false} onNavigate={vi.fn()}><HistoryButton /></EditorApp>);
+  expect(screen.getByText("no shell")).toBeInTheDocument(); // File Explorer mode has no editor shell
+  view.rerender(<EditorApp active repository={repository} isLoading={false} onNavigate={vi.fn()}><HistoryButton /></EditorApp>);
+  fireEvent.click(screen.getByRole("button", { name: "Show history" }));
+  expect(await screen.findByRole("region", { name: "History of src/a.ts" }, { timeout: 5000 })).toBeInTheDocument();
+  expect(await screen.findByText("Add a")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Git Repository" })).toHaveAttribute("aria-pressed", "true");
 });

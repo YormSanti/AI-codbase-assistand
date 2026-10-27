@@ -1,20 +1,41 @@
-"""Read-only Git review adapter. No fetches, staging, or repository writes."""
+"""Git review adapter: read-only status and diffs, plus explicit stage, unstage, and commit."""
 from __future__ import annotations
 
 import difflib
+from datetime import datetime
 import os
+import re
 import subprocess
 import tempfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit
 
 from git import GitError, Repo
 
-from app.domain.exceptions import GitReviewError, NotAGitRepositoryError
-from app.domain.git_models import GitChange, GitCommit, GitDiff, GitStatus
+from app.domain.exceptions import GitCommandError, GitReviewError, NotAGitRepositoryError
+from app.domain.git_models import BranchInfo, BranchList, CommitDetails, CommitFile, FileHistory, GitChange, GitCommit, GitDiff, GitStatus, StagedDiff
 from app.domain.ports import GitReviewPort
 
 MAX_DIFF_BYTES = 256_000
+MAX_COMMIT_MESSAGE_CHARS = 10_000
+_SHA = re.compile(r"[0-9a-fA-F]{4,64}")
+# Conservative branch names; git check-ref-format then applies Git's own rules.
+_BRANCH_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/\-]{0,199}")
+
+
+def is_repository_path(path: str) -> bool:
+    """Whether `path` is a non-empty relative path that stays inside the working tree and out of `.git`.
+
+    `.git` is matched in any letter case, as Git itself does, because `.GIT` is
+    the same folder on case-insensitive volumes (the macOS and Windows
+    defaults). On Windows, backslashes and drive letters count too.
+    """
+    if not path or "\0" in path:
+        return False
+    relative = PureWindowsPath(path) if os.name == "nt" else PurePosixPath(path)
+    if relative.is_absolute() or relative.anchor:
+        return False
+    return not any(part == ".." or part.lower() == ".git" for part in relative.parts)
 
 
 def remote_web_url(remote: str) -> str | None:
@@ -120,8 +141,7 @@ class GitReviewClient(GitReviewPort):
     def get_diff(self, root_path: str, path: str, staged: bool) -> GitDiff:
         repo = self._repository(root_path)
         root_path = str(repo.working_tree_dir)
-        relative = PurePosixPath(path)
-        if not path or relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
+        if not is_repository_path(path):
             raise GitReviewError("Select a changed file inside the repository.")
         change = next((item for item in self._changes(root_path) if item.path == path), None)
         if change is None:
@@ -140,6 +160,359 @@ class GitReviewClient(GitReviewPort):
         content = raw.decode("utf-8", errors="replace")
         binary = any(line.startswith("Binary files ") for line in content.splitlines())
         return GitDiff(path, staged, content, is_binary=binary, truncated=truncated)
+
+    # ── Commit history ──────────────────────────────────────────────────
+
+    def _resolve_commit(self, repo: Repo, root: str, sha: str) -> tuple[str, list[str]]:
+        """Return the full id and parent ids, or raise if `sha` is not a commit here."""
+        if not _SHA.fullmatch(sha or ""):
+            raise GitReviewError("Choose a commit from the history.")
+        try:
+            raw, _ = self._run(root, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", limit=200)
+        except GitReviewError as exc:
+            raise GitReviewError("That commit is not in this repository.") from exc
+        full = raw.decode().strip()
+        return full, [parent.hexsha for parent in repo.commit(full).parents]
+
+    @staticmethod
+    def _range(full: str, parents: list[str]) -> list[str]:
+        # Compare with the first parent (merges show what they brought in); a root commit with nothing.
+        return [parents[0], full] if parents else ["--root", full]
+
+    def get_commit(self, root_path: str, sha: str) -> CommitDetails:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        full, parents = self._resolve_commit(repo, root, sha)
+        compare = self._range(full, parents)
+        common = ("diff-tree", "-r", "-M", "-z", "--no-commit-id")
+        names, _ = self._run(root, *common, "--name-status", *compare, limit=4_000_000)
+        counts, _ = self._run(root, *common, "--numstat", *compare, limit=4_000_000)
+
+        files: list[CommitFile] = []
+        tokens = iter(names.split(b"\0"))
+        for token in tokens:
+            if not token:
+                continue
+            status = chr(token[0])
+            if status in "RC":
+                original, path = os.fsdecode(next(tokens)), os.fsdecode(next(tokens))
+                files.append(CommitFile(path, status, original_path=original))
+            else:
+                files.append(CommitFile(os.fsdecode(next(tokens)), status))
+
+        stats: dict[str, tuple[int | None, int | None]] = {}
+        entries = iter(counts.split(b"\0"))
+        for entry in entries:
+            if not entry:
+                continue
+            added, deleted, rest = entry.split(b"\t", 2)
+            if rest:
+                path = os.fsdecode(rest)
+            else:  # rename/copy: the old and new paths follow as separate fields
+                next(entries)
+                path = os.fsdecode(next(entries))
+            stats[path] = (None, None) if added == b"-" else (int(added), int(deleted))
+        for file in files:
+            file.additions, file.deletions = stats.get(file.path, (None, None))
+
+        commit = repo.commit(full)
+        return CommitDetails(
+            sha=full,
+            message=str(commit.message).strip() or "(No commit message)",
+            author=commit.author.name or "Unknown",
+            author_email=commit.author.email or "",
+            committed_at=commit.committed_datetime,
+            parents=parents,
+            files=files,
+        )
+
+    def get_commit_diff(self, root_path: str, sha: str, path: str) -> GitDiff:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        details = self.get_commit(root, sha)
+        change = next((file for file in details.files if file.path == path), None)
+        if change is None:
+            raise GitReviewError("This file was not changed in that commit.")
+        paths = [path] + ([change.original_path] if change.original_path else [])
+        raw, truncated = self._run(
+            root, "diff-tree", "-r", "-M", "-p", "--no-commit-id", "--no-ext-diff", "--no-textconv",
+            "--no-color", *self._range(details.sha, details.parents), "--", *paths,
+        )
+        content = raw.decode("utf-8", errors="replace")
+        binary = any(line.startswith("Binary files ") for line in content.splitlines())
+        return GitDiff(path, False, content, is_binary=binary, truncated=truncated)
+
+    def get_file_history(self, root_path: str, path: str, limit: int) -> FileHistory:
+        repo = self._repository(root_path)
+        git_root = Path(str(repo.working_tree_dir)).resolve()
+        if not is_repository_path(path):
+            raise GitReviewError("Choose a file inside the project.")
+        # Editor paths are relative to the opened folder, which may be a subfolder of the repository.
+        folder = Path(root_path).resolve()
+        prefix = folder.relative_to(git_root).as_posix() if folder.is_relative_to(git_root) else "."
+        git_path = path if prefix == "." else f"{prefix}/{path}"
+        if not repo.head.is_valid():
+            return FileHistory(git_path, [])
+        raw, _ = self._run(
+            str(git_root), "log", "--follow", f"-n{max(1, min(limit, 200))}",
+            "--format=%H%x00%an%x00%aI%x00%s", "--", git_path, limit=1_000_000,
+        )
+        commits = []
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            parts = line.split("\0")
+            if len(parts) == 4:
+                sha, author, date, subject = parts
+                commits.append(GitCommit(sha, subject or "(No commit message)", author or "Unknown", datetime.fromisoformat(date)))
+        return FileHistory(git_path, commits)
+
+    def get_staged_diff(self, root_path: str) -> StagedDiff:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        options = ("--cached", "-M", "--no-ext-diff", "--no-textconv", "--no-color")
+        names, _ = self._run(root, "diff", *options, "--name-only", "-z", limit=4_000_000)
+        files = len([name for name in names.split(b"\0") if name])
+        if not files:
+            return StagedDiff(content="", stat="", files=0)
+        stat, _ = self._run(root, "diff", *options, "--stat=120", limit=64_000)
+        patch, truncated = self._run(root, "diff", *options)
+        return StagedDiff(
+            content=patch.decode("utf-8", errors="replace"),
+            stat=stat.decode("utf-8", errors="replace").rstrip(),
+            files=files,
+            truncated=truncated,
+        )
+
+    # ── Explicit actions ────────────────────────────────────────────────
+
+    def _run_write(self, root: str, *arguments: str) -> None:
+        """Run a Git command that changes the index or history; surface Git's own error text."""
+        try:
+            result = subprocess.run(
+                ["git", "--no-pager", "--literal-pathspecs", "-C", root, *arguments],
+                capture_output=True,
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+                timeout=60,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitCommandError("Git did not finish in time. Check for hooks waiting on input and try again.") from exc
+        except OSError as exc:
+            raise GitCommandError("Git could not be started on this machine.") from exc
+        if result.returncode:
+            details = result.stderr.decode("utf-8", errors="replace").strip() or result.stdout.decode("utf-8", errors="replace").strip()
+            details = " ".join(details.split())[:600]
+            raise GitCommandError(details or "Git rejected the command.")
+
+    def _run_network(self, root: str, *arguments: str) -> None:
+        """Run fetch/pull/push so they can never wait on a hidden prompt.
+
+        Terminal credential prompts are disabled and the process gets its own
+        session with no controlling terminal, so SSH cannot block on a
+        passphrase prompt either. Credential helpers, agents, and askpass
+        programs keep working.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "--no-pager", "-C", root, *arguments],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+                timeout=120,
+                check=False,
+                start_new_session=os.name == "posix",
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitCommandError("The remote did not answer within 2 minutes. Check the network and your credentials, then try again.") from exc
+        except OSError as exc:
+            raise GitCommandError("Git could not be started on this machine.") from exc
+        if result.returncode:
+            details = (result.stderr or result.stdout).decode("utf-8", errors="replace")
+            details = " ".join(details.split())[:600]
+            raise GitCommandError(details or "Git could not reach the remote.")
+
+    def _current_branch(self, repo: Repo, action: str):
+        if repo.head.is_detached:
+            raise GitCommandError(f"Check out a branch before you {action}.")
+        if not repo.head.is_valid():
+            raise GitCommandError(f"Make a first commit before you {action}.")
+        return repo.active_branch
+
+    def fetch(self, root_path: str) -> None:
+        repo = self._repository(root_path)
+        if not list(repo.remotes):
+            raise GitCommandError("This repository has no remote to fetch from.")
+        self._run_network(str(repo.working_tree_dir), "fetch", "--all", "--prune", "--quiet")
+
+    def pull(self, root_path: str) -> None:
+        repo = self._repository(root_path)
+        branch = self._current_branch(repo, "pull")
+        if branch.tracking_branch() is None:
+            raise GitCommandError(f"'{branch.name}' has no upstream branch to pull from. Push it first to publish it.")
+        # --no-rebase overrides pull.rebase so --ff-only always means "fast-forward or stop".
+        self._run_network(str(repo.working_tree_dir), "pull", "--no-rebase", "--ff-only", "--quiet")
+
+    def push(self, root_path: str) -> str:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        branch = self._current_branch(repo, "push")
+        tracking = branch.tracking_branch()
+        if tracking is not None:
+            self._run_network(root, "push", "--quiet", tracking.remote_name, f"HEAD:refs/heads/{tracking.remote_head}")
+            return tracking.name
+        remotes = [remote.name for remote in repo.remotes]
+        if not remotes:
+            raise GitCommandError("Add a remote before pushing this branch.")
+        remote = "origin" if "origin" in remotes else remotes[0]
+        self._run_network(root, "push", "--quiet", "--set-upstream", remote, "HEAD")
+        return f"{remote}/{branch.name}"
+
+    def _changed_paths(self, root: str, paths: list[str], *, require_staged: bool) -> list[str]:
+        """Validate that every path is a current change; include rename sources so Git sees both sides."""
+        if not paths:
+            raise GitCommandError("Choose at least one changed file.")
+        changes = {change.path: change for change in self._changes(root)}
+        pathspecs: list[str] = []
+        for path in dict.fromkeys(paths):
+            if not is_repository_path(path):
+                raise GitCommandError(f"'{path}' is not a changed file inside the repository.")
+            change = changes.get(path)
+            if change is None:
+                raise GitCommandError(f"'{path}' is no longer changed. Refresh the Git status.")
+            if require_staged and change.index_status in " ?":
+                raise GitCommandError(f"'{path}' has no staged changes.")
+            pathspecs.append(path)
+            if change.original_path is not None:
+                pathspecs.append(change.original_path)
+        return pathspecs
+
+    def stage(self, root_path: str, paths: list[str]) -> None:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        pathspecs = self._changed_paths(root, paths, require_staged=False)
+        # -A records deletions and renames for the given paths as well as edits.
+        self._run_write(root, "add", "-A", "--", *pathspecs)
+
+    def unstage(self, root_path: str, paths: list[str]) -> None:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        pathspecs = self._changed_paths(root, paths, require_staged=True)
+        if repo.head.is_valid():
+            self._run_write(root, "reset", "-q", "HEAD", "--", *pathspecs)
+        else:
+            # No HEAD yet: the only way to unstage is to drop the paths from the index.
+            self._run_write(root, "rm", "-q", "--cached", "-r", "--", *pathspecs)
+
+    # ── Branches ────────────────────────────────────────────────────────
+
+    def list_branches(self, root_path: str) -> BranchList:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        detached = repo.head.is_detached
+        current = None if detached else repo.head.reference.name
+        raw, _ = self._run(
+            root, "for-each-ref", "--sort=-committerdate",
+            "--format=%(refname:short)%00%(upstream:short)%00%(committerdate:iso-strict)%00%(subject)",
+            "refs/heads", limit=2_000_000,
+        )
+        branches: list[BranchInfo] = []
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            parts = line.split("\0")
+            if len(parts) != 4:
+                continue
+            name, upstream, date, subject = parts
+            branches.append(BranchInfo(name, upstream or None, subject, datetime.fromisoformat(date) if date else None))
+        return BranchList(current=current, detached=detached, branches=branches)
+
+    def switch_branch(self, root_path: str, name: str) -> None:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        branches = self.list_branches(root)
+        if name not in {branch.name for branch in branches.branches}:
+            raise GitCommandError(f"There is no local branch named '{name}'.")
+        if name == branches.current:
+            return
+        if any(change.index_status != "?" for change in self._changes(root)):
+            raise GitCommandError("Commit, stash, or discard your changes before switching branches.")
+        # `--` ends the revision list, so the name can never be read as a path or option.
+        self._run_write(root, "checkout", "-q", name, "--")
+
+    def create_branch(self, root_path: str, name: str, checkout: bool) -> None:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        if not _BRANCH_NAME.fullmatch(name or "") or "@{" in name:
+            raise GitCommandError(f"'{name}' is not a valid branch name.")
+        try:
+            self._run(root, "check-ref-format", "--branch", name, limit=400)
+        except GitReviewError as exc:
+            raise GitCommandError(f"'{name}' is not a valid branch name.") from exc
+        if not repo.head.is_valid():
+            raise GitCommandError("Make a first commit before creating branches.")
+        if name in {branch.name for branch in self.list_branches(root).branches}:
+            raise GitCommandError(f"A branch named '{name}' already exists.")
+        if checkout:
+            self._run_write(root, "checkout", "-q", "-b", name)
+        else:
+            self._run_write(root, "branch", name)
+
+    def discard(self, root_path: str, paths: list[str]) -> None:
+        repo = self._repository(root_path)
+        root = Path(str(repo.working_tree_dir)).resolve()
+        if not paths:
+            raise GitCommandError("Choose at least one changed file.")
+        changes = {change.path: change for change in self._changes(str(root))}
+        tracked: list[str] = []
+        untracked: list[Path] = []
+        for path in dict.fromkeys(paths):
+            if not is_repository_path(path):
+                raise GitCommandError(f"'{path}' is not a changed file inside the repository.")
+            change = changes.get(path)
+            if change is None:
+                raise GitCommandError(f"'{path}' is no longer changed. Refresh the Git status.")
+            if "U" in (change.index_status, change.worktree_status) or change.index_status + change.worktree_status in ("AA", "DD"):
+                raise GitCommandError(f"'{path}' has merge conflicts. Resolve them or abort the merge instead.")
+            if change.index_status == "?":
+                target = root / path
+                if not target.parent.resolve().is_relative_to(root):
+                    raise GitCommandError(f"'{path}' is not a changed file inside the repository.")
+                untracked.append(target)
+            elif change.worktree_status == " ":
+                raise GitCommandError(f"'{path}' has no unstaged changes to discard. Unstage it first.")
+            else:
+                tracked.append(path)
+        if tracked:
+            # Restores the index version, which also brings back files deleted in the working tree.
+            self._run_write(str(root), "checkout", "-q", "--", *tracked)
+        for target in untracked:
+            try:
+                if target.is_symlink() or target.is_file():
+                    target.unlink()  # a symlink is removed itself, never followed
+            except OSError as exc:
+                raise GitCommandError(f"Could not delete '{target.relative_to(root).as_posix()}': {exc.strerror}") from exc
+
+    def commit(self, root_path: str, message: str) -> GitCommit:
+        repo = self._repository(root_path)
+        root = str(repo.working_tree_dir)
+        text = message.strip()
+        if not text:
+            raise GitCommandError("Enter a commit message.")
+        if len(text) > MAX_COMMIT_MESSAGE_CHARS:
+            raise GitCommandError("The commit message is too long.")
+        changes = self._changes(root)
+        if any(change.index_status == "U" or change.worktree_status == "U" for change in changes):
+            raise GitCommandError("Resolve the merge conflicts and stage the files before committing.")
+        if not any(change.index_status not in " ?" for change in changes):
+            raise GitCommandError("Nothing is staged. Stage changes before committing.")
+        self._run_write(root, "commit", "-q", "-m", text)
+        try:
+            commit = Repo(root).head.commit
+        except (GitError, ValueError) as exc:
+            raise GitCommandError("The commit was created but could not be read back. Refresh the Git status.") from exc
+        return GitCommit(
+            commit.hexsha,
+            str(commit.message).splitlines()[0] if commit.message else "(No commit message)",
+            commit.author.name or "Unknown",
+            commit.committed_datetime,
+        )
 
     def _untracked_diff(self, root_path: str, path: str) -> GitDiff:
         root = Path(root_path).resolve()

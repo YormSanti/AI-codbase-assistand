@@ -8,7 +8,11 @@ import { ProjectsSidebarNav } from "./components/ProjectsSidebarNav";
 import App from "./App";
 
 vi.mock("./hooks/useAutoUpdater", () => ({ useAutoUpdater: vi.fn() }));
-vi.mock("./api/editorApi", () => ({ editorApi: { getTree: vi.fn() } }));
+vi.mock("./api/editorApi", () => ({ editorApi: { getTree: vi.fn(), search: vi.fn() } }));
+vi.mock("./api/gitApi", () => ({ gitApi: {
+  getStatus: vi.fn().mockResolvedValue({ branch: "main", head_commit: null, upstream: null, ahead: null, behind: null, remote_url: null, changes: [], commits: [] }),
+  getDiff: vi.fn(), stage: vi.fn(), unstage: vi.fn(), commit: vi.fn(),
+} }));
 vi.mock("./api/repositoryApi", () => ({ repositoryApi: { list: vi.fn(), open: vi.fn(), getTree: vi.fn(), remove: vi.fn() } }));
 vi.mock("@/components/ui/sidebar", () => ({
   SidebarProvider: ({ children }: { children: ReactNode }) => children,
@@ -114,6 +118,44 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("command palette", () => {
+  it("opens with the keyboard, lists known projects, and navigates on Enter", async () => {
+    vi.mocked(repositoryApi.open).mockResolvedValue(repo(2));
+    render(<App />);
+    fireEvent.keyDown(window, { key: "P", ctrlKey: true, shiftKey: true });
+    const input = await screen.findByRole("combobox", { name: "Command palette" });
+    expect(await screen.findByRole("option", { name: /Open 2/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Go to Terminal/ })).toBeNull(); // needs a project
+    fireEvent.change(input, { target: { value: "settings" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(localStorage.getItem("ifrog_active_tab")).toBe("settings"));
+    expect(screen.queryByRole("combobox", { name: "Command palette" })).toBeNull();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const reopened = await screen.findByRole("combobox", { name: "Command palette" });
+    fireEvent.change(reopened, { target: { value: "open 2" } });
+    fireEvent.keyDown(reopened, { key: "Enter" });
+    await waitFor(() => expect(repositoryApi.open).toHaveBeenCalledWith("/b"));
+    await waitFor(() => expect(localStorage.getItem("ifrog_repo_path")).toBe("/b"));
+  });
+});
+
+describe("editor tool views", () => {
+  it("opens Source Control directly from the command palette", async () => {
+    vi.mocked(repositoryApi.open).mockResolvedValue(repo(1));
+    render(<App />);
+    fireEvent.click(screen.getByText("Open /a"));
+    await waitFor(() => expect(screen.getByTestId("repository")).toHaveTextContent("/a"));
+    fireEvent.keyDown(window, { key: "P", ctrlKey: true, shiftKey: true });
+    const input = await screen.findByRole("combobox", { name: "Command palette" });
+    fireEvent.change(input, { target: { value: "source control" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByRole("region", { name: "IFROG Editor" })).toBeInTheDocument();
+    expect(await screen.findByRole("complementary", { name: "Source Control" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Git Repository" })).toHaveAttribute("aria-pressed", "true");
+  });
 });
 
 describe("repository switching", () => {
@@ -250,6 +292,8 @@ describe("repository switching", () => {
     expect(localStorage.getItem("ifrog_active_tab")).toBe("explorer");
     fireEvent.click(screen.getByText("Open /b"));
     expect(repositoryApi.open).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss error" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("keeps a dirty project and its saved sessions when removal is canceled", async () => {
@@ -259,9 +303,12 @@ describe("repository switching", () => {
     await waitFor(() => expect(screen.getByTestId("repository")).toHaveTextContent("/a"));
     localStorage.setItem("threads_1", "saved sessions");
     fireEvent.click(screen.getByText("Edit source"));
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(true).mockReturnValueOnce(false);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     fireEvent.click(screen.getByRole("button", { name: "Remove 1" }));
+    // The sidebar asks in the app's dialog; the unsaved-edits guard still uses the native prompt.
+    fireEvent.click(await screen.findByRole("button", { name: "Remove project" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Project removal canceled.");
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(repositoryApi.remove).not.toHaveBeenCalled();
     expect(localStorage.getItem("threads_1")).toBe("saved sessions");
     expect(screen.getByTestId("repository")).toHaveTextContent("/a");
@@ -383,6 +430,33 @@ describe("project terminals", () => {
     await openTerminal("/a");
     expect(home.close).not.toHaveBeenCalled();
     expect(TerminalSocket.instances).toHaveLength(2);
+  });
+
+  it("keeps only the three most recently used terminal pages mounted", async () => {
+    render(<App />);
+    await openTerminal("/a");
+    await openTerminal("/b");
+    await openTerminal("/c");
+    const [first, second, third] = TerminalSocket.instances;
+    expect(first.close).not.toHaveBeenCalled();
+    await openTerminal("/a"); // already mounted: becomes most recent, nothing closes
+    expect(TerminalSocket.instances).toHaveLength(3);
+    expect(first.close).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Show explorer"));
+    fireEvent.click(screen.getByText("Open /b"));
+    await waitFor(() => expect(localStorage.getItem("ifrog_repo_path")).toBe("/b"));
+    fireEvent.click(screen.getByText("Show terminal"));
+    expect(second.close).not.toHaveBeenCalled();
+    // A fourth distinct terminal page evicts the least recently used one (/c).
+    fireEvent.click(screen.getByText("Show explorer"));
+    vi.mocked(repositoryApi.open).mockResolvedValueOnce({ ...repo(4), root_path: "/d", name: "d" });
+    fireEvent.click(screen.getByText("Open /a"));
+    await waitFor(() => expect(localStorage.getItem("ifrog_repo_path")).toBe("/d"));
+    fireEvent.click(screen.getByText("Show terminal"));
+    await waitFor(() => expect(TerminalSocket.instances.some(socket => socket.url.searchParams.get("cwd") === "/d")).toBe(true));
+    await waitFor(() => expect(third.close).toHaveBeenCalledTimes(1));
+    expect(first.close).not.toHaveBeenCalled();
+    expect(second.close).not.toHaveBeenCalled();
   });
 
   it("closes only the deleted project's terminals and cleans up on exit", async () => {

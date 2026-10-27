@@ -20,6 +20,7 @@ frontend/.vite/
 
 # Tauri
 src-tauri/target/
+frontend/src-tauri/resources/
 
 # Editors / OS
 .vscode/

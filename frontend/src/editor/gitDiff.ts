@@ -36,3 +36,12 @@ export function splitGitDiff(lines: DiffLine[]): { left: DiffLine | null; right:
   }
   return result;
 }
+
+export function diffCounts(lines: DiffLine[]): { added: number; removed: number } {
+  let added = 0, removed = 0;
+  for (const line of lines) {
+    if (line.kind === "added") added++;
+    else if (line.kind === "removed") removed++;
+  }
+  return { added, removed };
+}

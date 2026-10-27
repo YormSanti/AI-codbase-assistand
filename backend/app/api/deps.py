@@ -24,6 +24,7 @@ from app.services.indexing_service import IndexingService
 from app.services.git_review_service import GitReviewService
 from app.services.parsing_service import SymbolExtractionService
 from app.services.local_editor_service import LocalEditorService
+from app.services.health_service import HealthService
 
 DbSession = Annotated[Session, Depends(get_session)]
 
@@ -64,3 +65,10 @@ def get_local_editor_service(session: DbSession) -> LocalEditorService:
 
 
 LocalEditorServiceDep = Annotated[LocalEditorService, Depends(get_local_editor_service)]
+
+
+def get_health_service(session: DbSession) -> HealthService:
+    return HealthService(SqlAlchemyFileMetadataRepository(session), _code_parser)
+
+
+HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
