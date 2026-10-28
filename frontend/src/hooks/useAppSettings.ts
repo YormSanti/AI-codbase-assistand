@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { isProviderId, type ProviderId } from "../lib/providers";
 
 export const SETTINGS_KEY = "devpilot_settings";
 const SETTINGS_EVENT = "devpilot-settings-changed";
@@ -19,7 +20,7 @@ export interface AppSettings {
   tabSize: 2 | 4 | 8;
   wordWrap: boolean;
   lineNumbers: boolean;
-  defaultProvider: "codex" | "gemini";
+  defaultProvider: ProviderId;
   streamOutput: boolean;
   gitRefreshInterval: 0 | 15 | 30 | 60;
   checkUpdatesOnStartup: boolean;
@@ -60,7 +61,7 @@ function getSnapshot(): AppSettings {
     tabSize: saved.tabSize === 4 || saved.tabSize === 8 ? saved.tabSize : 2,
     wordWrap: typeof saved.wordWrap === "boolean" ? saved.wordWrap : DEFAULT_SETTINGS.wordWrap,
     lineNumbers: typeof saved.lineNumbers === "boolean" ? saved.lineNumbers : DEFAULT_SETTINGS.lineNumbers,
-    defaultProvider: saved.defaultProvider === "codex" ? "codex" : "gemini",
+    defaultProvider: isProviderId(saved.defaultProvider) ? saved.defaultProvider : DEFAULT_SETTINGS.defaultProvider,
     streamOutput: typeof saved.streamOutput === "boolean" ? saved.streamOutput : DEFAULT_SETTINGS.streamOutput,
     gitRefreshInterval: saved.gitRefreshInterval === 0 || saved.gitRefreshInterval === 30 || saved.gitRefreshInterval === 60 ? saved.gitRefreshInterval : 15,
     checkUpdatesOnStartup: typeof saved.checkUpdatesOnStartup === "boolean" ? saved.checkUpdatesOnStartup : DEFAULT_SETTINGS.checkUpdatesOnStartup,

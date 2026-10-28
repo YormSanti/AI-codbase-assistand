@@ -1,3 +1,4 @@
+import { isProviderId, type ProviderId } from "./providers";
 /**
  * AI conversations are kept per project and thread in localStorage so they
  * survive restarts, project switches, and threads being unmounted.
@@ -13,7 +14,7 @@ export interface StoredLog {
 export interface StoredTurn {
   role: "user" | "assistant";
   content: string;
-  provider: "codex" | "gemini";
+  provider: ProviderId;
 }
 
 export interface StoredConversation {
@@ -37,7 +38,7 @@ const isLog = (value: unknown): value is StoredLog => {
 };
 const isTurn = (value: unknown): value is StoredTurn => {
   const turn = value as StoredTurn;
-  return Boolean(turn) && typeof turn.content === "string" && ["user", "assistant"].includes(turn.role) && ["codex", "gemini"].includes(turn.provider);
+  return Boolean(turn) && typeof turn.content === "string" && ["user", "assistant"].includes(turn.role) && isProviderId(turn.provider);
 };
 
 export function loadConversation(key: string | null): StoredConversation {

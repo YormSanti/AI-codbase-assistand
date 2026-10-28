@@ -15,6 +15,9 @@ import {
 } from "lucide-react";
 import type { RepositoryInfo } from "@/types/domain";
 import { useAppSettings } from "../hooks/useAppSettings";
+import { PROVIDER_IDS, PROVIDER_NAMES } from "../lib/providers";
+
+const PROVIDER_LABELS = PROVIDER_IDS.map(id => PROVIDER_NAMES[id]);
 
 interface AIThreadStartHeroProps {
   repository?: RepositoryInfo | null;
@@ -251,7 +254,7 @@ export function AIThreadStartHero({
   }, [messages, isLoading]);
 
   const [prompt, setPrompt] = useState("");
-  const [model, setModelState] = useState(settings.defaultProvider === "codex" ? "Codex" : "Gemini");
+  const [model, setModelState] = useState(PROVIDER_NAMES[settings.defaultProvider]);
   const [showModelMenu, setShowModelMenu] = useState(false);
   const setModel = (next: string | ((current: string) => string)) => {
     const value = typeof next === "function" ? next(model) : next;
@@ -511,7 +514,7 @@ export function AIThreadStartHero({
                 <button
                   type="button"
                   onClick={() => {
-                    setModel((m) => (m === "Gemini" ? "Codex" : "Gemini"));
+                    setModel((m) => PROVIDER_LABELS[(PROVIDER_LABELS.indexOf(m) + 1) % PROVIDER_LABELS.length]);
                     setShowPlusMenu(false);
                   }}
                   className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-accent"
@@ -581,7 +584,7 @@ export function AIThreadStartHero({
                   <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Provider
                   </div>
-                  {["Gemini", "Codex"].map((opt) => (
+                  {PROVIDER_LABELS.map((opt) => (
                     <button
                       key={opt}
                       type="button"

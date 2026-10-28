@@ -132,3 +132,20 @@ it("chats in the browser build through the backend and explains how to sign in",
   expect(screen.queryByText("Desktop app required")).toBeNull();
   vi.unstubAllGlobals();
 });
+
+it("checks Claude's sign-in and sends Claude requests to the desktop agent", async () => {
+  updateSettings({ defaultProvider: "claude" });
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  invoke.mockImplementation((command: string) => command === "run_agent"
+    ? Promise.resolve({ content: "Claude reply" })
+    : Promise.resolve({ installed: true, authenticated: command !== "claude_login_status" }));
+  const user = userEvent.setup();
+  render(<AIAgentPage repository={null} />);
+  expect(await screen.findByRole("button", { name: "Connect Claude" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^Claude.*Not signed in/ })).toHaveAttribute("aria-pressed", "true");
+  await user.type(screen.getByPlaceholderText("Ask anything"), "Explain this");
+  await user.click(screen.getByTitle("Send instruction"));
+  const request = invoke.mock.calls.find(([command]) => command === "run_agent")![1].request;
+  expect(request.provider).toBe("claude");
+  expect(await screen.findByText("Claude reply")).toBeInTheDocument();
+});

@@ -160,6 +160,7 @@ describe("editor tool views", () => {
 
 describe("repository switching", () => {
   it("opens a dedicated editor without a project and returns to the dashboard", async () => {
+    localStorage.setItem("ifrog_active_tab", "dashboard"); // Back returns to the page the editor was opened from
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "code" }));
     expect(screen.getByRole("region", { name: "IFROG Editor" })).toBeInTheDocument();
@@ -170,12 +171,23 @@ describe("repository switching", () => {
     await waitFor(() => expect(localStorage.getItem("ifrog_active_tab")).toBe("dashboard"));
   });
 
+  it("returns from the editor to the page it was opened from", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByText("Show terminal"));
+    await waitFor(() => expect(localStorage.getItem("ifrog_active_tab")).toBe("terminal"));
+    fireEvent.click(screen.getByRole("button", { name: "code" }));
+    expect(screen.getByRole("region", { name: "IFROG Editor" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to IFROG" }));
+    await waitFor(() => expect(localStorage.getItem("ifrog_active_tab")).toBe("terminal"));
+  });
+
   it("runs the integrated shell in the editor project and guards unsaved edits on exit", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    localStorage.setItem("ifrog_active_tab", "dashboard"); // Back returns to the page the editor was opened from
     vi.mocked(repositoryApi.open).mockResolvedValue(repo(1));
     render(<App />);
     fireEvent.click(screen.getByText("Open /a"));
-    await waitFor(() => expect(screen.getByTestId("repository")).toHaveTextContent("/a"));
+    await waitFor(() => expect(localStorage.getItem("ifrog_repo_path")).toBe("/a"));
     fireEvent.click(screen.getByRole("button", { name: "code" }));
     fireEvent.click(screen.getByText("Select file"));
     fireEvent.click(screen.getByText("Edit source"));

@@ -1,7 +1,7 @@
 use std::env;
 use std::ffi::OsString;
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -67,6 +67,10 @@ fn find_gemini_binary() -> Option<PathBuf> {
     find_binary("gemini")
 }
 
+fn find_claude_binary() -> Option<PathBuf> {
+    find_binary("claude")
+}
+
 #[tauri::command]
 async fn codex_login_status() -> ProviderStatus {
     tauri::async_runtime::spawn_blocking(|| {
@@ -117,6 +121,42 @@ async fn gemini_login_status() -> ProviderStatus {
 }
 
 #[tauri::command]
+async fn claude_login_status() -> ProviderStatus {
+    tauri::async_runtime::spawn_blocking(|| {
+        let Some(binary) = find_claude_binary() else {
+            return ProviderStatus {
+                installed: false,
+                authenticated: false,
+            };
+        };
+
+        // `claude auth status --json` prints {"loggedIn": true, ...} when signed in.
+        let authenticated = Command::new(binary)
+            .args(["auth", "status", "--json"])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .is_ok_and(|output| {
+                let text: String = String::from_utf8_lossy(&output.stdout)
+                    .chars()
+                    .filter(|character| !character.is_whitespace())
+                    .collect();
+                output.status.success() && text.contains("\"loggedIn\":true")
+            });
+
+        ProviderStatus {
+            installed: true,
+            authenticated,
+        }
+    })
+    .await
+    .unwrap_or(ProviderStatus {
+        installed: false,
+        authenticated: false,
+    })
+}
+
+#[tauri::command]
 async fn connect_codex() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
         let binary = find_codex_binary().ok_or_else(|| {
@@ -141,45 +181,74 @@ async fn connect_codex() -> Result<(), String> {
     .map_err(|error| format!("Codex login task failed: {error}"))?
 }
 
+/// Run an interactive CLI login in a system terminal window.
+fn run_in_terminal(name: &str, binary: PathBuf, args: &[&str]) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    let status = {
+        let terminal = find_binary("x-terminal-emulator")
+            .or_else(|| find_binary("xdg-terminal-exec"))
+            .ok_or_else(|| format!("No system terminal was found for {name} login."))?;
+        Command::new(terminal)
+            .arg("-e")
+            .arg(binary)
+            .args(args)
+            .status()
+            .map_err(|error| format!("Could not open {name} login: {error}"))?
+    };
+
+    #[cfg(target_os = "windows")]
+    let status = Command::new("cmd")
+        .args(["/C", "start", "", &binary.to_string_lossy()])
+        .args(args)
+        .status()
+        .map_err(|error| format!("Could not open {name} login: {error}"))?;
+
+    #[cfg(target_os = "macos")]
+    let status = {
+        let command_line = std::iter::once(binary.to_string_lossy().into_owned())
+            .chain(args.iter().map(|arg| arg.to_string()))
+            .map(|part| format!("'{}'", part.replace('\'', "'\\''")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let script = format!(
+            "tell application \"Terminal\" to do script \"{}\"",
+            command_line.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        Command::new("osascript")
+            .args(["-e", &script])
+            .status()
+            .map_err(|error| format!("Could not open {name} login: {error}"))?
+    };
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{name} login was cancelled or did not complete."))
+    }
+}
+
 #[tauri::command]
 async fn connect_gemini() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
         let binary = find_gemini_binary().ok_or_else(|| {
             "Gemini CLI was not found. Install Gemini CLI, then restart IFROG.".to_string()
         })?;
-
-        #[cfg(target_os = "linux")]
-        let status = {
-            let terminal = find_binary("x-terminal-emulator")
-                .or_else(|| find_binary("xdg-terminal-exec"))
-                .ok_or_else(|| "No system terminal was found for Gemini login.".to_string())?;
-            Command::new(terminal)
-                .arg("-e")
-                .arg(binary)
-                .status()
-                .map_err(|error| format!("Could not open Gemini login: {error}"))?
-        };
-
-        #[cfg(target_os = "windows")]
-        let status = Command::new("cmd")
-            .args(["/C", "start", "", &binary.to_string_lossy()])
-            .status()
-            .map_err(|error| format!("Could not open Gemini login: {error}"))?;
-
-        #[cfg(target_os = "macos")]
-        let status = Command::new("open")
-            .args(["-a", "Terminal", &binary.to_string_lossy()])
-            .status()
-            .map_err(|error| format!("Could not open Gemini login: {error}"))?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err("Gemini login was cancelled or did not complete.".to_string())
-        }
+        run_in_terminal("Gemini", binary, &[])
     })
     .await
     .map_err(|error| format!("Gemini login task failed: {error}"))?
+}
+
+#[tauri::command]
+async fn connect_claude() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let binary = find_claude_binary().ok_or_else(|| {
+            "Claude Code was not found. Install Claude Code, then restart IFROG.".to_string()
+        })?;
+        run_in_terminal("Claude", binary, &["auth", "login"])
+    })
+    .await
+    .map_err(|error| format!("Claude login task failed: {error}"))?
 }
 
 #[derive(serde::Deserialize)]
@@ -238,11 +307,13 @@ async fn run_agent(app: AppHandle, request: AgentRequest) -> Result<AgentRespons
             return Err("The message is too long. Keep it under 64,000 characters.".to_string());
         }
 
-        let provider_name = if request.provider == "codex" {
-            "Codex"
-        } else {
-            "Gemini"
+        let provider_name = match request.provider.as_str() {
+            "codex" => "Codex",
+            "claude" => "Claude",
+            _ => "Gemini",
         };
+        // Claude reads the prompt from stdin, so a prompt starting with "-" is never parsed as flags.
+        let mut stdin_prompt: Option<String> = None;
         let stream_id = request.stream_id.clone();
 
         let directory = agent_working_directory(request.working_directory)?;
@@ -277,16 +348,44 @@ async fn run_agent(app: AppHandle, request: AgentRequest) -> Result<AgentRespons
                 command.args(["--output-format", "text"]);
                 command
             }
-            _ => return Err("Choose Codex or Gemini before sending a message.".to_string()),
+            "claude" => {
+                let binary = find_claude_binary().ok_or_else(|| {
+                    "Claude Code was not found. Connect or install Claude Code first.".to_string()
+                })?;
+                let mut command = Command::new(binary);
+                // dontAsk denies every tool that is not pre-approved, so Claude can
+                // read the project but cannot edit files or run commands.
+                command.args([
+                    "--print",
+                    "--permission-mode",
+                    "dontAsk",
+                    "--output-format",
+                    "text",
+                ]);
+                stdin_prompt = Some(prompt.clone());
+                command
+            }
+            _ => return Err("Choose Claude, Codex or Gemini before sending a message.".to_string()),
         };
 
         let mut child = command
             .current_dir(directory)
-            .stdin(Stdio::null())
+            .stdin(if stdin_prompt.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| format!("Could not run {provider_name}: {error}"))?;
+
+        if let (Some(text), Some(mut stdin)) = (stdin_prompt, child.stdin.take()) {
+            // A separate thread, so a CLI that writes output before reading all input cannot deadlock us.
+            std::thread::spawn(move || {
+                let _ = stdin.write_all(text.as_bytes());
+            });
+        }
 
         // Read stdout incrementally and emit each chunk to the frontend so the
         // response appears progressively instead of after the process exits.
@@ -407,8 +506,10 @@ pub fn run() {
             backend_url,
             codex_login_status,
             gemini_login_status,
+            claude_login_status,
             connect_codex,
             connect_gemini,
+            connect_claude,
             run_agent
         ])
         .on_window_event(|window, event| {
