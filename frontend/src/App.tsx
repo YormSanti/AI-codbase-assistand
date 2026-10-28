@@ -52,6 +52,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<TreeNode | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  // The page the Code Editor's back button returns to.
+  const [editorReturnTab, setEditorReturnTab] = useState("dashboard");
   const [terminalRepositories, setTerminalRepositories] = useState<(RepositoryInfo | null)[]>([]);
   const [hasVisitedAi, setHasVisitedAi] = useState(false);
   const [aiDraft, setAiDraft] = useState<string | null>(null);
@@ -86,6 +88,7 @@ export default function App() {
     if (!staysInWorkspace && !canLeaveEditor()) return false;
     if (editorOnlyFile && tab !== "editor") setSelectedFile(null);
     setError(null); // a stale error from another view should not follow the user around
+    if (tab === "editor") setEditorReturnTab(activeTab);
     setActiveTab(tab);
     return true;
   }
@@ -429,6 +432,7 @@ export default function App() {
               aiPrompt={editorAiPrompt}
               onAiPromptConsumed={() => setEditorAiPrompt(null)}
               onNavigate={handleSelectTab}
+              returnView={editorReturnTab}
               onCommand={command => editorWorkspaceRef.current?.runCommand(command)}
               onRevealLine={(path, line) => editorWorkspaceRef.current?.revealLine(path, line)}
               requestedView={editorView}

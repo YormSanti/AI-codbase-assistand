@@ -67,17 +67,17 @@ describe("Settings", () => {
     const view = render(<SettingsPage />);
     await user.click(screen.getByRole("button", { name: "AI Agent" }));
     const provider = screen.getByRole("combobox", { name: "Default provider" });
-    expect(Array.from((provider as HTMLSelectElement).options).map(option => option.text)).toEqual(["Gemini", "Codex"]);
-    await user.selectOptions(provider, "codex");
+    expect(Array.from((provider as HTMLSelectElement).options).map(option => option.text)).toEqual(["Gemini", "Codex", "Claude"]);
+    await user.selectOptions(provider, "claude");
     await user.click(screen.getByRole("switch", { name: "Stream responses" }));
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)!);
-    expect(saved.defaultProvider).toBe("codex");
+    expect(saved.defaultProvider).toBe("claude");
     expect(saved.streamOutput).toBe(false);
     view.unmount();
     const submit = vi.fn();
     render(<AIThreadStartHero onSubmitPrompt={submit} />);
     await user.type(screen.getByPlaceholderText("Ask anything"), "Explain this project{Enter}");
-    expect(submit).toHaveBeenCalledWith("Explain this project", "Codex");
+    expect(submit).toHaveBeenCalledWith("Explain this project", "Claude");
   });
 
   it("applies editor preferences to the actual source preview", async () => {

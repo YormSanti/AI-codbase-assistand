@@ -122,7 +122,8 @@ describe("TerminalPage", () => {
   it("renders terminal tabs, action buttons, and opens WebSocket connection", async () => {
     render(<TerminalPage repository={{ id: 1, name: "test-repo", root_path: "/test/path" } as any} />);
 
-    expect(screen.getByText("Tab 1")).toBeInTheDocument();
+    // A single tab shows no tab bar; its actions sit in the pane header.
+    expect(screen.queryByText("Tab 1")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /new terminal/i })).toBeInTheDocument();
     expect(screen.getByTitle(/toggle full screen/i)).toBeInTheDocument();
 
@@ -149,9 +150,26 @@ describe("TerminalPage", () => {
     expect(screen.getByText("Terminal 2")).toBeInTheDocument();
   });
 
+  it("expands the terminal over the app instead of entering browser full screen", async () => {
+    const user = userEvent.setup();
+    const requestFullscreen = vi.fn();
+    HTMLElement.prototype.requestFullscreen = requestFullscreen;
+    render(<TerminalPage repository={null} />);
+
+    await user.click(screen.getByTitle(/toggle full screen/i));
+    const exitButton = screen.getByTitle(/exit full screen/i);
+    expect(screen.getByText("Terminal 1").closest("[style*='position: fixed']")).not.toBeNull();
+    expect(requestFullscreen).not.toHaveBeenCalled();
+
+    await user.click(exitButton);
+    expect(screen.getByTitle(/toggle full screen/i)).toBeInTheDocument();
+    expect(screen.getByText("Terminal 1").closest("[style*='position: fixed']")).toBeNull();
+  });
+
   it("handles double-click to rename a tab", async () => {
     const user = userEvent.setup();
     render(<TerminalPage repository={null} />);
+    await user.click(screen.getByRole("button", { name: /new terminal/i }));
 
     const tab1 = screen.getByText("Tab 1");
     await user.dblClick(tab1);

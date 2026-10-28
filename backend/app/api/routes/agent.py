@@ -14,7 +14,7 @@ from app.services.agent_service import MAX_PROMPT_CHARS, ProviderStatus, provide
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-Provider = Literal["codex", "gemini"]
+Provider = Literal["codex", "gemini", "claude"]
 
 
 class AgentRunRequest(BaseModel):
@@ -25,8 +25,8 @@ class AgentRunRequest(BaseModel):
 
 @router.get("/providers", response_model=dict[str, ProviderStatus])
 def get_providers() -> dict[str, ProviderStatus]:
-    """Whether the Codex and Gemini CLIs are installed and signed in on this machine."""
-    return {name: provider_status(name) for name in ("codex", "gemini")}
+    """Whether the Codex, Gemini and Claude Code CLIs are installed and signed in on this machine."""
+    return {name: provider_status(name) for name in ("codex", "gemini", "claude")}
 
 
 @router.post("/run")
