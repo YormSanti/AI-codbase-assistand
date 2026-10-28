@@ -1,6 +1,7 @@
 import { Command } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ThemeToggle } from "@/components/ThemeToggle"
+import { WindowControls } from "@/components/WindowControls"
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -29,7 +30,8 @@ export function SiteHeader({
   const label = VIEW_LABELS[currentView] ?? currentView;
 
   return (
-    <header style={{
+    // The empty header space moves the undecorated desktop window.
+    <header data-tauri-drag-region style={{
       display: "flex",
       height: "56px",
       flexShrink: 0,
@@ -45,10 +47,10 @@ export function SiteHeader({
       zIndex: 40,
     }}>
       {/* Left: sidebar trigger + view label */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+      <div data-tauri-drag-region style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
         <SidebarTrigger style={{ color: "var(--muted-foreground)" }} />
         <div style={{ width: "1px", height: "18px", flexShrink: 0, background: "var(--border)" }} />
-        <h1 className="truncate" title={label} style={{
+        <h1 data-tauri-drag-region className="truncate" title={label} style={{
           margin: 0,
           fontSize: "13px",
           fontWeight: "700",
@@ -59,8 +61,8 @@ export function SiteHeader({
         </h1>
       </div>
 
-      {/* Right: command palette + status badge + theme toggle */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+      {/* Right: command palette + status badge + theme toggle + window controls */}
+      <div data-tauri-drag-region style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
         {onOpenCommands && (
           <button
             type="button"
@@ -101,6 +103,7 @@ export function SiteHeader({
         </div>
 
         <ThemeToggle />
+        <WindowControls />
       </div>
     </header>
   )

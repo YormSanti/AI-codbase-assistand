@@ -271,3 +271,36 @@ h1, h2, h3, h4, h5, h6 {
 .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
+
+/* Window controls for the undecorated desktop window (see WindowControls.tsx). */
+.ifrog-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.ifrog-window-controls > .ifrog-window-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.ifrog-window-controls > .ifrog-window-control:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.ifrog-window-controls > .ifrog-window-control-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+.ifrog-window-controls > .ifrog-window-control:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

@@ -152,27 +152,27 @@ function TerminalSession({
       scrollOnUserInput: true,
       fastScrollModifier: "alt",
       theme: {
-        background: "#0c0d12",
+        background: "#000000",
         foreground: "#e4e4e7",
-        cursor: "#a78bfa",
-        cursorAccent: "#0c0d12",
-        selectionBackground: "rgba(167, 139, 250, 0.3)",
+        cursor: "#e4e4e7",
+        cursorAccent: "#000000",
+        selectionBackground: "rgba(255, 255, 255, 0.25)",
         selectionForeground: "#ffffff",
         black: "#18181b",
         red: "#f87171",
         green: "#4ade80",
         yellow: "#fbbf24",
-        blue: "#60a5fa",
+        blue: "#a1a1aa",
         magenta: "#c084fc",
-        cyan: "#38bdf8",
+        cyan: "#a1a1aa",
         white: "#f4f4f5",
         brightBlack: "#52525b",
         brightRed: "#fca5a5",
         brightGreen: "#86efac",
         brightYellow: "#fde047",
-        brightBlue: "#93c5fd",
+        brightBlue: "#d4d4d8",
         brightMagenta: "#d8b4fe",
-        brightCyan: "#67e8f9",
+        brightCyan: "#d4d4d8",
         brightWhite: "#ffffff",
       },
     });
@@ -495,7 +495,7 @@ function TerminalSession({
               textAlign: "left",
             }}
             onMouseEnter={(e) => {
-              if (contextMenu.hasSelection) e.currentTarget.style.background = "rgba(139,92,246,0.15)";
+              if (contextMenu.hasSelection) e.currentTarget.style.background = "var(--overlay-2)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = "transparent";
@@ -523,7 +523,7 @@ function TerminalSession({
               cursor: "pointer",
               textAlign: "left",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(139,92,246,0.15)")}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--overlay-2)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
             <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -548,7 +548,7 @@ function TerminalSession({
               cursor: "pointer",
               textAlign: "left",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(139,92,246,0.15)")}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--overlay-2)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
             <span>Select All</span>
@@ -573,7 +573,7 @@ function TerminalSession({
               cursor: "pointer",
               textAlign: "left",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(139,92,246,0.15)")}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--overlay-2)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
             <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -598,7 +598,7 @@ function TerminalSession({
               cursor: "pointer",
               textAlign: "left",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(139,92,246,0.15)")}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--overlay-2)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
             <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -608,6 +608,44 @@ function TerminalSession({
         </div>
       )}
     </div>
+  );
+}
+
+/** Compact icon button matching the pane header actions. */
+function PaneAction({ title, label, onClick, children }: { title: string; label?: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={title}
+      style={{
+        display: "grid",
+        placeItems: "center",
+        width: "24px",
+        height: "24px",
+        padding: 0,
+        border: "1px solid transparent",
+        borderRadius: "5px",
+        background: "transparent",
+        color: "var(--muted-foreground)",
+        cursor: "pointer",
+        transition: "all 0.15s ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--overlay-2)";
+        e.currentTarget.style.color = "#f4f4f5";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+        e.currentTarget.style.color = "var(--muted-foreground)";
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -626,23 +664,29 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
   const [activeTabId, setActiveTabId] = useState(1);
   const [editingTabId, setEditingTabId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const wasMaximized = useRef(false);
+  // A hidden project terminal must not keep covering the app.
+  const isFullscreen = isExpanded && isActive;
   const sessionActionsRef = useRef<Record<number, { clear?: () => void; restart?: () => void }>>({});
 
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen();
-    } else {
-      document.exitFullscreen();
+  // "Full screen" fills the app window and maximizes it rather than using the
+  // Fullscreen API, so the desktop dock and panels stay visible.
+  const toggleFullscreen = async () => {
+    const next = !isFullscreen;
+    setIsExpanded(next);
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const appWindow = getCurrentWindow();
+      if (next) {
+        wasMaximized.current = await appWindow.isMaximized();
+        if (!wasMaximized.current) await appWindow.maximize();
+      } else if (!wasMaximized.current) {
+        await appWindow.unmaximize();
+      }
+    } catch (error) {
+      console.warn("Failed to resize the window", error);
     }
   };
 
@@ -720,7 +764,6 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
 
   return (
     <div
-      ref={containerRef}
       style={{
         display: "flex",
         flexDirection: "column",
@@ -729,164 +772,169 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
         padding: "16px",
         background: "var(--background)",
         boxSizing: "border-box",
+        // Above the app header (40), below the command palette (60).
+        ...(isFullscreen ? { position: "fixed", inset: 0, zIndex: 45 } : {}),
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-          minHeight: "40px",
-          marginBottom: "8px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", overflowX: "auto" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "28px",
-              height: "28px",
-              borderRadius: "7px",
-              background: "rgba(167,139,250,0.14)",
-              color: "var(--primary)",
-              marginRight: "4px",
-              flexShrink: 0,
-            }}
-          >
-            <SquareTerminal size={15} />
-          </div>
-          {tabs.map((tab, idx) => (
+      {/* With a single tab its actions live in the first pane header instead. */}
+      {tabs.length > 1 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+            minHeight: "40px",
+            marginBottom: "8px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", overflowX: "auto" }}>
             <div
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              onDoubleClick={() => {
-                setEditingTabId(tab.id);
-                setEditingTitle(tab.title || `Tab ${idx + 1}`);
-              }}
-              title="Double click to rename"
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "8px",
-                padding: "6px 13px",
-                background: activeTabId === tab.id ? "rgba(167,139,250,0.14)" : "var(--overlay-1)",
-                border: activeTabId === tab.id ? "1px solid rgba(167,139,250,0.4)" : "1px solid var(--overlay-2)",
+                justifyContent: "center",
+                width: "28px",
+                height: "28px",
                 borderRadius: "7px",
-                cursor: "pointer",
-                color: activeTabId === tab.id ? "#ddd6fe" : "var(--muted-foreground)",
-                fontSize: "12px",
-                fontWeight: 600,
-                userSelect: "none",
-                transition: "all 0.15s ease",
-                boxShadow: activeTabId === tab.id ? "0 2px 8px -2px rgba(167,139,250,0.25)" : "none",
+                background: "var(--overlay-2)",
+                color: "var(--foreground)",
+                marginRight: "4px",
+                flexShrink: 0,
               }}
             >
-              {editingTabId === tab.id ? (
-                <input
-                  type="text"
-                  autoFocus
-                  value={editingTitle}
-                  onChange={(e) => setEditingTitle(e.target.value)}
-                  onBlur={() => saveTabTitle(tab.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveTabTitle(tab.id);
-                    if (e.key === "Escape") setEditingTabId(null);
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    background: "rgba(0,0,0,0.6)",
-                    border: "1px solid #a78bfa",
-                    borderRadius: "4px",
-                    color: "#fff",
-                    padding: "1px 5px",
-                    fontSize: "11px",
-                    width: "80px",
-                    outline: "none",
-                  }}
-                />
-              ) : (
-                <span>{tab.title || `Tab ${idx + 1}`}</span>
-              )}
-              {tabs.length > 1 && (
-                <X
-                  size={12}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTab(tab.id);
-                  }}
-                  style={{ opacity: 0.65, cursor: "pointer", transition: "opacity 0.15s" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.65")}
-                />
-              )}
+              <SquareTerminal size={15} />
             </div>
-          ))}
+            {tabs.map((tab, idx) => (
+              <div
+                key={tab.id}
+                onClick={() => setActiveTabId(tab.id)}
+                onDoubleClick={() => {
+                  setEditingTabId(tab.id);
+                  setEditingTitle(tab.title || `Tab ${idx + 1}`);
+                }}
+                title="Double click to rename"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "6px 13px",
+                  background: activeTabId === tab.id ? "var(--overlay-2)" : "var(--overlay-1)",
+                  border: activeTabId === tab.id ? "1px solid var(--overlay-4)" : "1px solid var(--overlay-2)",
+                  borderRadius: "7px",
+                  cursor: "pointer",
+                  color: activeTabId === tab.id ? "var(--foreground)" : "var(--muted-foreground)",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  userSelect: "none",
+                  transition: "all 0.15s ease",
+                  boxShadow: "none",
+                }}
+              >
+                {editingTabId === tab.id ? (
+                  <input
+                    type="text"
+                    autoFocus
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onBlur={() => saveTabTitle(tab.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveTabTitle(tab.id);
+                      if (e.key === "Escape") setEditingTabId(null);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      background: "rgba(0,0,0,0.6)",
+                      border: "1px solid #a1a1aa",
+                      borderRadius: "4px",
+                      color: "#fff",
+                      padding: "1px 5px",
+                      fontSize: "11px",
+                      width: "80px",
+                      outline: "none",
+                    }}
+                  />
+                ) : (
+                  <span>{tab.title || `Tab ${idx + 1}`}</span>
+                )}
+                {tabs.length > 1 && (
+                  <X
+                    size={12}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    style={{ opacity: 0.65, cursor: "pointer", transition: "opacity 0.15s" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.65")}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={() => void toggleFullscreen()}
+              title={isFullscreen ? "Exit full screen" : "Toggle full screen"}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "32px",
+                height: "32px",
+                border: "1px solid var(--overlay-2)",
+                borderRadius: "8px",
+                background: "var(--overlay-1)",
+                color: "var(--muted-foreground)",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--overlay-2)";
+                e.currentTarget.style.color = "var(--foreground)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--overlay-1)";
+                e.currentTarget.style.color = "var(--muted-foreground)";
+              }}
+            >
+              {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={addTab}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                height: "32px",
+                padding: "0 13px",
+                border: "1px solid var(--overlay-3)",
+                borderRadius: "8px",
+                background: "var(--overlay-1)",
+                color: "var(--foreground)",
+                cursor: "pointer",
+                flexShrink: 0,
+                fontSize: "12px",
+                fontWeight: 600,
+                transition: "all 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--overlay-2)";
+                e.currentTarget.style.borderColor = "var(--overlay-4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--overlay-1)";
+                e.currentTarget.style.borderColor = "var(--overlay-3)";
+              }}
+            >
+              <Plus size={15} />
+              New terminal
+            </button>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "Exit full screen" : "Toggle full screen"}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "32px",
-              height: "32px",
-              border: "1px solid var(--overlay-2)",
-              borderRadius: "8px",
-              background: "var(--overlay-1)",
-              color: "var(--muted-foreground)",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--overlay-2)";
-              e.currentTarget.style.color = "var(--foreground)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "var(--overlay-1)";
-              e.currentTarget.style.color = "var(--muted-foreground)";
-            }}
-          >
-            {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
-          </button>
-          <button
-            type="button"
-            onClick={addTab}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              height: "32px",
-              padding: "0 13px",
-              border: "1px solid rgba(167,139,250,0.35)",
-              borderRadius: "8px",
-              background: "rgba(167,139,250,0.12)",
-              color: "var(--primary)",
-              cursor: "pointer",
-              flexShrink: 0,
-              fontSize: "12px",
-              fontWeight: 600,
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(167,139,250,0.2)";
-              e.currentTarget.style.borderColor = "rgba(167,139,250,0.55)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(167,139,250,0.12)";
-              e.currentTarget.style.borderColor = "rgba(167,139,250,0.35)";
-            }}
-          >
-            <Plus size={15} />
-            New terminal
-          </button>
-        </div>
-      </div>
+      )}
 
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
         {tabs.map((tab) => (
@@ -914,14 +962,14 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                   minHeight: 0,
                   overflow: "hidden",
                   borderRadius: "10px",
-                  background: "#0c0d12",
+                  background: "#000000",
                   border:
                     tab.activePaneId === pane.id
-                      ? "1px solid rgba(167,139,250,0.5)"
+                      ? "1px solid rgba(255,255,255,0.3)"
                       : "1px solid var(--overlay-2)",
                   boxShadow:
                     tab.activePaneId === pane.id
-                      ? "0 0 16px -4px rgba(167,139,250,0.18)"
+                      ? "0 0 18px -6px rgba(255,255,255,0.12)"
                       : "none",
                   transition: "border-color 0.15s ease, box-shadow 0.15s ease",
                   ...(tab.panes.length === 3 && index === 0 ? { gridRow: "1 / span 2" } : {}),
@@ -937,7 +985,7 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                     padding: "0 10px 0 12px",
                     background:
                       tab.activePaneId === pane.id
-                        ? "linear-gradient(90deg, rgba(167,139,250,0.12) 0%, rgba(167,139,250,0.03) 100%)"
+                        ? "rgba(255,255,255,0.07)"
                         : "var(--overlay-1)",
                     borderBottom: "1px solid var(--overlay-2)",
                   }}
@@ -950,12 +998,12 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         gap: "6px",
                         padding: "2px 7px",
                         borderRadius: "5px",
-                        background: tab.activePaneId === pane.id ? "rgba(167,139,250,0.15)" : "transparent",
+                        background: tab.activePaneId === pane.id ? "rgba(255,255,255,0.08)" : "transparent",
                       }}
                     >
                       <SquareTerminal
                         size={13}
-                        color={tab.activePaneId === pane.id ? "var(--primary)" : "var(--muted-foreground)"}
+                        color={tab.activePaneId === pane.id ? "var(--foreground)" : "var(--muted-foreground)"}
                       />
                       <span
                         style={{
@@ -989,8 +1037,8 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         {repository.current_branch && (
                           <>
                             <span style={{ color: "var(--muted-foreground)", fontSize: "10px" }}>›</span>
-                            <GitBranch size={10} color="#a78bfa" />
-                            <span style={{ fontSize: "10.5px", color: "var(--primary)", fontWeight: 600 }}>
+                            <GitBranch size={10} color="var(--muted-foreground)" />
+                            <span style={{ fontSize: "10.5px", color: "var(--foreground)", fontWeight: 600 }}>
                               {repository.current_branch}
                             </span>
                           </>
@@ -1125,10 +1173,24 @@ export function TerminalPage({ repository, isActive = true }: { repository: Repo
                         <X size={13} />
                       </button>
                     )}
+                    {tabs.length === 1 && index === 0 && (
+                      <>
+                        <span style={{ width: "1px", height: "14px", margin: "0 4px", background: "var(--overlay-2)" }} />
+                        <PaneAction
+                          title={isFullscreen ? "Exit full screen" : "Toggle full screen"}
+                          onClick={() => void toggleFullscreen()}
+                        >
+                          {isFullscreen ? <Minimize size={13} /> : <Maximize size={13} />}
+                        </PaneAction>
+                        <PaneAction title="New terminal tab" label="New terminal" onClick={addTab}>
+                          <Plus size={13} />
+                        </PaneAction>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
-                  <div style={{ position: "absolute", inset: "8px 12px" }}>
+                  <div style={{ position: "absolute", inset: "8px" }}>
                     <TerminalSession
                       repository={repository}
                       isActive={isActive && tab.activePaneId === pane.id && activeTabId === tab.id}

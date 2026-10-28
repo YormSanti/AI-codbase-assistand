@@ -4,6 +4,7 @@ import { Dialog, Menubar } from "radix-ui";
 import type { RepositoryInfo } from "../types/domain";
 import { PageFallback } from "../components/PageFallback";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { WindowControls } from "../components/WindowControls";
 import type { EditorCommand, EditorToolView } from "./editorCommands";
 import "./EditorApp.css";
 import { EditorShellContext, type EditorShell } from "./editorShell";
@@ -22,6 +23,8 @@ interface Props {
   repository: RepositoryInfo | null;
   isLoading: boolean;
   onNavigate: (view: string) => void;
+  /** The view "Back to IFROG" returns to: the page the editor was opened from. */
+  returnView?: string;
   onCommand?: (command: EditorCommand) => void;
   /** Open a file at a line, used by project-wide search results. */
   onRevealLine?: (path: string, line: number) => void;
@@ -40,7 +43,7 @@ interface Props {
 
 // Keep the shared file workspace at the same position in the tree so entering
 // the editor from File Explorer does not remount the current unsaved draft.
-export function EditorApp({ active, repository, isLoading, onNavigate, onCommand, onRevealLine, requestedView, onRequestedViewHandled, workingTreeGuard, onWorkingTreeChanged, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
+export function EditorApp({ active, repository, isLoading, onNavigate, returnView = "dashboard", onCommand, onRevealLine, requestedView, onRequestedViewHandled, workingTreeGuard, onWorkingTreeChanged, hasSelectedFile = false, aiPrompt, onAiPromptConsumed, children }: Props) {
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalRoot, setTerminalRoot] = useState<string | null>(null);
   const [terminalHeight, setTerminalHeight] = useState(260);
@@ -211,7 +214,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
       {commandItem("Save", "save", "Ctrl/Cmd S", true)}{commandItem("Save All", "saveAll", "Ctrl/Cmd Shift S")}{commandItem("Close Editor", "closeFile", "Ctrl/Cmd W", true)}
       <Menubar.Separator className="ifrog-editor-menu-separator" />
       <Menubar.Item className="ifrog-editor-menu-item" onSelect={() => onNavigate("explorer")}>File Explorer</Menubar.Item>
-      <Menubar.Item className="ifrog-editor-menu-item" onSelect={() => onNavigate("dashboard")}>Back to IFROG</Menubar.Item>
+      <Menubar.Item className="ifrog-editor-menu-item" onSelect={() => onNavigate(returnView)}>Back to IFROG</Menubar.Item>
     </> },
     { label: "Edit", items: <>
       {commandItem("Undo", "undo", "Ctrl/Cmd Z", true)}{commandItem("Redo", "redo", "Ctrl/Cmd Shift Z", true)}
@@ -239,7 +242,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
 
   return (
     <div className={active ? "ifrog-editor-app" : "ifrog-file-workspace"} role={active ? "region" : undefined} aria-label={active ? "IFROG Editor" : undefined}>
-      {active && <header className="ifrog-editor-topbar">
+      {active && <header className="ifrog-editor-topbar" data-tauri-drag-region>
         <div className="ifrog-editor-brand" title="IFROG Editor"><Code2 size={20} /></div>
         <Menubar.Root className="ifrog-editor-menubar" aria-label="Editor menu">
           {menus.map(menu => <Menubar.Menu key={menu.label}>
@@ -248,8 +251,8 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
           </Menubar.Menu>)}
         </Menubar.Root>
         <button type="button" className="ifrog-editor-command-center" aria-label="Search project files" title="Go to file (Ctrl/Cmd+P)" disabled={!repository || isLoading} onClick={() => runCommand("openFile")}><Search size={14} /><span>{repository?.name ?? "IFROG Editor"}</span><kbd>Ctrl/Cmd P</kbd></button>
-        <div className="ifrog-editor-topbar-actions">
-          <button type="button" className="ifrog-editor-back" aria-label="Back to IFROG" title="Back to IFROG" onClick={() => onNavigate("dashboard")}><ArrowLeft size={16} /></button>
+        <div className="ifrog-editor-topbar-actions" data-tauri-drag-region>
+          <button type="button" className="ifrog-editor-back" aria-label="Back to IFROG" title="Back to IFROG" onClick={() => onNavigate(returnView)}><ArrowLeft size={16} /></button>
           <button type="button" aria-label="Save all files" title="Save all files (Ctrl/Cmd+Shift+S)" disabled={!repository || isLoading} onClick={() => onCommand?.("saveAll")}><SaveAll size={16} /></button>
           <button type="button" aria-label="Toggle file explorer" aria-pressed={explorerVisible} title="Toggle Explorer" onClick={toggleExplorerPanel}><PanelLeft size={16} /></button>
           <button type="button" aria-label="Toggle symbol outline" title="Toggle Symbol Outline" onClick={() => runCommand("toggleOutline")}><PanelRight size={16} /></button>
@@ -257,6 +260,7 @@ export function EditorApp({ active, repository, isLoading, onNavigate, onCommand
             <SquareTerminal size={16} />
           </button>
           <ThemeToggle />
+          <WindowControls />
         </div>
       </header>}
 
