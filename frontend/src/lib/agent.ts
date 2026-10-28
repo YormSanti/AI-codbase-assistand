@@ -26,7 +26,7 @@ export interface RunAgentOptions {
 type AgentEvent = { type: "chunk"; text: string } | { type: "done"; content: string } | { type: "error"; message: string };
 
 /**
- * Run one non-interactive request through the Codex or Gemini CLI: through the
+ * Run one non-interactive request through the Claude, Codex or Gemini CLI: through the
  * Tauri command in the desktop app, through the local backend in the browser.
  */
 export async function runAgent({ provider, prompt, workingDirectory, repositoryId, onChunk }: RunAgentOptions): Promise<string> {

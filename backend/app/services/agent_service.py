@@ -1,8 +1,9 @@
-"""Run the Codex or Gemini CLI for the browser build.
+"""Run the Codex, Gemini or Claude Code CLI for the browser build.
 
 The desktop app runs these through Tauri commands; this service gives the web
 build the same behaviour through the backend. Flags match the desktop build:
-Codex runs in its read-only sandbox, Gemini in non-interactive prompt mode.
+Codex runs in its read-only sandbox, Gemini in non-interactive prompt mode,
+Claude in print mode where only read-only tools are allowed.
 """
 from __future__ import annotations
 
@@ -21,7 +22,9 @@ from pathlib import Path
 MAX_PROMPT_CHARS = 64_000
 RUN_TIMEOUT_SECONDS = 600
 STATUS_TIMEOUT_SECONDS = 15
-PROVIDER_NAMES = {"codex": "Codex", "gemini": "Gemini"}
+PROVIDER_NAMES = {"codex": "Codex", "gemini": "Gemini", "claude": "Claude"}
+# Claude reads the prompt from stdin, so a prompt starting with "-" is never parsed as flags.
+STDIN_PROMPT_PROVIDERS = {"claude"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,11 +57,23 @@ def provider_status(provider: str) -> ProviderStatus:
             return ProviderStatus(installed=True, authenticated=result.returncode == 0)
         except (OSError, subprocess.TimeoutExpired):
             return ProviderStatus(installed=True, authenticated=False)
+    if provider == "claude":
+        try:
+            result = subprocess.run([binary, "auth", "status", "--json"], stdin=subprocess.DEVNULL, capture_output=True,
+                                    timeout=STATUS_TIMEOUT_SECONDS, check=False)
+            details = json.loads(result.stdout or b"{}")
+            signed_in = result.returncode == 0 and isinstance(details, dict) and details.get("loggedIn") is True
+            return ProviderStatus(installed=True, authenticated=signed_in)
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return ProviderStatus(installed=True, authenticated=False)
     has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
     return ProviderStatus(installed=True, authenticated=has_key or (Path.home() / ".gemini/google_accounts.json").is_file())
 
 
 def _command(provider: str, binary: str, prompt: str) -> list[str]:
+    if provider == "claude":
+        # dontAsk denies every tool that is not pre-approved: Claude may read files but not edit them or run commands.
+        return [binary, "--print", "--permission-mode", "dontAsk", "--output-format", "text"]
     if provider == "codex":
         return [binary, "exec", "--ephemeral", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "--", prompt]
     # One `--prompt=` argument: as a separate value, a prompt starting with "-" (a pasted list item, say)
@@ -77,6 +92,16 @@ def _kill(process: subprocess.Popen[bytes]) -> None:
         pass
 
 
+def _write_prompt(process: subprocess.Popen[bytes], prompt: str) -> None:
+    """Feed the prompt on stdin from a thread, so a CLI that prints before reading it all cannot deadlock the run."""
+    assert process.stdin is not None
+    try:
+        process.stdin.write(prompt.encode("utf-8"))
+        process.stdin.close()
+    except OSError:  # the CLI exited early; its exit code and stderr report why
+        pass
+
+
 def _event(kind: str, **fields: object) -> str:
     return json.dumps({"type": kind, **fields}) + "\n"
 
@@ -86,16 +111,21 @@ def stream_agent(provider: str, prompt: str, working_directory: Path) -> Iterato
     name = PROVIDER_NAMES[provider]
     binary = find_binary(provider)
     if binary is None:
-        yield _event("error", message=f"{name} CLI was not found. Install it, sign in with `{provider} login` in the Terminal page, then try again.")
+        login = "claude auth login" if provider == "claude" else f"{provider} login"
+        yield _event("error", message=f"{name} CLI was not found. Install it, sign in with `{login}` in the Terminal page, then try again.")
         return
     errors = tempfile.TemporaryFile()  # a file, so a chatty stderr can never block stdout
     try:
-        process = subprocess.Popen(_command(provider, binary, prompt), cwd=working_directory, stdin=subprocess.DEVNULL,
+        prompt_on_stdin = provider in STDIN_PROMPT_PROVIDERS
+        process = subprocess.Popen(_command(provider, binary, prompt), cwd=working_directory,
+                                   stdin=subprocess.PIPE if prompt_on_stdin else subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=errors, start_new_session=os.name == "posix")
     except OSError as exc:
         errors.close()
         yield _event("error", message=f"Could not run {name}: {exc.strerror or exc}")
         return
+    if prompt_on_stdin:
+        threading.Thread(target=_write_prompt, args=(process, prompt), daemon=True).start()
     content: list[str] = []
     # A read can end inside a multi-byte character; the incremental decoder
     # holds the partial bytes until the rest arrives instead of emitting U+FFFD.

@@ -5,6 +5,7 @@ import desktopConfig from "../../src-tauri/tauri.conf.json";
 import { ACCENT_COLORS } from "../hooks/useAppSettings";
 import type { AppSettings } from "../hooks/useAppSettings";
 import { useAppearance } from "../hooks/useAppearance";
+import { PROVIDER_IDS, PROVIDER_NAMES } from "../lib/providers";
 import { Button } from "./ui/button";
 
 const sections = [
@@ -91,10 +92,10 @@ export function SettingsPage() {
           </>}
           {selectedSection === "AI Agent" && <>
             <Field id="default-ai-provider" label="Default provider" description="New conversations start with this provider. You can change it in the chat composer.">
-              <select id="default-ai-provider" value={settings.defaultProvider} onChange={event => save({ defaultProvider: event.target.value as AppSettings["defaultProvider"] })} className={inputClass} aria-describedby="default-ai-provider-description"><option value="gemini">Gemini</option><option value="codex">Codex</option></select>
+              <select id="default-ai-provider" value={settings.defaultProvider} onChange={event => save({ defaultProvider: event.target.value as AppSettings["defaultProvider"] })} className={inputClass} aria-describedby="default-ai-provider-description">{PROVIDER_IDS.map(id => <option key={id} value={id}>{PROVIDER_NAMES[id]}</option>)}</select>
             </Field>
             <Toggle id="ai-stream-output" label="Stream responses" description="Show desktop AI responses as they arrive. When disabled, display the completed response." checked={settings.streamOutput} onChange={streamOutput => save({ streamOutput })} />
-            <p className="rounded-lg bg-muted p-3 text-xs leading-5 text-muted-foreground">Gemini and Codex use their existing sign-in and model settings. Configure models and generation parameters with your provider.</p>
+            <p className="rounded-lg bg-muted p-3 text-xs leading-5 text-muted-foreground">Claude, Gemini and Codex use their existing sign-in and model settings. Configure models and generation parameters with your provider. Sign in to Claude with `claude auth login` on the Terminal page.</p>
           </>}
           {selectedSection === "Git" && <Field id="git-refresh-interval" label="Status refresh interval" description="Refresh local Git status and the selected diff while the Git page is visible. Automatic mode also refreshes when the window regains focus.">
             <select id="git-refresh-interval" value={settings.gitRefreshInterval} onChange={event => save({ gitRefreshInterval: Number(event.target.value) as AppSettings["gitRefreshInterval"] })} className={inputClass} aria-describedby="git-refresh-interval-description"><option value="0">Manual only</option><option value="15">Every 15 seconds</option><option value="30">Every 30 seconds</option><option value="60">Every minute</option></select>
@@ -105,7 +106,7 @@ export function SettingsPage() {
             <dl className="divide-y rounded-lg border text-sm">{[
               ["Application version", desktopConfig.version], ["React version", reactVersion],
               ["Runtime", "__TAURI_INTERNALS__" in window ? "Desktop (Tauri)" : "Web browser"],
-              ["AI providers", "Gemini and Codex"],
+              ["AI providers", "Gemini, Codex and Claude"],
             ].map(([label, value]) => <div key={label} className="flex flex-wrap justify-between gap-2 px-4 py-3"><dt className="text-muted-foreground">{label}</dt><dd className="font-medium">{value}</dd></div>)}</dl>
           </>}
         </div>

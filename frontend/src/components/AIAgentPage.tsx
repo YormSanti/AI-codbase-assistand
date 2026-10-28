@@ -3,7 +3,7 @@ import { Bot, FolderOpen, RefreshCw, ShieldCheck, Zap } from "lucide-react";
 import type { RepositoryInfo } from "../types/domain";
 import { AIThreadStartHero } from "./AIThreadStartHero";
 import { useAppSettings } from "../hooks/useAppSettings";
-import { describeProvider, getProviderStatuses, PROVIDER_NAMES, type ProviderId, type ProviderStatus } from "../lib/providers";
+import { describeProvider, getProviderStatuses, PROVIDER_IDS, PROVIDER_NAMES, providerFromName, type ProviderId, type ProviderStatus } from "../lib/providers";
 import { buildConversationPrompt, MAX_AGENT_PROMPT_CHARS, runAgent } from "../lib/agent";
 import { conversationStorageKey, loadConversation, saveConversation } from "../lib/conversations";
 
@@ -164,7 +164,7 @@ export function AIAgentPage({
   };
 
   const handleHeroSubmit = (heroPrompt: string, selectedModel: string) => {
-    void handleRunAgent(heroPrompt, selectedModel === "Codex" ? "codex" : "gemini");
+    void handleRunAgent(heroPrompt, providerFromName(selectedModel));
   };
 
   const handleResetThread = () => {
@@ -181,12 +181,12 @@ export function AIAgentPage({
         <span className="flex items-center gap-1.5 text-muted-foreground" title={repository?.root_path}>
           <FolderOpen size={13} />{repository ? repository.name : "No project open"}
         </span>
-        <span className="flex items-center gap-1.5 text-muted-foreground" title="Codex runs with a read-only sandbox and Gemini in non-interactive prompt mode; neither modifies files.">
+        <span className="flex items-center gap-1.5 text-muted-foreground" title="Codex runs with a read-only sandbox, Claude may read but not edit files or run commands, and Gemini runs in non-interactive prompt mode; none of them modifies files.">
           <ShieldCheck size={13} />Read-only access
         </span>
         {turns > 0 && <span className="text-muted-foreground">{turns} {turns === 1 ? "turn" : "turns"}</span>}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {(["codex", "gemini"] as ProviderId[]).map(id => {
+          {PROVIDER_IDS.map(id => {
             const described = statuses === "checking" ? { label: "Checking…", tone: "muted" as const } : describeProvider(statuses?.[id]);
             return (
               <button key={id} type="button" aria-pressed={provider === id} onClick={() => setProvider(id)} title={`Use ${PROVIDER_NAMES[id]}`}
@@ -204,7 +204,7 @@ export function AIAgentPage({
           )}
           {!isDesktop && activeStatus && !activeStatus.authenticated && (
             <span className="text-muted-foreground">
-              {activeStatus.installed ? `Sign in by running \`${provider} login\` on the Terminal page.` : `Install the ${providerName} CLI to use it.`}
+              {activeStatus.installed ? `Sign in by running \`${provider === "claude" ? "claude auth" : provider} login\` on the Terminal page.` : `Install the ${providerName} CLI to use it.`}
             </span>
           )}
           {statuses !== "checking" && (
@@ -219,7 +219,7 @@ export function AIAgentPage({
       <AIThreadStartHero
         repository={repository}
         onSubmitPrompt={handleHeroSubmit}
-        onModelChange={model => setProvider(model === "Codex" ? "codex" : "gemini")}
+        onModelChange={model => setProvider(providerFromName(model))}
         isLoading={isRunning}
         initialPrompt={initialPrompt}
         onInitialPromptConsumed={onInitialPromptConsumed}

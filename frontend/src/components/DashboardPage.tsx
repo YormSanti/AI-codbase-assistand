@@ -7,7 +7,7 @@ import type { RepositoryInfo, TreeNode } from "../types/domain";
 import { healthApi } from "../api/healthApi";
 import { useGitStatus } from "../hooks/useGitStatus";
 import { groupChanges } from "../editor/useGitReview";
-import { describeProvider, getProviderStatuses, PROVIDER_NAMES, type ProviderId, type ProviderStatus } from "../lib/providers";
+import { describeProvider, getProviderStatuses, PROVIDER_IDS, PROVIDER_NAMES, type ProviderId, type ProviderStatus } from "../lib/providers";
 import { formatRelativeTime } from "../lib/time";
 
 interface Props {
@@ -55,7 +55,7 @@ const QUICK_ACTIONS: { icon: IconType; label: string; desc: string; tab: string;
   { icon: Folder, label: "File Explorer", desc: "Browse the indexed tree and symbols", tab: "explorer" },
   { icon: GitBranch, label: "Git Repository", desc: "Branch, upstream, and recent commits", tab: "git", needsRepository: true },
   { icon: SquareTerminal, label: "Terminal", desc: "Shell sessions in the project folder", tab: "terminal", needsRepository: true },
-  { icon: Bot, label: "AI Assistant", desc: "Ask Codex or Gemini about this code", tab: "ai" },
+  { icon: Bot, label: "AI Assistant", desc: "Ask Claude, Codex or Gemini about this code", tab: "ai" },
   { icon: BarChart3, label: "Analytics", desc: "Language and file size breakdown", tab: "analytics", needsRepository: true },
 ];
 
@@ -282,7 +282,7 @@ export function DashboardPage({ repository, tree, isLoading, onNavigate, onReind
           <StatusRow label="Git" detail={!repository ? "Open a project to read its repository" : git.error ? git.error : status ? (status.upstream ? `${status.upstream} · ${status.ahead ?? 0} ahead, ${status.behind ?? 0} behind` : "No upstream configured") : "Reading status…"}>
             {!repository ? <StatusPill tone="muted">No project</StatusPill> : git.error ? <StatusPill tone="warn">Unavailable</StatusPill> : status ? <StatusPill tone="ok">{branch ?? "Detached"}</StatusPill> : <StatusPill tone="muted">Checking…</StatusPill>}
           </StatusRow>
-          {(["codex", "gemini"] as ProviderId[]).map(id => {
+          {PROVIDER_IDS.map(id => {
             const described = providers === "loading" ? null : providers === null ? null : describeProvider(providers[id]);
             return (
               <StatusRow key={id} label={`${PROVIDER_NAMES[id]} CLI`} detail="AI provider for the assistant">

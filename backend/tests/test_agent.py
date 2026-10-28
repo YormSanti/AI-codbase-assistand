@@ -62,6 +62,7 @@ def test_provider_status(api_client: TestClient, tmp_path: Path, monkeypatch: py
     assert api_client.get("/api/agent/providers").json() == {
         "codex": {"installed": True, "authenticated": True},
         "gemini": {"installed": False, "authenticated": False},
+        "claude": {"installed": False, "authenticated": False},
     }
     monkeypatch.setattr(agent_service, "find_binary", lambda name: signed_in)
     monkeypatch.setenv("GEMINI_API_KEY", "set")
@@ -94,3 +95,27 @@ def test_gemini_receives_a_prompt_that_starts_with_a_dash_as_one_argument(api_cl
     monkeypatch.setattr(agent_service, "find_binary", lambda name: binary)
     events = _events(api_client.post("/api/agent/run", json={"provider": "gemini", "prompt": "- fix the bug"}))
     assert events[-1] == {"type": "done", "content": "--prompt=- fix the bug"}
+
+
+def test_claude_status_reads_logged_in_from_auth_status_json(api_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    signed_in = _fake_cli(tmp_path, 'echo \'{"loggedIn": true, "authMethod": "claude.ai"}\'\n')
+    monkeypatch.setattr(agent_service, "find_binary", lambda name: signed_in if name == "claude" else None)
+    assert api_client.get("/api/agent/providers").json()["claude"] == {"installed": True, "authenticated": True}
+
+    signed_out = tmp_path / "signed-out"
+    signed_out.mkdir()
+    logged_out = _fake_cli(signed_out, 'echo \'{"loggedIn": false}\'\n')
+    monkeypatch.setattr(agent_service, "find_binary", lambda name: logged_out if name == "claude" else None)
+    assert api_client.get("/api/agent/providers").json()["claude"] == {"installed": True, "authenticated": False}
+
+
+def test_claude_runs_read_only_with_the_prompt_on_stdin(api_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Echo the flags, then the prompt read from stdin; a leading "-" must not be parsed as an option.
+    binary = _fake_cli(tmp_path, 'echo "$@"\ncat\n')
+    monkeypatch.setattr(agent_service, "find_binary", lambda name: binary)
+    events = _events(api_client.post("/api/agent/run", json={"provider": "claude", "prompt": "- fix the bug"}))
+    assert events[-1] == {"type": "done", "content": "--print --permission-mode dontAsk --output-format text\n- fix the bug"}
+
+    monkeypatch.setattr(agent_service, "find_binary", lambda name: None)
+    missing = _events(api_client.post("/api/agent/run", json={"provider": "claude", "prompt": "hi"}))
+    assert missing == [{"type": "error", "message": "Claude CLI was not found. Install it, sign in with `claude auth login` in the Terminal page, then try again."}]
